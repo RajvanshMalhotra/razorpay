@@ -83,6 +83,17 @@ def fold(events: Iterable[Event]) -> ExchangeState:
         elif event.type == ev.ORDER_EXPIRED:
             open_orders.pop(p["order_id"], None)
 
+        elif event.type == ev.ORDER_FILLED:
+            # A fill for an order the book no longer holds is not an error: it
+            # may have expired, or been fully filled by an earlier event.
+            existing = open_orders.get(p["order_id"])
+            if existing is not None:
+                remaining = existing.qty - p["qty"]
+                if remaining <= 0:
+                    del open_orders[p["order_id"]]
+                else:
+                    open_orders[p["order_id"]] = replace(existing, qty=remaining)
+
         elif event.type == ev.MATCH_PROPOSED:
             matches[p["match_id"]] = Match(
                 match_id=p["match_id"],

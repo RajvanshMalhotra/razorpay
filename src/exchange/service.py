@@ -19,6 +19,7 @@ from exchange.models import (
     Order,
     PolicyDecision,
     Settlement,
+    SettlementStatus,
     Verdict,
 )
 from exchange.policy import PolicyContext
@@ -120,7 +121,46 @@ class Exchange:
             correlation_id=correlation_id,
             causation_id=decision_event.event_id,
         )
+
+        if settlement is not None and settlement.status == SettlementStatus.COMPLETED:
+            self._record_fill(match, buyer_id, correlation_id, decision_event.event_id)
+
         return decision, settlement
+
+    def _record_fill(
+        self,
+        match: Match,
+        buyer_id: str,
+        correlation_id: str,
+        causation_id: str,
+    ) -> None:
+        """Deplete both sides of a settled trade.
+
+        Without this both orders stay open at full quantity, and a broker that
+        folds open_orders and re-runs matching in a loop re-settles the same ask
+        against the same inventory forever — creating a real Razorpay order each
+        time. Only the success path fills: a DENY, a REQUIRE_HUMAN or a failed
+        settlement moved nothing and must leave the book untouched.
+        """
+        bid_order = self.state().open_orders.get(match.bid_order_id)
+        if bid_order is None:
+            # Nothing in the book to deplete — the caller matched against an
+            # order this log does not hold. Skip rather than raise; the
+            # settlement itself already stands.
+            return
+
+        for order_id in (match.bid_order_id, match.ask_order_id):
+            self.log.append(
+                buyer_id,
+                ev.ORDER_FILLED,
+                {
+                    "order_id": order_id,
+                    "qty": bid_order.qty,
+                    "match_id": match.match_id,
+                },
+                correlation_id=correlation_id,
+                causation_id=causation_id,
+            )
 
     def state(self) -> ExchangeState:
         return fold(self.log.read_all())

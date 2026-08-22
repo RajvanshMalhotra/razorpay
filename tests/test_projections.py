@@ -4,6 +4,7 @@ from exchange.events import (
     CREDITS_TRANSFERRED,
     MATCH_PROPOSED,
     ORDER_EXPIRED,
+    ORDER_FILLED,
     ORDER_POSTED,
     SETTLEMENT_COMPLETED,
     SETTLEMENT_INITIATED,
@@ -78,6 +79,43 @@ def test_order_expired_leaves_the_book():
     ])
 
     assert "ord_1" not in state.open_orders
+
+
+def test_partial_fill_leaves_the_order_open_with_less_quantity():
+    state = fold([
+        _ev(1, ORDER_POSTED, ORDER_PAYLOAD),
+        _ev(2, ORDER_FILLED, {"order_id": "ord_1", "qty": 200}),
+    ])
+
+    assert state.open_orders["ord_1"].qty == 300
+
+
+def test_a_full_fill_removes_the_order_from_the_book():
+    """Otherwise a broker re-matches the same ask against spent inventory."""
+    state = fold([
+        _ev(1, ORDER_POSTED, ORDER_PAYLOAD),
+        _ev(2, ORDER_FILLED, {"order_id": "ord_1", "qty": 500}),
+    ])
+
+    assert "ord_1" not in state.open_orders
+
+
+def test_an_overfill_removes_the_order_rather_than_going_negative():
+    state = fold([
+        _ev(1, ORDER_POSTED, ORDER_PAYLOAD),
+        _ev(2, ORDER_FILLED, {"order_id": "ord_1", "qty": 900}),
+    ])
+
+    assert "ord_1" not in state.open_orders
+
+
+def test_a_fill_for_an_unknown_order_is_ignored():
+    state = fold([
+        _ev(1, ORDER_POSTED, ORDER_PAYLOAD),
+        _ev(2, ORDER_FILLED, {"order_id": "ord_nonexistent", "qty": 10}),
+    ])
+
+    assert state.open_orders["ord_1"].qty == 500
 
 
 def test_asset_listed_appears_in_state():

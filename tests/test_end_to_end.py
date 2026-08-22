@@ -6,6 +6,7 @@ from exchange.eventlog import EventLog
 from exchange.events import (
     ASSET_LISTED,
     MATCH_PROPOSED,
+    ORDER_FILLED,
     ORDER_POSTED,
     POLICY_DECIDED,
     SETTLEMENT_COMPLETED,
@@ -131,6 +132,7 @@ def test_the_full_story_reads_back_from_one_correlation_id(exchange):
     assert types == [
         ORDER_POSTED, ORDER_POSTED, ORDER_POSTED,
         MATCH_PROPOSED, POLICY_DECIDED, SETTLEMENT_INITIATED, SETTLEMENT_COMPLETED,
+        ORDER_FILLED, ORDER_FILLED,
     ]
 
 
@@ -259,6 +261,52 @@ def test_a_deny_on_another_match_cannot_satisfy_the_allow_invariant(exchange):
     ]
     with pytest.raises(AssertionError):
         _assert_every_settlement_traces_to_its_own_allow(tampered)
+
+
+def test_a_settled_trade_depletes_both_sides_of_the_book(exchange):
+    """Without this the same ask re-matches forever, settling real money each time."""
+    asks = _seed_market(exchange)
+    bid = Order(
+        order_id="ord_bid", actor_id="m_buyer", side=Side.BID, asset_ref=None,
+        asset_query={"text": "biodegradable compostable mailers"}, qty=500,
+        limit_price=2200, currency=Currency.INR,
+        expires_at="2026-08-29T00:00:00+00:00", policy_snapshot={},
+    )
+    exchange.post_order(bid, correlation_id=CORR)
+
+    matches = find_candidates(bid, asks, exchange.state().assets, exchange.index)
+    exchange.execute_match(
+        matches[0], "m_buyer", "m_unknown",
+        PolicyContext(ActorStatus.ACTIVE, 0, 0.9), correlation_id=CORR,
+    )
+
+    book = exchange.state().open_orders
+    assert "ord_bid" not in book, "the bid was filled in full"
+    assert book["ord_ask_mailers"].qty == 500, "1000 offered less 500 taken"
+    assert book["ord_ask_boxes"].qty == 1000, "the untraded ask is untouched"
+
+
+def test_a_denied_match_leaves_the_book_untouched(exchange):
+    asks = _seed_market(exchange)
+    bid = Order(
+        order_id="ord_bid", actor_id="m_buyer", side=Side.BID, asset_ref=None,
+        asset_query={"text": "biodegradable compostable mailers"}, qty=500,
+        limit_price=2200, currency=Currency.INR,
+        expires_at="2026-08-29T00:00:00+00:00", policy_snapshot={},
+    )
+    exchange.post_order(bid, correlation_id=CORR)
+    matches = find_candidates(bid, asks, exchange.state().assets, exchange.index)
+
+    decision, _ = exchange.execute_match(
+        matches[0], "m_buyer", "m_unknown",
+        PolicyContext(ActorStatus.FROZEN, 0, 0.9), correlation_id=CORR,
+    )
+
+    assert decision.verdict == Verdict.DENY
+    book = exchange.state().open_orders
+    assert book["ord_bid"].qty == 500
+    assert book["ord_ask_mailers"].qty == 1000
+    assert ORDER_FILLED not in [e.type for e in exchange.log.read_all()]
 
 
 def test_state_folded_from_the_log_matches_live_state(exchange):
