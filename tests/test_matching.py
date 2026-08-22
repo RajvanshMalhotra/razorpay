@@ -141,3 +141,28 @@ def test_top_k_bounds_the_candidate_count():
 
 def test_no_asks_yields_no_matches():
     assert find_candidates(BID, [], ASSETS, _index()) == []
+
+
+def test_competing_asks_on_the_same_asset_are_all_considered():
+    """A merchant posting volume tiers on its own listing must not lose offers."""
+    asks = [
+        _ask("ord_cheap", "m_b", "ast_2", 1800),
+        _ask("ord_dear", "m_b", "ast_2", 1940),
+    ]
+
+    matches = find_candidates(BID, asks, ASSETS, _index(), top_k=5)
+
+    assert {m.ask_order_id for m in matches} == {"ord_cheap", "ord_dear"}
+
+
+def test_cheaper_of_two_equally_ranked_asks_comes_first():
+    """Deliberately lists the dearer ask first, so insertion order would fail this."""
+    asks = [
+        _ask("ord_dear", "m_b", "ast_2", 1940),
+        _ask("ord_cheap", "m_b", "ast_2", 1800),
+    ]
+
+    matches = find_candidates(BID, asks, ASSETS, _index(), top_k=5)
+
+    assert matches[0].ask_order_id == "ord_cheap"
+    assert matches[0].clearing_price == 1800
