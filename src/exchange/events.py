@@ -1,0 +1,30 @@
+"""The event record and the vocabulary of event types."""
+from __future__ import annotations
+
+from dataclasses import dataclass
+from typing import Any
+
+
+@dataclass(frozen=True)
+class Event:
+    event_id: str
+    seq: int
+    ts: str
+    actor_id: str
+    type: str
+    payload: dict[str, Any]
+    causation_id: str | None
+    correlation_id: str
+
+
+# Event type vocabulary. Kept as constants so typos fail at import, not at runtime.
+ACTOR_REGISTERED = "ACTOR_REGISTERED"
+ASSET_LISTED = "ASSET_LISTED"
+ORDER_POSTED = "ORDER_POSTED"
+ORDER_EXPIRED = "ORDER_EXPIRED"
+MATCH_PROPOSED = "MATCH_PROPOSED"
+POLICY_DECIDED = "POLICY_DECIDED"
+SETTLEMENT_INITIATED = "SETTLEMENT_INITIATED"
+SETTLEMENT_COMPLETED = "SETTLEMENT_COMPLETED"
+SETTLEMENT_FAILED = "SETTLEMENT_FAILED"
+CREDITS_TRANSFERRED = "CREDITS_TRANSFERRED"
