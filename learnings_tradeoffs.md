@@ -658,7 +658,7 @@ one of the two defects carried out of Plan 1.
 
 | Risk | Status |
 |---|---|
-| Disk at ~5GB free | Live. Model caches, simulation runs and video files all want room. |
+| Disk at ~5GB free | **Resolved 2026-08-23.** Had fallen to 3.2GB. Reclaimed 10.7GB by deleting two unrelated Hugging Face cache entries (`mlx-community/maya1-4bit` 7.9GB, `longmemeval-cleaned` dataset 2.8GB); APFS released associated snapshots too, ending at **14GB free**. Both were standard cache entries and are re-downloadable. This had been shaping real decisions — it is why `sentence-transformers` was replaced with model2vec, and it nearly forced local LLM testing onto a 3B model. |
 | Production retrieval path has no automated coverage | Live, but reframed. The remedy is not a `default_embedder()` test — the escaped bug was in *fusion*, not the embedder. It is the order-invariance property test, now added, plus a network-marked smoke test asserting `default_embedder()` returns unit-norm vectors (still to add), since `_cosine` is a bare dot product that mis-ranks silently if that stops holding. |
 | `fold()` requires a complete log from seq 1 | Live, now documented and pinned by a test. The replay UI must fold cumulative prefixes, never a sliding window. `fold_from(state, events)` is the real answer and belongs to the UI plan. |
 
