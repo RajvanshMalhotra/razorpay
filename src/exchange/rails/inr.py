@@ -71,6 +71,7 @@ class RazorpayRail:
             )
 
         payment_link_url = None
+        payment_link_error = None
         try:
             link = self._client.payment_link.create({
                 "amount": amount,
@@ -79,8 +80,8 @@ class RazorpayRail:
                 "notes": {"match_id": match_id, "settlement_id": settlement_id},
             })
             payment_link_url = link.get("short_url")
-        except Exception:  # noqa: BLE001 - the order still stands without a link
-            payment_link_url = None
+        except Exception as exc:  # noqa: BLE001 - the order still stands without a link
+            payment_link_error = f"{type(exc).__name__}: {exc}"
 
         initiated = self._log.append(
             from_actor_id,
@@ -92,6 +93,7 @@ class RazorpayRail:
                 "amount": amount,
                 "razorpay_order_id": order["id"],
                 "payment_link_url": payment_link_url,
+                "payment_link_error": payment_link_error,
             },
             correlation_id=correlation_id,
             causation_id=causation_id,

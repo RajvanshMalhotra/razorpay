@@ -175,6 +175,7 @@ def test_razorpay_settlement_records_a_payment_link_url(log):
         e for e in log.read_by_correlation("c1") if e.type == SETTLEMENT_INITIATED
     ][0]
     assert initiated.payload["payment_link_url"] == "https://rzp.io/rzp/ABC123"
+    assert initiated.payload["payment_link_error"] is None
 
 
 def test_settlement_survives_a_payment_link_failure(log):
@@ -190,3 +191,5 @@ def test_settlement_survives_a_payment_link_failure(log):
         e for e in log.read_by_correlation("c1") if e.type == SETTLEMENT_INITIATED
     ][0]
     assert initiated.payload["payment_link_url"] is None
+    assert initiated.payload["payment_link_error"] is not None
+    assert "payment link service unavailable" in initiated.payload["payment_link_error"]
