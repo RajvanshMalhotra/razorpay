@@ -363,15 +363,100 @@ link or investigate the account.
 
 ---
 
+### BUG-5 to BUG-12 — what the final whole-branch review found
+
+Ten per-task reviews all passed clean. The final review, reading the whole branch at
+once, found six more real defects. **Every one of them lived in a seam between modules
+that no single task's review could see.** That is the argument for the final pass.
+
+| # | Bug | Severity | Status |
+|---|---|---|---|
+| 5 | The match never entered the audit trail | Important | Fixed |
+| 6 | Matching asserted a relevance it never established | Important | Fixed |
+| 7 | The two rails disagreed about failure | Important | Fixed |
+| 8 | An invariant test asserted less than its name | Important | Fixed |
+| 9 | Orders were never depleted after a trade | Important | Fixed |
+| 10 | The rolling-spend cap was unenforceable | Important | Fixed |
+| 11 | Dense ranking still decided by insertion order | Important | Fixed |
+| 12 | Latent `KeyError` on a FAILED-without-INITIATED log | Important | Fixed |
+
+**BUG-5 — the match never entered the audit trail.** `MATCH_PROPOSED` was declared in the
+event vocabulary and never emitted. `PolicyDecision.action_ref` pointed at a match id that
+appeared in no event, and `Match.rationale` — the one artifact explaining *why* two parties
+were paired — was computed and discarded. A `correlation_id` reconstructed *"actor X was
+allowed to spend N and did"* but not *against whose offer, at what price, on what
+reasoning*. That is the difference between an audit trail and a payment log, and it is the
+exact claim this project is judged on. Fixed by appending the match before the gate and
+chaining match → decision → settlement by `causation_id`.
+
+**BUG-6 — matching asserted a relevance it never established.** No score floor, and the
+dense ranking was never truncated, so any feasible ask matched any bid. A bid for
+*"corrugated kraft boxes for shipping"* matched a vitamin C serum and printed
+`"ast_serum matched 'corrugated kraft boxes for shipping'"`. That word is false, and it is
+what the audit trail printed. Fixed by making the rationale report the score rather than
+assert a match, plus a tunable floor. **A non-zero default was deliberately refused:** RRF
+scores are rank-derived and not comparable across corpora, so picking a number without
+real listing data would be guessing, and a wrong floor silently rejects valid trades.
+
+**BUG-7 — the rails disagreed about failure.** The credits rail raised before writing
+anything; the INR rail logged a failure and returned. Both implement the same protocol. So
+a short balance propagated out having already written `POLICY_DECIDED: ALLOW` — a permanent
+gate-said-yes with no settlement outcome. *"Every settlement had an ALLOW"* still held;
+*"every ALLOW resolved"* did not. The second is the one a reconciler needs.
+
+**BUG-8 — a test asserted less than its name.** `test_every_settlement_is_preceded_by_an_allow_decision`
+took the most recent decision *anywhere* in the log rather than correlating it to the
+settlement. With interleaved matches — DENY on A, ALLOW on B, settlement for A — it passed
+while the invariant was broken. This is the clearest instance of the pattern in §2.1: a
+test that validates the plan rather than reality.
+
+**BUG-9 — orders were never depleted.** No `ORDER_FILLED` event existed, so after a settled
+trade both orders stayed open at full quantity. A broker looping over the open book would
+have re-matched and re-settled the same inventory indefinitely, creating a real Razorpay
+order each time.
+
+**BUG-10 — the rolling-spend cap was dead code.** Caller-supplied and every caller passed
+zero, while the gate reported having evaluated it. One of five spec-required limits was
+unenforceable. Now derived from the log. Cumulative rather than time-windowed — stricter,
+and documented as such.
+
+**BUG-11 — the insertion-order bug had a twin.** BUG-2 was fixed on the keyword side. The
+reviewer proved the identical defect was still live on the embedding side: tied dense
+scores fell back to a stable sort, so listing order silently decided ranking. **The lesson
+is about the fix, not the bug:** the original patch treated one symptom instead of the
+class. The right test was the property — *search results must not depend on insertion
+order* — which is embedder-agnostic, runs offline, and catches both halves at once.
+
+**BUG-12 — a latent crash the fix wave nearly activated.** While fixing BUG-7 the
+implementer found that the INR rail already emitted `SETTLEMENT_FAILED` with no preceding
+`INITIATED`, and `fold` raised `KeyError` on such a log. It was dormant — until BUG-9 and
+BUG-10 started folding inside `execute_match`, which would have made it live. The fix wave
+found a bug the fix wave itself was about to trigger.
+
+---
+
 ## 5. Standing risks
 
 | Risk | Status |
 |---|---|
 | Disk at ~5GB free | Live. Model caches, simulation runs and video files all want room. |
-| Production retrieval path has no automated coverage | Live. Every test injects a fake embedder; `default_embedder()` is only ever exercised by hand. This is what hid §3.3. |
-| `fold()` requires a complete log from seq 1 | Live. `read_since(seq)` returns partial slices, and folding one raises `KeyError`. The replay UI must fold cumulative prefixes, never a sliding window, unless a snapshot mechanism is designed first. |
-| `SETTLEMENT_FAILED` transition untested in the projection | Deferred. Covered at the rail level, not in `fold`. |
-| `numpy` used but not declared | Deferred. Arrives transitively via model2vec; one-line fix. |
+| Production retrieval path has no automated coverage | Live, but reframed. The remedy is not a `default_embedder()` test — the escaped bug was in *fusion*, not the embedder. It is the order-invariance property test, now added, plus a network-marked smoke test asserting `default_embedder()` returns unit-norm vectors (still to add), since `_cosine` is a bare dot product that mis-ranks silently if that stops holding. |
+| `fold()` requires a complete log from seq 1 | Live, now documented and pinned by a test. The replay UI must fold cumulative prefixes, never a sliding window. `fold_from(state, events)` is the real answer and belongs to the UI plan. |
+
+### Carried into later plans — recorded, not fixed
+
+The process allows one fix wave and no second. These are real and were surfaced rather
+than silently patched. **The first two are defects, not merely risks.**
+
+| # | Issue | Where it bites |
+|---|---|---|
+| 1 | `_record_fill` skips **both** sides when the bid order is absent from the book, so the *ask* stays open at full quantity. The re-settlement hazard BUG-9 closed survives on that path. | Plan 2, immediately. Fix first. |
+| 2 | Both `ORDER_FILLED` events carry the *bid's* quantity and the *buyer* as actor, so the seller's fill is attributed to the buyer, and a partial fill of the bid is unrepresentable — `Match` has no `qty` field. | Plan 2, before negotiation lands. Needs a spec change. |
+| 3 | **O(n²) fold.** Each `execute_match` now performs up to three full `read_all()` + `fold` passes. Over an hours-long offline run this is what will make the simulation crawl. | Plan 5. Must be planned before day 9, not discovered on it. |
+| 4 | Denied matches appear in `state().matches`, since `MATCH_PROPOSED` precedes the gate by design. The accountant's "no orphaned matches" invariant must join against `POLICY_DECIDED` rather than treat presence as intent. | Plan 3. |
+| 5 | The cumulative spend cap never decays, so an actor that reaches it is permanently spent out. A long tuning run will stall on this rather than on economics. | Plan 4. |
+| 6 | `rrf_fuse` has no doc-id tie-break. Insertion-order invariance currently holds only because both input rankings are deterministic — it is consequential, not structural. One line makes it structural. | Any time. Cheap. |
+| 7 | `REQUIRE_HUMAN` has no resume path — the match is simply dropped. The spec says it suspends pending approval, and video beat 13 depends on approve-then-settle. | Plan 2. Budget for it. |
 
 ---
 
