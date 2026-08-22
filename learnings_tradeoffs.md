@@ -679,7 +679,7 @@ than silently patched. **The first two are defects, not merely risks.**
 
 ---
 
-## 5. Things that turned out better than expected
+## 6. Things that turned out better than expected
 
 - **The natural-language storefront is not a second product.** A human typing "I need
   eco packaging under ₹20" is just a *descriptive bid* — the same object agents post,
