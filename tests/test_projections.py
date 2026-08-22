@@ -1,3 +1,5 @@
+import pytest
+
 from exchange.events import (
     ACTOR_REGISTERED,
     ASSET_LISTED,
@@ -7,6 +9,7 @@ from exchange.events import (
     ORDER_FILLED,
     ORDER_POSTED,
     SETTLEMENT_COMPLETED,
+    SETTLEMENT_FAILED,
     SETTLEMENT_INITIATED,
     Event,
 )
@@ -173,6 +176,45 @@ def test_settlement_transitions_from_pending_to_completed():
     assert stl.status == SettlementStatus.COMPLETED
     assert stl.razorpay_payment_id == "pay_xyz"
     assert stl.currency == Currency.INR
+
+
+def test_settlement_transitions_to_failed_keeping_fields_set_at_initiation():
+    state = fold([
+        _ev(1, SETTLEMENT_INITIATED, {
+            "settlement_id": "stl_1",
+            "match_id": "mch_1",
+            "currency": "INR",
+            "amount": 970000,
+            "razorpay_order_id": "order_abc",
+        }),
+        _ev(2, SETTLEMENT_FAILED, {
+            "settlement_id": "stl_1",
+            "match_id": "mch_1",
+            "reason": "RuntimeError: razorpay unreachable",
+        }),
+    ])
+
+    stl = state.settlements["stl_1"]
+    assert stl.status == SettlementStatus.FAILED
+    assert stl.razorpay_order_id == "order_abc"
+    assert stl.amount == 970000
+    assert stl.match_id == "mch_1"
+
+
+def test_folding_a_partial_slice_raises_rather_than_inventing_state():
+    """Pins fold's precondition: the whole log from seq 1, never a slice.
+
+    read_since(seq) hands back exactly this shape — a completion whose
+    initiation fell outside the window — and there is no correct state to
+    produce from it, so it must fail loudly rather than fabricate a record.
+    """
+    with pytest.raises(KeyError):
+        fold([
+            _ev(7, SETTLEMENT_COMPLETED, {
+                "settlement_id": "stl_1",
+                "razorpay_payment_id": "pay_xyz",
+            }),
+        ])
 
 
 def test_match_proposed_lands_in_state_with_its_rationale():

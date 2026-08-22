@@ -53,7 +53,10 @@ def find_candidates(
     if not query and bid.asset_ref:
         query = assets[bid.asset_ref].title
 
-    ranked = index.search(query, top_k=len(assets))
+    # Ask the index how much it holds. Sizing this by len(assets) truncates the
+    # ranking whenever a caller passes a filtered subset while the index still
+    # holds every listing — silently dropping feasible asks off the bottom.
+    ranked = index.search(query, top_k=index.size)
 
     scored: list[tuple[float, Match]] = []
     for asset_id, retrieval_score in ranked:

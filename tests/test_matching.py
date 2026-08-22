@@ -162,6 +162,22 @@ def test_top_k_bounds_the_candidate_count():
     assert len(find_candidates(BID, asks, ASSETS, _index(), top_k=2)) == 2
 
 
+def test_a_filtered_asset_subset_does_not_truncate_the_ranking():
+    """Sizing the search by len(assets) dropped feasible asks off the bottom
+    whenever the caller passed a subset while the index held every listing."""
+    index = _index()  # holds ast_1, ast_2, ast_3
+    assert index.size == 3
+
+    # ast_1 is the weakest of the three against this bid's text, so a ranking
+    # cut to len(assets) == 1 would return only ast_2 and lose ord_1 entirely.
+    subset = {"ast_1": ASSETS["ast_1"]}
+    asks = [_ask("ord_1", "m_a", "ast_1", 1800)]
+
+    matches = find_candidates(BID, asks, subset, index)
+
+    assert [m.ask_order_id for m in matches] == ["ord_1"]
+
+
 def test_no_asks_yields_no_matches():
     assert find_candidates(BID, [], ASSETS, _index()) == []
 

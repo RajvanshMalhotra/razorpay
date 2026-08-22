@@ -6,6 +6,8 @@ from enum import StrEnum
 from typing import Any
 
 
+# These must stay StrEnum: service._serialize and event-payload JSON encoding
+# both depend on every member being a str.
 class ActorKind(StrEnum):
     MERCHANT = "MERCHANT"
     HOUSE = "HOUSE"

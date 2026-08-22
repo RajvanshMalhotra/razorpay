@@ -37,6 +37,15 @@ class ExchangeState:
 
 
 def fold(events: Iterable[Event]) -> ExchangeState:
+    """Fold a complete event log into state.
+
+    PRECONDITION: `events` must be the whole log from seq 1, in order. Folding
+    a partial slice — anything from `read_since(seq)` — is not supported and
+    raises `KeyError`: a SETTLEMENT_COMPLETED whose SETTLEMENT_INITIATED fell
+    outside the slice has no record to update. An incremental
+    `fold_from(state, events)` would be the way to support resuming; it does
+    not exist yet.
+    """
     actors: dict[str, Actor] = {}
     assets: dict[str, Asset] = {}
     open_orders: dict[str, Order] = {}

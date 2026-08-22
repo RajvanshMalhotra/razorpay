@@ -72,6 +72,11 @@ class HybridIndex:
         self._bm25 = BM25Okapi([t.lower().split() for t in self._texts])
         self._vectors = self._embed(self._texts)
 
+    @property
+    def size(self) -> int:
+        """How many documents the index holds."""
+        return len(self._doc_ids)
+
     def search(self, query: str, top_k: int = 5) -> list[tuple[str, float]]:
         if not self._doc_ids:
             return []
