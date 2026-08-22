@@ -9,11 +9,13 @@ import json
 import sys
 
 import razorpay
+from dotenv import load_dotenv
 
 from exchange.config import Config
 
 
 def main() -> int:
+    load_dotenv()
     cfg = Config.from_env()
     client = razorpay.Client(auth=(cfg.razorpay_key_id, cfg.razorpay_key_secret))
 

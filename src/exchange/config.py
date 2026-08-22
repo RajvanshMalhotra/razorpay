@@ -4,8 +4,6 @@ from __future__ import annotations
 import os
 from dataclasses import dataclass
 
-from dotenv import load_dotenv
-
 K_MIN = 25
 MAX_NEGOTIATION_ROUNDS = 4
 
@@ -20,8 +18,6 @@ class Config:
 
     @classmethod
     def from_env(cls) -> "Config":
-        load_dotenv()
-
         key_id = os.environ.get("RAZORPAY_KEY_ID", "")
         key_secret = os.environ.get("RAZORPAY_KEY_SECRET", "")
 
