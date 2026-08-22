@@ -12,6 +12,7 @@ from dotenv import load_dotenv
 from exchange.config import Config
 from exchange.eventlog import EventLog
 from exchange.events import SETTLEMENT_INITIATED
+from exchange.ids import new_id
 from exchange.matching import find_candidates
 from exchange.models import (
     Actor, ActorKind, ActorStatus, Asset, AssetKind, Currency, Order, Side,
@@ -22,11 +23,11 @@ from exchange.rails.inr import RazorpayRail
 from exchange.retrieval import HybridIndex, default_embedder
 from exchange.service import Exchange
 
-CORR = "corr_demo_trade"
-
 
 def main() -> int:
     load_dotenv()
+    correlation_id = new_id("corr")
+    print(f"Correlation id for this run: {correlation_id}\n")
     cfg = Config.from_env()
     client = razorpay.Client(auth=(cfg.razorpay_key_id, cfg.razorpay_key_secret))
 
@@ -54,7 +55,7 @@ def main() -> int:
         currency=Currency.INR, expires_at="2026-09-30T00:00:00+00:00",
         policy_snapshot={},
     )
-    exchange.post_order(ask, correlation_id=CORR)
+    exchange.post_order(ask, correlation_id=correlation_id)
 
     bid = Order(
         order_id="ord_bid", actor_id="m_buyer", side=Side.BID, asset_ref=None,
@@ -62,7 +63,7 @@ def main() -> int:
         qty=500, limit_price=2200, currency=Currency.INR,
         expires_at="2026-08-29T00:00:00+00:00", policy_snapshot={},
     )
-    exchange.post_order(bid, correlation_id=CORR)
+    exchange.post_order(bid, correlation_id=correlation_id)
 
     matches = find_candidates(bid, [ask], exchange.state().assets, exchange.index)
     if not matches:
@@ -73,7 +74,7 @@ def main() -> int:
     decision, settlement = exchange.execute_match(
         matches[0], "m_buyer", "m_seller",
         PolicyContext(ActorStatus.ACTIVE, rolling_spend=0, counterparty_confidence=0.9),
-        correlation_id=CORR,
+        correlation_id=correlation_id,
     )
     print(f"Policy: {decision.verdict} — {decision.reason}\n")
 
@@ -83,7 +84,7 @@ def main() -> int:
         print(f"  razorpay_payment_id: {settlement.razorpay_payment_id}\n")
 
     initiated = [
-        e for e in log.read_by_correlation(CORR)
+        e for e in log.read_by_correlation(correlation_id)
         if e.type == SETTLEMENT_INITIATED
     ]
     if initiated:
@@ -97,7 +98,7 @@ def main() -> int:
             print(f"No payment link was created: {error}\n")
 
     print("=== AUDIT TRAIL ===")
-    for event in log.read_by_correlation(CORR):
+    for event in log.read_by_correlation(correlation_id):
         print(f"  [{event.seq:>3}] {event.ts}  {event.actor_id:<10} {event.type}")
 
     log.close()
