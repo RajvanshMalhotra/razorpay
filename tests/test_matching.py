@@ -101,6 +101,29 @@ def test_match_carries_a_human_readable_rationale():
     assert "1940" in rationale
 
 
+def test_the_rationale_reports_a_score_rather_than_asserting_a_match():
+    """Retrieval ranks; it does not certify relevance. The wording must not lie."""
+    asks = [_ask("ord_2", "m_b", "ast_2", 1940)]
+
+    rationale = find_candidates(BID, asks, ASSETS, _index())[0].rationale
+
+    assert "ranked" in rationale
+    assert "matched" not in rationale
+
+
+def test_a_relevance_floor_excludes_an_otherwise_feasible_ask():
+    """Feasibility is not relevance: a high floor drops a priceable but weak ask."""
+    asks = [_ask("ord_2", "m_b", "ast_2", 1940)]
+
+    admitted = find_candidates(BID, asks, ASSETS, _index())
+    assert len(admitted) == 1, "the default floor of 0.0 must be a no-op"
+
+    above_any_rrf_score = admitted[0].score + 1.0
+    excluded = find_candidates(BID, asks, ASSETS, _index(), min_score=above_any_rrf_score)
+
+    assert excluded == []
+
+
 def test_counterparty_score_can_reorder_near_ties():
     """Two identical listings; the better-regarded seller comes first."""
     assets = {

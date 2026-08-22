@@ -22,7 +22,18 @@ def find_candidates(
     index: HybridIndex,
     counterparty_scores: dict[str, float] | None = None,
     top_k: int = 3,
+    min_score: float = 0.0,
 ) -> list[Match]:
+    """Rank the feasible asks against a bid.
+
+    `min_score` is a relevance floor: a candidate is dropped unless its final
+    score is strictly greater than it. The default of `0.0` is a no-op — every
+    feasible ask is offered, which is deliberate. RRF scores are rank-derived,
+    so they are not comparable across corpora and no defensible non-zero value
+    exists without real listing data behind it; a floor set too high silently
+    rejects valid trades. The hook exists so a later plan can tune it against
+    the real book, and the production value must be chosen that way.
+    """
     counterparty_scores = counterparty_scores or {}
 
     feasible: dict[str, list[Order]] = {}
@@ -50,6 +61,9 @@ def find_candidates(
             standing = counterparty_scores.get(ask.actor_id, 0.5)
             final_score = retrieval_score * (1.0 + COUNTERPARTY_WEIGHT * (standing - 0.5) * 2)
 
+            if not final_score > min_score:
+                continue
+
             scored.append((
                 final_score,
                 Match(
@@ -58,9 +72,13 @@ def find_candidates(
                     ask_order_id=ask.order_id,
                     clearing_price=ask.limit_price,
                     score=final_score,
+                    # Reports the score rather than asserting a match: retrieval
+                    # ranks, it does not certify relevance, and this string is
+                    # what the audit trail prints.
                     rationale=(
-                        f"{asset_id} matched '{query}' at {ask.limit_price} "
-                        f"(<= bid limit {bid.limit_price}), qty {ask.qty} >= {bid.qty}, "
+                        f"{asset_id} ranked {final_score:.4f} for '{query}'; "
+                        f"priced {ask.limit_price} (<= bid limit {bid.limit_price}), "
+                        f"qty {ask.qty} >= {bid.qty}; "
                         f"counterparty {ask.actor_id} standing {standing:.2f}"
                     ),
                 ),
