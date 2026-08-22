@@ -1,0 +1,192 @@
+import pytest
+
+from exchange.eventlog import EventLog
+from exchange.events import (
+    CREDITS_TRANSFERRED,
+    SETTLEMENT_COMPLETED,
+    SETTLEMENT_FAILED,
+    SETTLEMENT_INITIATED,
+)
+from exchange.models import SettlementStatus
+from exchange.projections import fold
+from exchange.rails.base import InsufficientCredits
+from exchange.rails.credits import CreditRail
+from exchange.rails.inr import RazorpayRail
+
+
+@pytest.fixture
+def log(tmp_path):
+    lg = EventLog(str(tmp_path / "rails.db"))
+    yield lg
+    lg.close()
+
+
+class FakeRazorpay:
+    """Stands in for razorpay.Client. `payments_by_order` drives the outcome."""
+
+    def __init__(self, payments_by_order=None, fail_on_create=False,
+                 payment_link_url="https://rzp.io/rzp/FAKE123", fail_payment_link=False):
+        self._payments = payments_by_order or {}
+        self._fail = fail_on_create
+        self._link_url = payment_link_url
+        self._fail_link = fail_payment_link
+        self.created = []
+        self.order = self._Orders(self)
+        self.payment_link = self._PaymentLinks(self)
+
+    class _Orders:
+        def __init__(self, outer):
+            self._outer = outer
+
+        def create(self, data):
+            if self._outer._fail:
+                raise RuntimeError("razorpay unreachable")
+            order_id = f"order_{len(self._outer.created) + 1}"
+            self._outer.created.append(data)
+            return {"id": order_id, "amount": data["amount"], "status": "created"}
+
+        def payments(self, order_id):
+            return self._outer._payments.get(order_id, {"count": 0, "items": []})
+
+    class _PaymentLinks:
+        def __init__(self, outer):
+            self._outer = outer
+
+        def create(self, data):
+            if self._outer._fail_link:
+                raise RuntimeError("payment link service unavailable")
+            return {"id": "plink_fake", "short_url": self._outer._link_url}
+
+
+# --- credits rail -----------------------------------------------------------
+
+def test_credit_transfer_completes_and_moves_balances(log):
+    log.append("house", CREDITS_TRANSFERRED,
+               {"from_actor_id": "house", "to_actor_id": "m_a", "amount": 5000},
+               correlation_id="seed")
+    rail = CreditRail(log)
+
+    settlement = rail.settle("mch_1", "m_a", "m_b", 1200, correlation_id="c1")
+
+    assert settlement.status == SettlementStatus.COMPLETED
+    state = fold(log.read_all())
+    assert state.credit_balances["m_a"] == 3800
+    assert state.credit_balances["m_b"] == 1200
+
+
+def test_credit_transfer_is_refused_when_the_balance_is_short(log):
+    log.append("house", CREDITS_TRANSFERRED,
+               {"from_actor_id": "house", "to_actor_id": "m_a", "amount": 100},
+               correlation_id="seed")
+    rail = CreditRail(log)
+
+    with pytest.raises(InsufficientCredits):
+        rail.settle("mch_1", "m_a", "m_b", 1200, correlation_id="c1")
+
+
+def test_refused_credit_transfer_writes_no_transfer_event(log):
+    rail = CreditRail(log)
+
+    with pytest.raises(InsufficientCredits):
+        rail.settle("mch_1", "m_a", "m_b", 1200, correlation_id="c1")
+
+    types = [e.type for e in log.read_by_correlation("c1")]
+    assert CREDITS_TRANSFERRED not in types
+
+
+def test_credit_settlement_events_carry_the_correlation_id(log):
+    log.append("house", CREDITS_TRANSFERRED,
+               {"from_actor_id": "house", "to_actor_id": "m_a", "amount": 5000},
+               correlation_id="seed")
+    rail = CreditRail(log)
+
+    rail.settle("mch_1", "m_a", "m_b", 1200, correlation_id="c1")
+
+    assert len(log.read_by_correlation("c1")) == 3  # initiated, transferred, completed
+
+
+# --- INR rail ---------------------------------------------------------------
+
+def test_razorpay_settlement_completes_when_a_payment_is_captured(log):
+    fake = FakeRazorpay(payments_by_order={
+        "order_1": {"count": 1, "items": [{"id": "pay_abc", "status": "captured"}]}
+    })
+    rail = RazorpayRail(log, fake)
+
+    settlement = rail.settle("mch_1", "m_buyer", "m_seller", 970000, correlation_id="c1")
+
+    assert settlement.status == SettlementStatus.COMPLETED
+    assert settlement.razorpay_order_id == "order_1"
+    assert settlement.razorpay_payment_id == "pay_abc"
+
+
+def test_razorpay_settlement_sends_the_amount_in_paise(log):
+    fake = FakeRazorpay(payments_by_order={
+        "order_1": {"count": 1, "items": [{"id": "pay_abc", "status": "captured"}]}
+    })
+    rail = RazorpayRail(log, fake)
+
+    rail.settle("mch_1", "m_buyer", "m_seller", 970000, correlation_id="c1")
+
+    assert fake.created[0]["amount"] == 970000
+    assert fake.created[0]["currency"] == "INR"
+
+
+def test_razorpay_settlement_stays_pending_when_no_payment_arrives(log):
+    fake = FakeRazorpay(payments_by_order={})
+    rail = RazorpayRail(log, fake, poll_attempts=2, poll_interval=0)
+
+    settlement = rail.settle("mch_1", "m_buyer", "m_seller", 970000, correlation_id="c1")
+
+    assert settlement.status == SettlementStatus.PENDING
+    types = [e.type for e in log.read_by_correlation("c1")]
+    assert SETTLEMENT_INITIATED in types
+    assert SETTLEMENT_COMPLETED not in types
+
+
+def test_razorpay_failure_to_create_an_order_is_logged_as_failed(log):
+    rail = RazorpayRail(log, FakeRazorpay(fail_on_create=True))
+
+    settlement = rail.settle("mch_1", "m_buyer", "m_seller", 970000, correlation_id="c1")
+
+    assert settlement.status == SettlementStatus.FAILED
+    assert SETTLEMENT_FAILED in [e.type for e in log.read_by_correlation("c1")]
+
+
+def test_an_uncaptured_payment_does_not_complete_the_settlement(log):
+    fake = FakeRazorpay(payments_by_order={
+        "order_1": {"count": 1, "items": [{"id": "pay_abc", "status": "authorized"}]}
+    })
+    rail = RazorpayRail(log, fake, poll_attempts=1, poll_interval=0)
+
+    settlement = rail.settle("mch_1", "m_buyer", "m_seller", 970000, correlation_id="c1")
+
+    assert settlement.status == SettlementStatus.PENDING
+
+
+def test_razorpay_settlement_records_a_payment_link_url(log):
+    """Without a link there is no route to ever pay the order."""
+    fake = FakeRazorpay(payment_link_url="https://rzp.io/rzp/ABC123")
+    rail = RazorpayRail(log, fake, poll_attempts=1, poll_interval=0)
+
+    rail.settle("mch_1", "m_buyer", "m_seller", 970000, correlation_id="c1")
+
+    initiated = [
+        e for e in log.read_by_correlation("c1") if e.type == SETTLEMENT_INITIATED
+    ][0]
+    assert initiated.payload["payment_link_url"] == "https://rzp.io/rzp/ABC123"
+
+
+def test_settlement_survives_a_payment_link_failure(log):
+    """A missing link is recoverable; discarding a real Razorpay order is not."""
+    fake = FakeRazorpay(fail_payment_link=True)
+    rail = RazorpayRail(log, fake, poll_attempts=1, poll_interval=0)
+
+    settlement = rail.settle("mch_1", "m_buyer", "m_seller", 970000, correlation_id="c1")
+
+    assert settlement.status == SettlementStatus.PENDING
+    assert settlement.razorpay_order_id == "order_1"
+    initiated = [
+        e for e in log.read_by_correlation("c1") if e.type == SETTLEMENT_INITIATED
+    ][0]
+    assert initiated.payload["payment_link_url"] is None
