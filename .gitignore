@@ -1,0 +1,33 @@
+# Secrets — Razorpay test-mode keys live here, never commit
+.env
+.env.*
+!.env.example
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+env/
+*.egg-info/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+
+# Simulation artifacts
+*.db
+*.sqlite
+*.sqlite3
+runs/
+logs/
+.cache/
+
+# Node / replay UI
+node_modules/
+dist/
+build/
+
+# Editors & OS
+.DS_Store
+.vscode/
+.idea/
