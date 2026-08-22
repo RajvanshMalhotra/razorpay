@@ -24,6 +24,14 @@ class PolicyLimits:
 
 @dataclass(frozen=True)
 class PolicyContext:
+    """The facts the gate weighs about the actor making the request.
+
+    `rolling_spend` is overwritten by `Exchange.execute_match` with a figure
+    derived from the event log — whatever a caller supplies for it there is
+    ignored. It stays on the context because `evaluate` is also called directly
+    (in tests, and by anything gating an action the exchange has not logged yet).
+    """
+
     actor_status: ActorStatus
     rolling_spend: int
     counterparty_confidence: float

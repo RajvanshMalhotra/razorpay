@@ -2,6 +2,7 @@ import pytest
 
 from exchange.eventlog import EventLog
 from exchange.events import (
+    CREDITS_TRANSFERRED,
     MATCH_PROPOSED,
     POLICY_DECIDED,
     SETTLEMENT_COMPLETED,
@@ -16,10 +17,11 @@ from exchange.models import (
     Currency,
     Match,
     Order,
+    SettlementStatus,
     Side,
     Verdict,
 )
-from exchange.policy import DEFAULT_INR_LIMITS, PolicyContext
+from exchange.policy import DEFAULT_INR_LIMITS, PolicyContext, PolicyLimits
 from exchange.rails.credits import CreditRail
 from exchange.rails.inr import RazorpayRail
 from exchange.retrieval import HybridIndex
@@ -144,6 +146,83 @@ def test_match_requiring_human_approval_does_not_settle(exchange):
 
     assert decision.verdict == Verdict.REQUIRE_HUMAN
     assert settlement is None
+
+
+def test_the_rolling_cap_is_derived_from_the_log_not_from_the_caller(tmp_path):
+    """The caller passes rolling_spend=0 both times; the second trade is still
+    denied, because the gate counts what the log says was already spent."""
+    log = EventLog(str(tmp_path / "roll.db"))
+    fake = FakeRazorpay(payments_by_order={
+        "order_1": {"count": 1, "items": [{"id": "pay_1", "status": "captured"}]},
+        "order_2": {"count": 1, "items": [{"id": "pay_2", "status": "captured"}]},
+    })
+    tight = PolicyLimits(
+        per_txn_cap=200_000,
+        rolling_window_cap=250_000,   # one trade fits; two do not
+        human_approval_threshold=1_000_000_000,
+        unknown_counterparty_cap=200_000,
+    )
+    ex = Exchange(
+        log, HybridIndex(embed_fn=fake_embedder),
+        RazorpayRail(log, fake), CreditRail(log), inr_limits=tight,
+    )
+
+    def trade(match_id):
+        return ex.execute_match(
+            Match(match_id, "ord_bid", "ord_ask", 150_000, 0.9, "test"),
+            "m_buyer", "m_seller", TRUSTED, correlation_id="c1",
+        )
+
+    first_decision, first_settlement = trade("mch_1")
+    assert first_decision.verdict == Verdict.ALLOW
+    assert first_settlement.status == SettlementStatus.COMPLETED
+
+    second_decision, second_settlement = trade("mch_2")
+
+    assert second_decision.verdict == Verdict.DENY
+    assert "rolling window" in second_decision.reason
+    assert second_decision.limits_evaluated["rolling_spend"] == 150_000
+    assert second_settlement is None
+
+    initiated = [e for e in log.read_all() if e.type == SETTLEMENT_INITIATED]
+    assert len(initiated) == 1, "the second settlement must never have started"
+    log.close()
+
+
+def test_rolling_spend_is_counted_per_currency(tmp_path):
+    """An INR settlement must not consume a buyer's CREDITS headroom."""
+    log = EventLog(str(tmp_path / "cur.db"))
+    log.append("house", CREDITS_TRANSFERRED,
+               {"from_actor_id": "house", "to_actor_id": "m_buyer", "amount": 500_000},
+               correlation_id="seed")
+    fake = FakeRazorpay(payments_by_order={
+        "order_1": {"count": 1, "items": [{"id": "pay_1", "status": "captured"}]}
+    })
+    tight = PolicyLimits(
+        per_txn_cap=200_000,
+        rolling_window_cap=250_000,
+        human_approval_threshold=1_000_000_000,
+        unknown_counterparty_cap=200_000,
+    )
+    ex = Exchange(
+        log, HybridIndex(embed_fn=fake_embedder),
+        RazorpayRail(log, fake), CreditRail(log),
+        inr_limits=tight, credit_limits=tight,
+    )
+
+    ex.execute_match(
+        Match("mch_inr", "ord_bid", "ord_ask", 150_000, 0.9, "test"),
+        "m_buyer", "m_seller", TRUSTED, correlation_id="c1",
+    )
+    decision, _ = ex.execute_match(
+        Match("mch_cr", "ord_bid", "ord_ask", 150_000, 0.9, "test"),
+        "m_buyer", "m_seller", TRUSTED, correlation_id="c1",
+        currency=Currency.CREDITS,
+    )
+
+    assert decision.verdict == Verdict.ALLOW
+    assert decision.limits_evaluated["rolling_spend"] == 0
+    log.close()
 
 
 def test_the_decision_is_caused_by_the_match_it_gated(exchange):

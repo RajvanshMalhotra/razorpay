@@ -6,7 +6,7 @@ guarantee: the gate is visible even when it says yes.
 """
 from __future__ import annotations
 
-from dataclasses import asdict
+from dataclasses import asdict, replace
 
 from exchange import events as ev
 from exchange import policy
@@ -34,11 +34,18 @@ class Exchange:
         index: HybridIndex,
         inr_rail,
         credit_rail,
+        inr_limits: policy.PolicyLimits | None = None,
+        credit_limits: policy.PolicyLimits | None = None,
     ) -> None:
         self.log = log
         self.index = index
         self._inr_rail = inr_rail
         self._credit_rail = credit_rail
+        # Limits are configuration, set once per exchange. Deliberately not a
+        # parameter of execute_match: a caller must not be able to hand the gate
+        # the caps it would like applied to itself.
+        self._inr_limits = inr_limits or policy.DEFAULT_INR_LIMITS
+        self._credit_limits = credit_limits or policy.DEFAULT_CREDIT_LIMITS
         self._indexed: list[tuple[str, str]] = []
 
     def register_actor(self, actor: Actor) -> None:
@@ -76,11 +83,7 @@ class Exchange:
         correlation_id: str,
         currency: Currency = Currency.INR,
     ) -> tuple[PolicyDecision, Settlement | None]:
-        limits = (
-            policy.DEFAULT_INR_LIMITS
-            if currency == Currency.INR
-            else policy.DEFAULT_CREDIT_LIMITS
-        )
+        limits = self._inr_limits if currency == Currency.INR else self._credit_limits
 
         # The match itself is an event. Without it the decision's action_ref
         # dangles and the rationale — the one artifact that explains *why* this
@@ -92,12 +95,16 @@ class Exchange:
             correlation_id=correlation_id,
         )
 
+        # Derived from the log, never taken from the caller. A cap the actor
+        # supplies its own usage figure for is not a cap.
+        spent = self._spend_to_date(buyer_id, currency)
+
         decision = policy.evaluate(
             action_ref=match.match_id,
             actor_id=buyer_id,
             amount=match.clearing_price,
             currency=currency,
-            ctx=ctx,
+            ctx=replace(ctx, rolling_spend=spent),
             limits=limits,
         )
 
@@ -126,6 +133,29 @@ class Exchange:
             self._record_fill(match, buyer_id, correlation_id, decision_event.event_id)
 
         return decision, settlement
+
+    def _spend_to_date(self, actor_id: str, currency: Currency) -> int:
+        """Total this actor has already committed on this rail, read from the log.
+
+        NOTE: this is a *cumulative* spend, not a time-windowed one. The spec
+        calls for a rolling window; summing every settlement ever initiated is
+        strictly tighter than any window over the same log, so the cap can only
+        bind sooner, never later — safe, but not the same thing. The time bound
+        is a later refinement; until it lands the cap is cumulative per actor
+        per currency.
+
+        Counted at SETTLEMENT_INITIATED rather than at completion: money is
+        committed the moment a Razorpay order exists, and a settlement sitting
+        PENDING is exactly the exposure a cap is meant to bound.
+        """
+        target = str(currency)
+        return sum(
+            e.payload["amount"]
+            for e in self.log.read_all()
+            if e.type == ev.SETTLEMENT_INITIATED
+            and e.actor_id == actor_id
+            and e.payload.get("currency") == target
+        )
 
     def _record_fill(
         self,
