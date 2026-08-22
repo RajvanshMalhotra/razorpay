@@ -1,7 +1,12 @@
 import pytest
 
 from exchange.eventlog import EventLog
-from exchange.events import POLICY_DECIDED, SETTLEMENT_COMPLETED, SETTLEMENT_INITIATED
+from exchange.events import (
+    MATCH_PROPOSED,
+    POLICY_DECIDED,
+    SETTLEMENT_COMPLETED,
+    SETTLEMENT_INITIATED,
+)
 from exchange.models import (
     Actor,
     ActorKind,
@@ -141,9 +146,25 @@ def test_match_requiring_human_approval_does_not_settle(exchange):
     assert settlement is None
 
 
+def test_the_decision_is_caused_by_the_match_it_gated(exchange):
+    """action_ref must not dangle: the match is a logged event that caused the gate."""
+    exchange.execute_match(MATCH, "m_buyer", "m_seller", TRUSTED, correlation_id="c1")
+
+    events = exchange.log.read_by_correlation("c1")
+    proposed = [e for e in events if e.type == MATCH_PROPOSED][0]
+    decided = [e for e in events if e.type == POLICY_DECIDED][0]
+
+    assert proposed.payload["match_id"] == "mch_1"
+    assert decided.causation_id == proposed.event_id
+    assert decided.payload["action_ref"] == proposed.payload["match_id"]
+    assert exchange.state().matches["mch_1"].rationale == "test"
+
+
 def test_the_whole_story_is_recoverable_from_one_correlation_id(exchange):
     exchange.execute_match(MATCH, "m_buyer", "m_seller", TRUSTED, correlation_id="c1")
 
     types = [e.type for e in exchange.log.read_by_correlation("c1")]
 
-    assert types == [POLICY_DECIDED, SETTLEMENT_INITIATED, SETTLEMENT_COMPLETED]
+    assert types == [
+        MATCH_PROPOSED, POLICY_DECIDED, SETTLEMENT_INITIATED, SETTLEMENT_COMPLETED,
+    ]

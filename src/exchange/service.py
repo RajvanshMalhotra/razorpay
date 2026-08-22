@@ -81,6 +81,16 @@ class Exchange:
             else policy.DEFAULT_CREDIT_LIMITS
         )
 
+        # The match itself is an event. Without it the decision's action_ref
+        # dangles and the rationale — the one artifact that explains *why* this
+        # ask at this price — never reaches the audit trail.
+        match_event = self.log.append(
+            buyer_id,
+            ev.MATCH_PROPOSED,
+            _serialize(match),
+            correlation_id=correlation_id,
+        )
+
         decision = policy.evaluate(
             action_ref=match.match_id,
             actor_id=buyer_id,
@@ -95,6 +105,7 @@ class Exchange:
             ev.POLICY_DECIDED,
             _serialize(decision),
             correlation_id=correlation_id,
+            causation_id=match_event.event_id,
         )
 
         if decision.verdict != Verdict.ALLOW:

@@ -18,6 +18,7 @@ from exchange.models import (
     Asset,
     AssetKind,
     Currency,
+    Match,
     Order,
     Settlement,
     SettlementStatus,
@@ -32,6 +33,7 @@ class ExchangeState:
     open_orders: dict[str, Order] = field(default_factory=dict)
     credit_balances: dict[str, int] = field(default_factory=dict)
     settlements: dict[str, Settlement] = field(default_factory=dict)
+    matches: dict[str, Match] = field(default_factory=dict)
 
 
 def fold(events: Iterable[Event]) -> ExchangeState:
@@ -40,6 +42,7 @@ def fold(events: Iterable[Event]) -> ExchangeState:
     open_orders: dict[str, Order] = {}
     balances: dict[str, int] = defaultdict(int)
     settlements: dict[str, Settlement] = {}
+    matches: dict[str, Match] = {}
 
     for event in events:
         p = event.payload
@@ -80,6 +83,16 @@ def fold(events: Iterable[Event]) -> ExchangeState:
         elif event.type == ev.ORDER_EXPIRED:
             open_orders.pop(p["order_id"], None)
 
+        elif event.type == ev.MATCH_PROPOSED:
+            matches[p["match_id"]] = Match(
+                match_id=p["match_id"],
+                bid_order_id=p["bid_order_id"],
+                ask_order_id=p["ask_order_id"],
+                clearing_price=p["clearing_price"],
+                score=p["score"],
+                rationale=p["rationale"],
+            )
+
         elif event.type == ev.CREDITS_TRANSFERRED:
             balances[p["from_actor_id"]] -= p["amount"]
             balances[p["to_actor_id"]] += p["amount"]
@@ -114,4 +127,5 @@ def fold(events: Iterable[Event]) -> ExchangeState:
         open_orders=open_orders,
         credit_balances=dict(balances),
         settlements=settlements,
+        matches=matches,
     )

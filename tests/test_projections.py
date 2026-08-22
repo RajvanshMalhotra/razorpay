@@ -2,6 +2,7 @@ from exchange.events import (
     ACTOR_REGISTERED,
     ASSET_LISTED,
     CREDITS_TRANSFERRED,
+    MATCH_PROPOSED,
     ORDER_EXPIRED,
     ORDER_POSTED,
     SETTLEMENT_COMPLETED,
@@ -134,6 +135,28 @@ def test_settlement_transitions_from_pending_to_completed():
     assert stl.status == SettlementStatus.COMPLETED
     assert stl.razorpay_payment_id == "pay_xyz"
     assert stl.currency == Currency.INR
+
+
+def test_match_proposed_lands_in_state_with_its_rationale():
+    """The rationale is what makes a trade explainable; it must survive the fold."""
+    state = fold([
+        _ev(1, MATCH_PROPOSED, {
+            "match_id": "mch_1",
+            "bid_order_id": "ord_bid",
+            "ask_order_id": "ord_ask",
+            "clearing_price": 1940,
+            "score": 0.87,
+            "rationale": "ast_2 ranked 0.0328 for 'compostable mailers'; priced 1940",
+        }),
+    ])
+
+    match = state.matches["mch_1"]
+    assert match.clearing_price == 1940
+    assert match.rationale == (
+        "ast_2 ranked 0.0328 for 'compostable mailers'; priced 1940"
+    )
+    assert match.bid_order_id == "ord_bid"
+    assert match.ask_order_id == "ord_ask"
 
 
 def test_fold_is_deterministic_for_the_same_events():

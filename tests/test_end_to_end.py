@@ -3,6 +3,7 @@ import pytest
 from exchange.eventlog import EventLog
 from exchange.events import (
     ASSET_LISTED,
+    MATCH_PROPOSED,
     ORDER_POSTED,
     POLICY_DECIDED,
     SETTLEMENT_COMPLETED,
@@ -127,7 +128,7 @@ def test_the_full_story_reads_back_from_one_correlation_id(exchange):
 
     assert types == [
         ORDER_POSTED, ORDER_POSTED, ORDER_POSTED,
-        POLICY_DECIDED, SETTLEMENT_INITIATED, SETTLEMENT_COMPLETED,
+        MATCH_PROPOSED, POLICY_DECIDED, SETTLEMENT_INITIATED, SETTLEMENT_COMPLETED,
     ]
 
 
