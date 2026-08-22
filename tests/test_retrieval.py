@@ -100,3 +100,23 @@ def test_searching_an_empty_index_returns_nothing():
     index.index([])
 
     assert index.search("anything") == []
+
+
+def test_zero_bm25_query_does_not_let_index_order_pollute_the_ranking():
+    """No document shares a term with 'skin', so every BM25 score is 0 and its
+    ranking collapses to insertion order. That must not outvote the dense path."""
+
+    def skin_embedder(texts):
+        vectors = []
+        for text in texts:
+            lowered = text.lower()
+            is_skin = any(w in lowered for w in ("skin", "serum", "skincare"))
+            vectors.append([1.0, 0.0] if is_skin else [0.0, 1.0])
+        return vectors
+
+    index = HybridIndex(embed_fn=skin_embedder)
+    index.index(DOCS)
+
+    results = index.search("skin", top_k=1)
+
+    assert results[0][0] == "ast_4"

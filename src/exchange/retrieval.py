@@ -82,6 +82,7 @@ class HybridIndex:
             for i in sorted(
                 range(len(self._doc_ids)), key=lambda i: sparse_scores[i], reverse=True
             )
+            if sparse_scores[i] > 0
         ]
 
         query_vec = self._embed([query])[0]
