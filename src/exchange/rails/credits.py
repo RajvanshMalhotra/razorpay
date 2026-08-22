@@ -26,13 +26,29 @@ class CreditRail:
         correlation_id: str,
         causation_id: str | None = None,
     ) -> Settlement:
+        settlement_id = new_id("stl")
+
         balance = fold(self._log.read_all()).credit_balances.get(from_actor_id, 0)
         if balance < amount:
-            raise InsufficientCredits(
-                f"{from_actor_id} holds {balance} points, needs {amount}"
+            reason = f"{from_actor_id} holds {balance} points, needs {amount}"
+            # Log before raising. The gate has already written ALLOW by the time
+            # we get here, and an ALLOW that resolves to nothing is exactly the
+            # hole a reconciler cannot see through. Raising is still correct —
+            # the caller must not continue — but the outcome is recorded first.
+            self._log.append(
+                from_actor_id,
+                ev.SETTLEMENT_FAILED,
+                {
+                    "settlement_id": settlement_id,
+                    "match_id": match_id,
+                    "currency": str(Currency.CREDITS),
+                    "amount": amount,
+                    "reason": reason,
+                },
+                correlation_id=correlation_id,
+                causation_id=causation_id,
             )
-
-        settlement_id = new_id("stl")
+            raise InsufficientCredits(reason)
 
         initiated = self._log.append(
             from_actor_id,

@@ -116,10 +116,23 @@ def fold(events: Iterable[Event]) -> ExchangeState:
             )
 
         elif event.type == ev.SETTLEMENT_FAILED:
-            existing = settlements[p["settlement_id"]]
-            settlements[p["settlement_id"]] = replace(
-                existing, status=SettlementStatus.FAILED
-            )
+            existing = settlements.get(p["settlement_id"])
+            if existing is None:
+                # A settlement can fail before it is ever initiated — the INR
+                # rail cannot create the Razorpay order, the CREDITS rail finds
+                # the balance short. The failure payload is self-describing so
+                # the outcome still projects rather than crashing the fold.
+                settlements[p["settlement_id"]] = Settlement(
+                    settlement_id=p["settlement_id"],
+                    match_id=p["match_id"],
+                    currency=Currency(p["currency"]),
+                    amount=p["amount"],
+                    status=SettlementStatus.FAILED,
+                )
+            else:
+                settlements[p["settlement_id"]] = replace(
+                    existing, status=SettlementStatus.FAILED
+                )
 
     return ExchangeState(
         actors=actors,

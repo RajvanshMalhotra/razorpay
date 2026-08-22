@@ -94,6 +94,34 @@ def test_refused_credit_transfer_writes_no_transfer_event(log):
     assert CREDITS_TRANSFERRED not in types
 
 
+def test_refused_credit_transfer_records_the_failure_before_raising(log):
+    """The gate has already written ALLOW. An ALLOW that resolves to nothing is
+    the hole a reconciler cannot see through, so the outcome must be logged."""
+    rail = CreditRail(log)
+
+    with pytest.raises(InsufficientCredits):
+        rail.settle("mch_1", "m_a", "m_b", 1200, correlation_id="c1")
+
+    failed = [e for e in log.read_by_correlation("c1") if e.type == SETTLEMENT_FAILED]
+    assert len(failed) == 1
+    assert failed[0].payload["match_id"] == "mch_1"
+    assert failed[0].payload["reason"]
+    assert "1200" in failed[0].payload["reason"]
+
+
+def test_a_refused_credit_settlement_folds_to_a_failed_record(log):
+    """A failure before initiation must still project, not crash the fold."""
+    rail = CreditRail(log)
+
+    with pytest.raises(InsufficientCredits):
+        rail.settle("mch_1", "m_a", "m_b", 1200, correlation_id="c1")
+
+    settlements = list(fold(log.read_all()).settlements.values())
+    assert len(settlements) == 1
+    assert settlements[0].status == SettlementStatus.FAILED
+    assert settlements[0].amount == 1200
+
+
 def test_credit_settlement_events_carry_the_correlation_id(log):
     log.append("house", CREDITS_TRANSFERRED,
                {"from_actor_id": "house", "to_actor_id": "m_a", "amount": 5000},
@@ -151,6 +179,9 @@ def test_razorpay_failure_to_create_an_order_is_logged_as_failed(log):
 
     assert settlement.status == SettlementStatus.FAILED
     assert SETTLEMENT_FAILED in [e.type for e in log.read_by_correlation("c1")]
+    assert fold(log.read_all()).settlements[
+        settlement.settlement_id
+    ].status == SettlementStatus.FAILED
 
 
 def test_an_uncaptured_payment_does_not_complete_the_settlement(log):

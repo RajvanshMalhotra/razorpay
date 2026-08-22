@@ -57,6 +57,8 @@ class RazorpayRail:
                 {
                     "settlement_id": settlement_id,
                     "match_id": match_id,
+                    "currency": str(Currency.INR),
+                    "amount": amount,
                     "reason": f"{type(exc).__name__}: {exc}",
                 },
                 correlation_id=correlation_id,
