@@ -435,6 +435,157 @@ found a bug the fix wave itself was about to trigger.
 
 ---
 
+## 4A. Performance and memory design — decided, mostly not built
+
+A design discussion that produced more decisions than code. Recorded here so none
+of it is lost, with an honest status on each. **Nothing in this section is
+implemented yet.**
+
+### The measurement that framed everything
+
+The system rebuilds all state from the log on every read. Measured:
+
+```
+events in log  |  one rebuild
+        500    |     2 ms      (x3 per trade =   6 ms)
+      2,000    |     8 ms      (x3 per trade =  24 ms)
+      8,000    |    26 ms      (x3 per trade =  78 ms)
+     20,000    |    68 ms      (x3 per trade = 204 ms)
+```
+
+Three reads happen per trade (two on the rupee path): *how much has this buyer
+spent*, *which order am I filling*, and *what is this buyer's points balance*.
+
+**But a demo run is ~500 trades ≈ 2,500 events, so bookkeeping is ~25ms per trade
+against 10–30 SECONDS of model calls — roughly 0.2% of runtime.** Optimising it
+would save about four seconds across the entire run.
+
+That number is the reason most of what follows is designed and deliberately not
+built. **Trigger to revisit: ~20,000+ events, or bookkeeping exceeding ~5% of run
+time.** Measure before building.
+
+### Adopted — build in Plan 2
+
+**The sticky note (incremental state + event offset).** Keep the current answers in
+memory alongside the log line they are correct up to. Nothing new since? Answer
+instantly. Five new events? Apply five. Never re-read from line 1. Cost becomes
+proportional to what is new, not to total history.
+
+Stores exactly three things, because these are what an agent needs to trade and
+none of them may ever be stale: **points balance**, **spend against cap**, and
+**units remaining per order**.
+
+*The catch:* the answer now lives in two places, and a silently wrong balance is a
+wrong money decision. The accountant is the fix — it periodically rebuilds from the
+log, compares, and freezes on mismatch. Same mechanism as the Razorpay
+reconciliation, which makes the accountant genuinely load-bearing rather than a
+demo beat.
+
+**Tiered memory as a real tree.** Not three boxes on a diagram — an actual tree
+where each node carries its own freshness rule:
+
+```
+merchant_a/
+├── balance, spend_headroom, orders/{id}/qty    ← exact, updated on write
+└── counterparties/merchant_b/
+    ├── reliability, haggles_hard               ← TTL, minutes
+    └── history/lessons                         ← deep, rebuilt rarely
+```
+
+Three things this buys that a flat cache does not: freshness is enforced by the
+node rather than remembered by the author; "descend only as far as you need"
+becomes structural, so a routine trade reads one value and stops; and invalidation
+cascades — one settled deal marks that counterparty's whole subtree stale.
+
+Those leaves *are* the Subconscious's consolidated memory.
+
+**TTL, but only above the money line.** A TTL says "probably still true for N
+seconds," which is fatal for balances: agent has 1000 points, bids 800, wins, and
+two seconds later the cache still says 1000 — a double-spend. Exact where it is
+money, TTL where it is judgment. Using one mechanism for both is what makes either
+one wrong.
+
+**Context deltas with checkpoints.** Do not copy whole contexts between executions;
+store the previous state plus a delta. **Deltas are additive-only on `facts` and
+`decisions`** — the only field a delta may remove from is `unresolved_questions`,
+because there removal *is* the semantics. A checkpoint that can drop a fact quietly
+rewrites history.
+
+Checkpoint on **episode boundaries** (a completed trade), not a fixed interval — it
+is semantically meaningful, self-tuning, and is exactly what the Subconscious wants
+to consolidate.
+
+**Sub-agents narrow, they never merge.** Each of the three emits a structured
+summary that becomes a *fact* in the orchestrator's delta. Narrowing is safe in a
+way merging is not: you are choosing what to promote, not reconciling two versions
+of the same thing. This sidesteps the "what is safe to merge" problem rather than
+solving it, and it is what the isolated context windows were always for.
+
+### Adopted — deferred until the trigger
+
+**One min-heap per asset for the order book.** Better than the price-ordered tree
+originally proposed, because the real query is *per asset, cheapest first* —
+`find_candidates` groups by `asset_ref` and prices across different assets are not
+comparable (₹18 for cardboard and ₹18 for serum have no shared order). Gives the
+cheapest ask instantly, uses Python's built-in `heapq`, and has no rebalancing code
+to get wrong.
+
+*The catch:* an order that expires mid-heap cannot be plucked out — mark it dead and
+discard it when it surfaces, or the book slowly fills with ghosts.
+
+Currently a plain dict of a few dozen orders, which is fine.
+
+### Rejected, and why
+
+**Morris traversal.** Retired twice over. The tiered memory is not a binary search
+tree, and heaps are not search trees either — an in-order walk of a heap is
+meaningless. It *would* have been right for a price-ordered BST walked repeatedly by
+the replay UI; that BST was rejected for a better reason. Worth remembering if the
+book ever needs global price-ordered iteration.
+
+**A price-ordered balanced BST.** Sorts a mixture with no natural order, and
+hand-written rebalancing eats days for a memory saving of about twelve pointers at
+our scale.
+
+**A hand-built B+ tree index.** SQLite's indexes already *are* B-trees. Building one
+would be re-implementing the database we are already using. Three `CREATE INDEX`
+statements get the same thing free.
+
+**Wall-clock cap on a single negotiation.** Produces unexplainable behaviour in the
+audit trail — *"stopped after 60 seconds"* is not a reason a broker would ever give —
+and makes runs depend on API latency rather than on agents. Time is the right bound
+one level up: cap the whole market run.
+
+### Negotiation: when an agent walks away
+
+A hard round cap was the original design. It is wrong, and the constant currently in
+`config.py` (`MAX_NEGOTIATION_ROUNDS = 4`) is an arbitrary number nothing consumes —
+the only reference is a test asserting it equals what was typed.
+
+Replaced by four layers:
+
+| Layer | Stops it because | Appears as |
+|---|---|---|
+| **Reasoning** | Gap is not worth it, a better seller exists, the Subconscious says hold | The product. This is what is on screen. |
+| **Progress** | The *gap between the two sides* has not moved in two exchanges | *"Neither side moved. Ending."* |
+| **Backstop** | Token budget for this negotiation exhausted | Should never fire. If it does, it is a bug. |
+| **Run** | Wall clock on the whole market run | Never visible inside a trade. |
+
+Measure movement of the **gap**, not of each offer — otherwise oscillation
+(₹19 → ₹20 → ₹19) reads as large movement and zero progress.
+
+The backstop is a **token budget**, not a round count: tokens are the actual cost
+being bounded, and the number lands in the log so runs stay reproducible.
+
+Log the decision as an event carrying the agent's stated reason. That is both the
+signal — far richer than a counter — and a good few seconds of video.
+
+Also unresolved and needed before Plan 2: **the spec never defines whether a "round"
+is one message or one exchange.** Twice the cost and twice the video length depending
+on the answer.
+
+---
+
 ## 5. Standing risks
 
 | Risk | Status |
