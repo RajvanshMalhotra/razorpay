@@ -586,6 +586,74 @@ on the answer.
 
 ---
 
+## 4B. The memory architecture became Plan 2
+
+The design in §4A stopped being a parked idea and became the spec for Plan 2:
+`docs/superpowers/specs/2026-08-23-broker-and-memory-design.md`. That document holds
+the design; this section holds the decisions behind it.
+
+**Why this one earns its place when the order-book work did not.** The heap-versus-tree
+argument was optimising 0.2% of runtime. Context architecture is not an optimisation of
+the same kind — **context size is token cost**, and tokens are simultaneously the money
+budget and the wall clock. Smaller, better-targeted context makes every model call
+cheaper and faster. It hits the 99.8%, not the 0.2%. That distinction is the whole
+reason one got built into a spec and the other got parked.
+
+### Four changes made to the proposed architecture
+
+**Checkpoints land on episode boundaries, not a fixed interval.** A completed trade is
+already a meaningful boundary, it self-tunes with market activity, and it makes a
+checkpoint mean *everything the broker knew when that deal closed* — which is precisely
+what the Subconscious consolidates. Consolidation and checkpointing collapse into one
+moment instead of two mechanisms that have to be kept in step.
+
+**The "what is safe to merge" problem is dissolved, not solved.** Sub-agents never merge
+contexts. Each promotes a structured summary that becomes a *fact* in the parent's
+delta. Narrowing is safe in a way merging is not: you are choosing what to promote, not
+reconciling two versions of the same thing. Executions branch downward and never rejoin,
+so there is no diamond and no reconciliation. The isolated context windows were always
+for this.
+
+**Semantic compression gets a rule rather than good intentions.** Deltas are
+additive-only on `facts` and `decisions`. The only field a delta may remove from is
+`unresolved_questions`, because there removal *is* the semantics. A checkpoint that can
+drop a fact quietly rewrites history — and worse, the agent has no way to know something
+is missing.
+
+**No hand-built B+ tree.** Correctly identified as an index rather than core
+representation — and SQLite's indexes already are B-trees. Three `CREATE INDEX`
+statements get point lookup, range query and insertion for free. Building one would be
+re-implementing the database already in use.
+
+### Scoping decisions, made in advance rather than under pressure
+
+**If day 6 slips, the incremental state projection is dropped first.** It is worth ~0.2%
+of runtime today and `fold()` already works correctly. **The Subconscious is not
+droppable** — it is the differentiator, and a broker without memory is a chatbot with a
+payment API.
+
+Deciding this before the day arrives is deliberate: cuts made at 11pm on day 6 tend to
+drop whatever is hardest rather than whatever matters least.
+
+**A negotiation round is one message, not one exchange.** Plan 1's spec never said, and
+the answer doubles or halves both token cost and screen time. Settled now because it
+would otherwise be discovered as an argument mid-build.
+
+**`Match` gains a `qty` field.** Without it a partial fill is unrepresentable, which is
+one of the two defects carried out of Plan 1.
+
+### Still open, with recommendations
+
+1. **Which model per sub-agent?** Recommend small and fast for Trader/Scout/Diplomat,
+   stronger for the orchestrator and the Subconscious where the judgment actually lives.
+2. **How many brokers in the first run?** Recommend 3 to keep negotiation traces
+   readable while debugging, then 6–8 for the recorded run.
+3. **Does the Subconscious consolidate with a model call or a rule?** Recommend a model
+   call — the entire value is distilling *"they haggle but always fold on delivery"*,
+   which no rule expresses.
+
+---
+
 ## 5. Standing risks
 
 | Risk | Status |
