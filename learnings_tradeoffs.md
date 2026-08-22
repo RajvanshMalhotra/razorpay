@@ -234,7 +234,136 @@ in. Tests that pass only in a hand-arranged environment are not passing.
 
 ---
 
-## 4. Standing risks
+## 4. Bug log
+
+Every defect found during the build, with how it was caught. The pattern worth
+noticing: **three of the four were in the implementation plan's own reference code**,
+and every one of those passed the tests written for it — because the tests came from
+the same document as the code. None were found by the test suite. All were found by
+running the real thing, or by review.
+
+| # | Bug | Where | Found by | Status |
+|---|---|---|---|---|
+| 1 | Library code read the filesystem, so tests depended on environment | `config.py` | Real `.env` appearing mid-run | Fixed |
+| 2 | Abstaining keyword search outvoted the embeddings | `retrieval.py` | Exercising the real embedder by hand | Fixed |
+| 3 | Competing offers on one listing silently discarded | `matching.py` | Code review | Fixed |
+| 4 | Payment-link failure recorded no reason | `rails/inr.py` | Code review | Fixing |
+
+---
+
+### BUG-1 — `load_dotenv()` inside `Config.from_env()`
+
+**Symptom.** The test asserting "a missing Razorpay key raises `ValueError`" passed on a
+clean machine and failed the moment a real `.env` existed.
+
+**Root cause.** `from_env()` called `load_dotenv()` internally. The test deleted the
+environment variable; `load_dotenv()` then helpfully refilled it from disk, so no error
+was raised. The function's behaviour depended on a file that may or may not be there.
+
+**Fix.** Loading `.env` moved out of the library and into the two scripts that are its
+only real callers. `from_env()` now reads the environment and nothing else.
+
+**How it was found.** Not by the suite — by adding real credentials and watching a
+previously-green test go red.
+
+**The wider lesson.** The first implementer got its tests passing by moving `.env` out
+of the way. That is worth naming: a suite that only passes in a hand-arranged
+environment is not passing. The fix was to change the code, not the environment.
+
+---
+
+### BUG-2 — BM25's abstention was outvoting the embeddings
+
+**Symptom.** Searching *"something for my skin"* returned a corrugated-boxes listing
+above a vitamin C serum.
+
+**Root cause.** BM25 scores by shared words. `"skin"` and `"skincare"` are different
+tokens, so every listing scored `0.0` — BM25 correctly saying *"I have no opinion."*
+The code then sorted by score and passed the result on. With every score tied at zero,
+Python's stable sort left the listings in insertion order, so the shrug came out looking
+exactly like a confident ranking. Reciprocal rank fusion reads only *positions*, never
+the scores behind them, so it counted that shrug as a firm vote — and it beat the
+embeddings, which actually knew the answer.
+
+**Fix.** Drop zero-scoring documents before building the ranking. A retriever with
+nothing to say now contributes an empty list instead of a fake ranking.
+
+```
+'something for my skin'            before: ['ast_boxes','ast_serum']   after: ['ast_serum','ast_bubble']
+'eco friendly packaging'           before: ['ast_boxes','ast_mailers'] after: ['ast_mailers','ast_boxes']
+'protect fragile items in transit'                                     after: ['ast_bubble', ...]
+```
+
+That last query shares no word at all with *"bubble wrap rolls plastic protective"* —
+it resolves purely on meaning. That is the paraphrase capability descriptive bids exist
+for, and it only works with the fix in.
+
+**How it was found.** By calling the production embedder by hand. Every test injects a
+fake embedder, so the entire suite was blind to it.
+
+**Why it mattered.** Descriptive bids are the core feature — the Trader hunting supply
+and the human storefront both route through this one function. Unfixed, any request
+phrased in words absent from the catalogue would rank by insertion order while looking
+entirely plausible. That is the failure mode that survives to demo day.
+
+**A related scare, investigated and dismissed.** BM25's IDF can go negative for terms
+appearing in most of a corpus, which would make a `> 0` filter drop genuine matches.
+Tested rather than argued about: `rank_bm25` floors negative IDF at `epsilon = 0.25`, so
+a term present in *every* document still scores 0.127. Matching documents always score
+above zero, non-matching exactly zero. The filter is precisely correct.
+
+---
+
+### BUG-3 — competing offers on one listing were silently discarded
+
+**Symptom.** None visible. That is what made it dangerous.
+
+**Root cause.** The matcher collected eligible offers into a dictionary keyed by *which
+asset* they point at. Two offers on the same asset meant the dictionary kept only the
+last — selected purely by list position, before relevance or reputation was ever
+considered.
+
+**Fix.** Group offers per asset instead of overwriting. **And** add a price tie-breaker:
+two offers on one asset necessarily share a relevance score, so without one the winner
+would fall to reputation, and where that was equal too, back to insertion order. A buyer
+handed the pricier of two identical offers is a worse bug than the original.
+
+**How it was found.** Code review, after being explicitly asked to judge what happens
+when two offers reference the same asset.
+
+**Why it mattered.** An asset belongs to one merchant, so the realistic trigger is one
+merchant posting volume tiers on its own listing — 500 @ ₹19.40, 1000 @ ₹18.00 — or
+partial fills. That is ordinary order-book depth, and the broker agents in the next plan
+generate it immediately. The market would have quietly ignored its own depth and
+surfaced much later as *"the market behaves oddly and I don't know why."*
+
+**Verified after fixing:** three tiers posted dearest-first (2100, 1940, 1800) all
+survive and return cheapest-first.
+
+---
+
+### BUG-4 — a swallowed payment-link failure left no reason
+
+**Symptom.** A settlement with `payment_link_url: None` and nothing anywhere explaining
+why.
+
+**Root cause.** The `except` around payment-link creation discarded the exception. An
+operator cannot tell "the link was never attempted" from "the link service returned a
+500" — unlike the order-creation failure path, which records a `reason`.
+
+**Fix.** Record `payment_link_error` in the event payload alongside the null URL.
+
+**How it was found.** Code review.
+
+**Why it mattered enough to fix rather than defer.** The audit trail is this project's
+actual deliverable. A trail that records an absence without recording its cause is a
+weaker artifact. Concretely, the accountant in the next plan reconciles against these
+payloads, and a human chasing an unpayable settlement needs to know whether to retry the
+link or investigate the account.
+
+---
+
+## 5. Standing risks
 
 | Risk | Status |
 |---|---|
