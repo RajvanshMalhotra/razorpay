@@ -1,3 +1,5 @@
+from dataclasses import replace
+
 import pytest
 
 from exchange.eventlog import EventLog
@@ -170,12 +172,93 @@ def test_every_settlement_is_preceded_by_an_allow_decision(exchange):
         PolicyContext(ActorStatus.ACTIVE, 0, 0.9), correlation_id=CORR,
     )
 
-    events = exchange.log.read_all()
+    _assert_every_settlement_traces_to_its_own_allow(exchange.log.read_all())
+
+
+def _assert_every_settlement_traces_to_its_own_allow(events):
+    """Correlate each settlement to the decision that gated *it*.
+
+    Taking the most recent POLICY_DECIDED anywhere in the log is not the
+    invariant: with two interleaved matches a DENY on A followed by an ALLOW on
+    B would let a settlement for A pass the check. The link is action_ref.
+    """
+    checked = 0
     for i, event in enumerate(events):
-        if event.type == SETTLEMENT_INITIATED:
-            preceding = [e for e in events[:i] if e.type == POLICY_DECIDED]
-            assert preceding, "settlement with no preceding decision"
-            assert preceding[-1].payload["verdict"] == "ALLOW"
+        if event.type != SETTLEMENT_INITIATED:
+            continue
+        match_id = event.payload["match_id"]
+        gating = [
+            (j, e)
+            for j, e in enumerate(events)
+            if e.type == POLICY_DECIDED and e.payload["action_ref"] == match_id
+        ]
+        assert gating, f"settlement for {match_id} has no decision referencing it"
+        j, decision = gating[-1]
+        assert j < i, f"decision for {match_id} does not precede its settlement"
+        assert decision.payload["verdict"] == "ALLOW"
+        checked += 1
+    return checked
+
+
+def test_a_deny_on_another_match_cannot_satisfy_the_allow_invariant(exchange):
+    """The weakness the previous version of the check missed.
+
+    A DENY on match A, then an ALLOW on match B, then a settlement for B. The
+    uncorrelated check passed this by reading the latest decision; the
+    correlated one has to find B's own ALLOW, and must not be fooled into
+    treating A as settled.
+    """
+    asks = _seed_market(exchange)
+    bid = Order(
+        order_id="ord_bid", actor_id="m_buyer", side=Side.BID, asset_ref=None,
+        asset_query={"text": "biodegradable compostable mailers"}, qty=500,
+        limit_price=2200, currency=Currency.INR,
+        expires_at="2026-08-29T00:00:00+00:00", policy_snapshot={},
+    )
+    matches = find_candidates(bid, asks, exchange.state().assets, exchange.index, top_k=2)
+    match_a, match_b = matches[0], matches[1]
+
+    frozen = PolicyContext(ActorStatus.FROZEN, 0, 0.9)
+    denied, no_settlement = exchange.execute_match(
+        match_a, "m_buyer", "m_unknown", frozen, correlation_id=CORR
+    )
+    assert denied.verdict == Verdict.DENY
+    assert no_settlement is None
+
+    allowed, settlement = exchange.execute_match(
+        match_b, "m_buyer", "m_known",
+        PolicyContext(ActorStatus.ACTIVE, 0, 0.9), correlation_id=CORR,
+    )
+    assert allowed.verdict == Verdict.ALLOW
+    assert settlement is not None
+
+    events = exchange.log.read_all()
+    assert _assert_every_settlement_traces_to_its_own_allow(events) == 1
+
+    # And confirm the check is genuinely correlating rather than passing vacuously.
+    denials = [
+        e for e in events
+        if e.type == POLICY_DECIDED
+        and e.payload["action_ref"] == match_a.match_id
+        and e.payload["verdict"] == "DENY"
+    ]
+    assert len(denials) == 1
+    settled_matches = {
+        e.payload["match_id"] for e in events if e.type == SETTLEMENT_INITIATED
+    }
+    assert match_a.match_id not in settled_matches
+    assert settled_matches == {match_b.match_id}
+
+    # The discriminating case. Repoint the settlement at the DENIED match A.
+    # The uncorrelated check read the latest decision — still ALLOW(B) — and
+    # passed. The correlated one has to find A's own verdict, and it is DENY.
+    tampered = [
+        replace(e, payload={**e.payload, "match_id": match_a.match_id})
+        if e.type == SETTLEMENT_INITIATED else e
+        for e in events
+    ]
+    with pytest.raises(AssertionError):
+        _assert_every_settlement_traces_to_its_own_allow(tampered)
 
 
 def test_state_folded_from_the_log_matches_live_state(exchange):
