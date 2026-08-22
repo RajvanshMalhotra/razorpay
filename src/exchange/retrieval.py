@@ -77,21 +77,26 @@ class HybridIndex:
             return []
 
         sparse_scores = self._bm25.get_scores(query.lower().split())
-        sparse_ranking = [
-            self._doc_ids[i]
-            for i in sorted(
-                range(len(self._doc_ids)), key=lambda i: sparse_scores[i], reverse=True
-            )
-            if sparse_scores[i] > 0
-        ]
+        sparse_ranking = self._rank(sparse_scores, positive_only=True)
 
         query_vec = self._embed([query])[0]
         dense_scores = [_cosine(query_vec, v) for v in self._vectors]
-        dense_ranking = [
-            self._doc_ids[i]
-            for i in sorted(
-                range(len(self._doc_ids)), key=lambda i: dense_scores[i], reverse=True
-            )
-        ]
+        dense_ranking = self._rank(dense_scores)
 
         return rrf_fuse([sparse_ranking, dense_ranking])[:top_k]
+
+    def _rank(self, scores, positive_only: bool = False) -> list[str]:
+        """Order documents by score, breaking ties on document id.
+
+        The tie-break is the point. A plain `sorted` is stable, so equal scores
+        keep insertion order — and then the sequence assets happened to be
+        listed in silently decides the ranking, which is not relevance. Ties
+        must resolve on something intrinsic to the document instead.
+        """
+        pairs = [
+            (self._doc_ids[i], scores[i])
+            for i in range(len(self._doc_ids))
+            if not positive_only or scores[i] > 0
+        ]
+        pairs.sort(key=lambda pair: (-pair[1], pair[0]))
+        return [doc_id for doc_id, _ in pairs]

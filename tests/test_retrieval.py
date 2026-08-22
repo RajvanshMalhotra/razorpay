@@ -102,6 +102,23 @@ def test_searching_an_empty_index_returns_nothing():
     assert index.search("anything") == []
 
 
+def test_search_is_invariant_to_document_insertion_order():
+    """Ranking must depend on relevance, not on the order documents were added."""
+
+    def flat_embedder(texts):
+        return [[1.0, 0.0] for _ in texts]
+
+    forward = HybridIndex(embed_fn=flat_embedder)
+    forward.index(DOCS)
+
+    backward = HybridIndex(embed_fn=flat_embedder)
+    backward.index(list(reversed(DOCS)))
+
+    assert [d for d, _ in forward.search("kraft", top_k=4)] == [
+        d for d, _ in backward.search("kraft", top_k=4)
+    ]
+
+
 def test_zero_bm25_query_does_not_let_index_order_pollute_the_ranking():
     """No document shares a term with 'skin', so every BM25 score is 0 and its
     ranking collapses to insertion order. That must not outvote the dense path."""
