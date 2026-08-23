@@ -10,6 +10,7 @@ from exchange.rails.credits import CreditRail
 from exchange.rails.inr import RazorpayRail
 from exchange.retrieval import HybridIndex
 from exchange.service import Exchange
+from exchange.llm.base import LLMResponse
 from exchange.llm.scripted import ScriptedProvider
 from tests.test_rails import FakeRazorpay
 from tests.test_retrieval import fake_embedder
@@ -268,3 +269,29 @@ def test_a_stranger_is_ranked_optimistically_not_neutrally(exchange):
 
     assert matches
     assert f"standing {UNKNOWN_STANDING:.2f}" in matches[0].rationale
+
+
+def test_a_consolidation_failure_does_not_lose_a_paid_trade(exchange):
+    """Consolidation is a model call and it runs after the money has moved.
+    Losing the lesson is recoverable; losing the settlement result is not."""
+
+    class ExplodingProvider:
+        def __init__(self):
+            self.calls = 0
+
+        def complete(self, messages, *, system=None, max_tokens=1024,
+                     reasoning_effort=None):
+            self.calls += 1
+            if self.calls == 1:  # the Trader's find_supply call
+                return LLMResponse("ok", 1, 1, "boom")
+            raise RuntimeError("provider timed out")
+
+    broker = Broker("m_buyer", exchange, ExplodingProvider())
+    matches = broker.find_supply("biodegradable compostable mailers", 200, 2200, "c1")
+
+    decision, settlement = broker.close(matches[0], "m_seller", "c1")
+
+    assert settlement is not None, "the trade was paid for; close() must return it"
+    assert settlement.status == SettlementStatus.COMPLETED
+    assert broker.graph.confidence("m_seller") > 0.0, "the deal itself was recorded"
+    assert broker.subconscious.recall("m_seller") == (), "no lesson survived, as expected"

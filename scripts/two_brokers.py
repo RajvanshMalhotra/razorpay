@@ -25,7 +25,12 @@ from exchange.rails.credits import CreditRail
 from exchange.rails.inr import RazorpayRail
 from exchange.retrieval import HybridIndex, default_embedder
 from exchange.service import Exchange
+from dataclasses import replace
+
 from exchange.ids import new_id
+
+
+TRIAL_QTY = 200
 
 
 def main() -> int:
@@ -77,6 +82,39 @@ def main() -> int:
         print(f"  {offer.actor_id:>10}: {offer.price:>6}  {offer.message.strip()[:70]}")
     print(f"\n  outcome: {outcome.ended_reason}"
           + (f" at {outcome.final_price}" if outcome.agreed else "") + "\n")
+
+    agreed_price = outcome.final_price if outcome.agreed else matches[0].clearing_price
+
+    # The gate first, deliberately, on the full lot. m_seller is a stranger — no
+    # deals, confidence 0.0 — so the trial-size bound should refuse this and say
+    # so. That refusal is the point: reputation never excludes a counterparty, it
+    # only caps what you risk on one you do not know yet.
+    print("=== THE GATE, ON THE FULL LOT ===")
+    decision, settlement = buyer.close(
+        matches[0], "m_seller", correlation_id, agreed_price=agreed_price,
+    )
+    print(f"  {decision.verdict}: {decision.reason}")
+    print(f"  exposure evaluated: {decision.limits_evaluated['amount']}"
+          f"  against trial cap {decision.limits_evaluated['unknown_counterparty_cap']}\n")
+
+    # Now the same trade at a size a first dealing can carry.
+    if settlement is None:
+        small = replace(matches[0], qty=TRIAL_QTY)
+        print(f"=== RETRY AT {TRIAL_QTY} UNITS ===")
+        decision, settlement = buyer.close(
+            small, "m_seller", correlation_id, agreed_price=agreed_price,
+        )
+        print(f"  {decision.verdict}: {decision.reason}")
+
+    if settlement is not None:
+        print(f"  settlement: {settlement.status}"
+              f"  razorpay_order_id={settlement.razorpay_order_id}")
+        print(f"  relationship: confidence now "
+              f"{buyer.graph.confidence('m_seller'):.2f}")
+        lessons = buyer.subconscious.recall("m_seller")
+        if lessons:
+            print(f"  lesson filed: {lessons[-1]}")
+    print()
 
     print("=== AUDIT TRAIL ===")
     for event in log.read_by_correlation(correlation_id):

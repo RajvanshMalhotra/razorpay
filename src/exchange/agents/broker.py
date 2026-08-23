@@ -7,6 +7,7 @@ would silently break the thing this project is judged on.
 """
 from __future__ import annotations
 
+import logging
 from dataclasses import replace
 
 from exchange.agents.context import ContextDelta
@@ -28,6 +29,8 @@ from exchange.models import (
     Side,
 )
 from exchange.policy import PolicyContext
+
+_log = logging.getLogger(__name__)
 
 
 class Broker:
@@ -170,9 +173,25 @@ class Broker:
             # not known at settlement, so reliability lessons wait for a delivery
             # signal that does not exist yet. apply_lesson ignores anything that
             # is not a reliability lesson, so feeding it every lesson is safe.
-            episode = self.tree.materialise(self._trader.node_id)
-            lesson = self.subconscious.consolidate(episode, seller_id, category="trade")
-            AgentJournal(self._exchange.log, self.actor_id, correlation_id) \
-                .lesson_consolidated(lesson)
-            self.graph.apply_lesson(lesson)
+            #
+            # This is a model round-trip, and it runs AFTER the money has moved. A
+            # provider timeout must not propagate out of close(): the caller would
+            # never learn the outcome of a trade that has already been paid for —
+            # the same "settled but not recorded" shape the COMPLETED guard above
+            # exists to prevent, arriving through a different door. The settlement
+            # is already durable in the log; a lost lesson is recoverable, a lost
+            # settlement result is not.
+            try:
+                episode = self.tree.materialise(self._trader.node_id)
+                lesson = self.subconscious.consolidate(
+                    episode, seller_id, category="trade"
+                )
+                AgentJournal(self._exchange.log, self.actor_id, correlation_id) \
+                    .lesson_consolidated(lesson)
+                self.graph.apply_lesson(lesson)
+            except Exception:  # noqa: BLE001 - a lost lesson must not lose a paid trade
+                _log.exception(
+                    "consolidation failed after settlement with %s; the trade stands",
+                    seller_id,
+                )
         return decision, settlement
