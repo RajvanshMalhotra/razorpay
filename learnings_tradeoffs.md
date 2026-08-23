@@ -435,6 +435,92 @@ found a bug the fix wave itself was about to trigger.
 
 ---
 
+### BUG-13 to BUG-15 — from Plan 2 (the broker and its memory)
+
+The pattern from §2.1 held and then sharpened. **All three were in work I had specified
+myself**, and the third exposed a flaw in how I verify.
+
+| # | Bug | Severity | Found by | Status |
+|---|---|---|---|---|
+| 13 | A reasoning model returned empty text under the token cap | Important | Exercising the real provider by hand | Fixed |
+| 14 | Stall detection missed oscillation | Important | The implementer, disclosing a deviation | Fixed |
+| 15 | An unpriced reply let a broker agree with itself | **Critical** | Code review, after my own check passed it | Fixed |
+
+**BUG-13 — the local model returned nothing, expensively.** I chose `qwen3:4b` as the
+default local model because it was already on disk and I judged it best at structured
+output. It is a *reasoning* model: it spends ~700 tokens thinking before emitting anything
+visible.
+
+```
+model              max_tokens   output   text
+qwen3:4b                  256      256   ''
+qwen3:4b                 1200      810   'PRICE: 2000 ...'
+llama3.2:latest           256        6   'PRICE: 1900'
+```
+
+Negotiation parses a price from a reply capped at 256 tokens. On qwen3 every round would
+return an empty string, no price would parse, the turn would be skipped, and every
+negotiation would degenerate silently while the token budget drained at full rate. Nothing
+in the suite could catch it — every test injects a scripted provider.
+
+Fixed by switching the default to `llama3.2:latest`, with the reason written into the
+source so nobody re-picks a reasoning model for that slot. **My justification for the
+original choice was exactly backwards:** I picked it for structured output, and its
+thinking mode is what destroyed structured output under a cap.
+
+**BUG-14 — stall detection was blind to the thing it existed to catch.** The function
+measures whether two negotiating sides have stopped closing. Oscillation — moving a lot
+each round while the gap never shrinks — is the failure it exists for, and its own
+docstring says so. My implementation compared each offer to the immediately preceding one,
+which for alternating turns compares a buyer's offer to the seller's *previous* offer,
+producing zeros that read as large movement.
+
+```
+oscillation  1900 / 2000 / 1900 ...
+  my version    pairs [100, 0, 100, 0, 100]  -> not stalled   MISSED
+  fixed version pairs [100, 100, 100]        -> stalled       correct
+```
+
+Found because the implementer **reported its deviation instead of quietly conforming** to
+a brief it could see was wrong. That behaviour is worth more than the fix.
+
+**BUG-15 — an unpriced reply fabricated a deal.** Critical, and the most instructive.
+
+```
+buyer:  "PRICE: 1900 our offer"
+seller: "Tell me more about the volumes first."     <- no price
+buyer:  "PRICE: 1900 again"
+
+result: agreed=True, final_price=1900
+offers: [(buyer, 1900), (buyer, 1900)]
+```
+
+The buyer agreed with itself. The seller never named a price, and the system reports a
+settled deal — which then passes the policy gate and moves money.
+
+The cause is a desync: the turn flips on every iteration, but an offer is only *recorded*
+when a price parses. One unpriced reply hands the turn back to whoever spoke two turns ago,
+so two same-actor offers land adjacently, and an equality check between them reads as
+agreement.
+
+**The method lesson, which is the real content of this bug.** Before accepting BUG-14's
+fix I asked the right question — "does the loop guarantee offers alternate?" — checked that
+the turn variable switches on every path, saw that it does, and was satisfied. But
+alternation does not live in the turn variable. It lives in whether an offer is *appended*,
+which happens conditionally. **I verified an invariant adjacent to the one that mattered
+and felt exactly as confident as if I had verified the right one.**
+
+That is a different failure from BUG-2 and BUG-13. Those were *unverified* paths. This one
+was verified, carefully, at the wrong place. The guard against it is not more diligence — it
+is a second reader who does not know which invariant you chose to check.
+
+Fixed by requiring the two compared offers to come from *different* actors, restoring the
+actor-change guard in stall detection, and rewriting the oscillation test: its original form
+had the two sides crossing, which under the new agreement rule is a deal, so the case it
+modelled could never reach the stall check at all.
+
+---
+
 ## 4A. Performance and memory design — decided, mostly not built
 
 A design discussion that produced more decisions than code. Recorded here so none
