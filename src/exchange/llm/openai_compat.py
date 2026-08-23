@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import os
 
-from openai import OpenAI
+from openai import BadRequestError, OpenAI
 
 from exchange.llm.base import LLMMessage, LLMResponse
 
@@ -50,12 +50,25 @@ class OpenAICompatProvider:
         if reasoning_effort:
             extra["reasoning_effort"] = reasoning_effort
 
-        completion = self._client.chat.completions.create(
-            model=self._model,
-            messages=payload,
-            max_tokens=max_tokens,
-            **extra,
-        )
+        try:
+            completion = self._client.chat.completions.create(
+                model=self._model,
+                messages=payload,
+                max_tokens=max_tokens,
+                **extra,
+            )
+        except BadRequestError as exc:
+            # Some local models (e.g. llama3.2 via Ollama) reject the
+            # reasoning_effort param outright rather than ignoring it —
+            # retry once without it rather than failing the whole call.
+            if extra and "thinking" in str(exc).lower():
+                completion = self._client.chat.completions.create(
+                    model=self._model,
+                    messages=payload,
+                    max_tokens=max_tokens,
+                )
+            else:
+                raise
         usage = completion.usage
         return LLMResponse(
             text=completion.choices[0].message.content or "",

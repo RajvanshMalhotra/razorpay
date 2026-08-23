@@ -1,0 +1,87 @@
+"""Run two brokers against a real LLM provider and print what happened.
+
+  LLM_PROVIDER=ollama  .venv/bin/python scripts/two_brokers.py
+  LLM_PROVIDER=deepseek .venv/bin/python scripts/two_brokers.py
+
+Ollama must be running locally for the first; DEEPSEEK_API_KEY must be set
+for the second. No Razorpay call is made — this exercises the agents, not
+settlement.
+"""
+from __future__ import annotations
+
+import sys
+
+from dotenv import load_dotenv
+
+from exchange.agents.broker import Broker
+from exchange.agents.negotiation import negotiate
+from exchange.eventlog import EventLog
+from exchange.llm.openai_compat import provider_from_env
+from exchange.models import (
+    Actor, ActorKind, Asset, AssetKind, Currency, Order, Side,
+)
+from exchange.rails.credits import CreditRail
+from exchange.rails.inr import RazorpayRail
+from exchange.retrieval import HybridIndex, default_embedder
+from exchange.service import Exchange
+from exchange.ids import new_id
+
+
+def main() -> int:
+    load_dotenv()
+    provider = provider_from_env()
+    correlation_id = new_id("corr")
+    print(f"Correlation id: {correlation_id}\n")
+
+    log = EventLog("runs/brokers.db")
+    exchange = Exchange(log, HybridIndex(embed_fn=default_embedder()),
+                        RazorpayRail(log, None), CreditRail(log))
+
+    for actor_id in ("m_buyer", "m_seller"):
+        exchange.register_actor(Actor(actor_id=actor_id, kind=ActorKind.MERCHANT))
+    exchange.list_asset(Asset(
+        asset_id="ast_mailers", kind=AssetKind.GOODS,
+        title="biodegradable mailers compostable poly 10x13",
+        spec={"material": "compostable poly"}, currency=Currency.INR,
+        origin_actor_id="m_seller",
+    ))
+    exchange.post_order(Order(
+        order_id="ord_ask", actor_id="m_seller", side=Side.ASK,
+        asset_ref="ast_mailers", asset_query=None, qty=1000, limit_price=1940,
+        currency=Currency.INR, expires_at="2026-12-31T00:00:00+00:00",
+        policy_snapshot={},
+    ), correlation_id=correlation_id)
+
+    buyer = Broker("m_buyer", exchange, provider)
+
+    print("=== FINDING SUPPLY ===")
+    matches = buyer.find_supply(
+        "eco friendly biodegradable mailers under 22 rupees a unit",
+        500, 2200, correlation_id,
+    )
+    if not matches:
+        print("No candidates found.")
+        return 1
+    print(f"{matches[0].rationale}\n")
+
+    print("=== DIPLOMAT ===")
+    print(buyer.assess("m_seller") + "\n")
+
+    print("=== NEGOTIATION ===")
+    outcome = negotiate("m_buyer", "m_seller", provider, provider,
+                        opening_price=1940, buyer_limit=2200, seller_floor=1800)
+    for offer in outcome.offers:
+        print(f"  {offer.actor_id:>10}: {offer.price:>6}  {offer.message.strip()[:70]}")
+    print(f"\n  outcome: {outcome.ended_reason}"
+          + (f" at {outcome.final_price}" if outcome.agreed else "") + "\n")
+
+    print("=== AUDIT TRAIL ===")
+    for event in log.read_by_correlation(correlation_id):
+        print(f"  [{event.seq:>3}] {event.actor_id:<10} {event.type}")
+
+    log.close()
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())
