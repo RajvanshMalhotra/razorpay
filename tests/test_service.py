@@ -131,15 +131,34 @@ def test_denied_match_logs_the_decision_and_moves_no_money(exchange):
     assert SETTLEMENT_INITIATED not in types
 
 
+def test_the_gate_sees_the_whole_lot_not_one_unit(exchange):
+    """A 500-unit trade must be gated on 500 units of exposure."""
+    match = Match(match_id="mch_1", bid_order_id="ord_bid", ask_order_id="ord_ask",
+                  clearing_price=1940, qty=500, score=0.9, rationale="test")
+
+    decision, _ = exchange.execute_match(match, "m_buyer", "m_seller", TRUSTED,
+                                         correlation_id="c1")
+
+    assert decision.limits_evaluated["amount"] == 970_000
+
+
 def test_match_requiring_human_approval_does_not_settle(exchange):
+    # 3200 per unit over 500 units is 1,600,000: at or above the 1,500,000
+    # human-approval threshold and still under the 2,000,000 per-transaction
+    # cap, so REQUIRE_HUMAN is the level that binds rather than DENY.
     big = Match(
         match_id="mch_2",
         bid_order_id="ord_bid",
         ask_order_id="ord_ask",
-        clearing_price=DEFAULT_INR_LIMITS.human_approval_threshold + 1,
+        clearing_price=3200,
         qty=500,
         score=0.9,
         rationale="test",
+    )
+    assert (
+        DEFAULT_INR_LIMITS.human_approval_threshold
+        <= big.clearing_price * big.qty
+        <= DEFAULT_INR_LIMITS.per_txn_cap
     )
 
     decision, settlement = exchange.execute_match(
@@ -170,8 +189,10 @@ def test_the_rolling_cap_is_derived_from_the_log_not_from_the_caller(tmp_path):
     )
 
     def trade(match_id):
+        # 300 per unit over 500 units is 150,000 — one trade fits inside both
+        # the 200,000 per-transaction cap and the 250,000 window; two do not.
         return ex.execute_match(
-            Match(match_id, "ord_bid", "ord_ask", 150_000, 500, 0.9, "test"),
+            Match(match_id, "ord_bid", "ord_ask", 300, 500, 0.9, "test"),
             "m_buyer", "m_seller", TRUSTED, correlation_id="c1",
         )
 
@@ -212,12 +233,15 @@ def test_rolling_spend_is_counted_per_currency(tmp_path):
         inr_limits=tight, credit_limits=tight,
     )
 
+    # 300 per unit over 500 units is 150,000 on each rail: the INR trade uses
+    # more than half the shared window figure, so a leak across currencies
+    # would deny the CREDITS trade that follows.
     ex.execute_match(
-        Match("mch_inr", "ord_bid", "ord_ask", 150_000, 500, 0.9, "test"),
+        Match("mch_inr", "ord_bid", "ord_ask", 300, 500, 0.9, "test"),
         "m_buyer", "m_seller", TRUSTED, correlation_id="c1",
     )
     decision, _ = ex.execute_match(
-        Match("mch_cr", "ord_bid", "ord_ask", 150_000, 500, 0.9, "test"),
+        Match("mch_cr", "ord_bid", "ord_ask", 300, 500, 0.9, "test"),
         "m_buyer", "m_seller", TRUSTED, correlation_id="c1",
         currency=Currency.CREDITS,
     )

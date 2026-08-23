@@ -85,6 +85,14 @@ class Exchange:
     ) -> tuple[PolicyDecision, Settlement | None]:
         limits = self._inr_limits if currency == Currency.INR else self._credit_limits
 
+        # `clearing_price` is PER UNIT — the matcher sets it from the ask's
+        # limit_price and compares limits across orders of different sizes. The
+        # exposure a cap must bound, and the figure the rail must charge, is the
+        # whole lot. Gating 500 units at 1940 as if it were 1940 let every trade
+        # slip under the unknown-counterparty cap, so the trial-size bound — the
+        # entire anti-incumbency mechanism — never bound anything.
+        amount = match.clearing_price * match.qty
+
         # The match itself is an event. Without it the decision's action_ref
         # dangles and the rationale — the one artifact that explains *why* this
         # ask at this price — never reaches the audit trail.
@@ -102,7 +110,7 @@ class Exchange:
         decision = policy.evaluate(
             action_ref=match.match_id,
             actor_id=buyer_id,
-            amount=match.clearing_price,
+            amount=amount,
             currency=currency,
             ctx=replace(ctx, rolling_spend=spent),
             limits=limits,
@@ -124,7 +132,7 @@ class Exchange:
             match_id=match.match_id,
             from_actor_id=buyer_id,
             to_actor_id=seller_id,
-            amount=match.clearing_price,
+            amount=amount,
             correlation_id=correlation_id,
             causation_id=decision_event.event_id,
         )

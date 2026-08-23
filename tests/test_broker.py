@@ -76,7 +76,8 @@ def test_recall_is_injected_before_the_diplomat_speaks(exchange):
 
 def test_closing_a_trade_goes_through_the_gate(exchange):
     broker = Broker("m_buyer", exchange, ScriptedProvider(["ok"]))
-    matches = broker.find_supply("biodegradable compostable mailers", 500, 2200, "c1")
+    # 200 units at 1940 is 388,000, inside the 500,000 trial cap a stranger gets.
+    matches = broker.find_supply("biodegradable compostable mailers", 200, 2200, "c1")
 
     decision, settlement = broker.close(matches[0], "m_seller", "c1")
 
@@ -87,19 +88,29 @@ def test_closing_a_trade_goes_through_the_gate(exchange):
 
 
 def test_a_stranger_is_gated_by_confidence_not_excluded(exchange):
-    """The broker has never dealt with m_seller, so confidence is 0."""
+    """The broker has never dealt with m_seller, so confidence is 0.
+
+    The stranger is still matched and still offered — that is the "not
+    excluded" half. What binds is the trial-size cap: 500 units at 1940 is
+    970,000 of real exposure against a 500,000 unknown-counterparty cap, so a
+    lot this size is refused until a track record exists.
+    """
     broker = Broker("m_buyer", exchange, ScriptedProvider(["ok"]))
     matches = broker.find_supply("biodegradable compostable mailers", 500, 2200, "c1")
+    assert matches, "a stranger must still reach the book"
 
     decision, _ = broker.close(matches[0], "m_seller", "c1")
 
-    assert decision.verdict == Verdict.ALLOW  # 1940 is far under the trial cap
+    assert decision.verdict == Verdict.DENY
+    assert decision.limits_evaluated["amount"] == 970_000
     assert decision.limits_evaluated["counterparty_confidence"] == 0.0
+    assert "unknown counterparty cap" in decision.reason
 
 
 def test_a_closed_trade_updates_the_relationship(exchange):
     broker = Broker("m_buyer", exchange, ScriptedProvider(["ok"]))
-    matches = broker.find_supply("biodegradable compostable mailers", 500, 2200, "c1")
+    # Trial-sized, so the stranger's cap allows it and a deal is actually recorded.
+    matches = broker.find_supply("biodegradable compostable mailers", 200, 2200, "c1")
 
     broker.close(matches[0], "m_seller", "c1")
 
@@ -121,7 +132,8 @@ def test_a_settled_trade_checkpoints_each_sub_agents_memory(exchange):
     """A completed trade is the episode boundary; without a checkpoint every
     later action re-materialises the whole chain from the root."""
     broker = Broker("m_buyer", exchange, ScriptedProvider(["ok"]))
-    matches = broker.find_supply("biodegradable compostable mailers", 500, 2200, "c1")
+    # Trial-sized, so the trade actually settles and the episode boundary lands.
+    matches = broker.find_supply("biodegradable compostable mailers", 200, 2200, "c1")
 
     broker.close(matches[0], "m_seller", "c1")
 
@@ -134,7 +146,8 @@ def test_an_uncaptured_payment_is_not_remembered_as_a_delivered_deal(exchange):
     exchange._inr_rail = RazorpayRail(exchange.log, FakeRazorpay(payments_by_order={}),
                                       poll_attempts=1, poll_interval=0)
     broker = Broker("m_buyer", exchange, ScriptedProvider(["ok"]))
-    matches = broker.find_supply("biodegradable compostable mailers", 500, 2200, "c1")
+    # Trial-sized, so the gate allows it and the settlement is what stalls.
+    matches = broker.find_supply("biodegradable compostable mailers", 200, 2200, "c1")
 
     _, settlement = broker.close(matches[0], "m_seller", "c1")
 
@@ -145,7 +158,9 @@ def test_an_uncaptured_payment_is_not_remembered_as_a_delivered_deal(exchange):
 def test_the_settled_amount_is_the_negotiated_price_not_the_ask(exchange):
     """A trail that records agreeing at one price and paying another is not a trail."""
     broker = Broker("m_buyer", exchange, ScriptedProvider(["ok"]))
-    matches = broker.find_supply("biodegradable compostable mailers", 500, 2200, "c1")
+    # 200 rather than 500: at 500 the lot is over the stranger's trial cap and
+    # the gate denies it, so no settlement would exist to inspect.
+    matches = broker.find_supply("biodegradable compostable mailers", 200, 2200, "c1")
     assert matches[0].clearing_price == 1940  # the ask
 
     broker.close(matches[0], "m_seller", "c1", agreed_price=1900)
@@ -154,7 +169,7 @@ def test_the_settled_amount_is_the_negotiated_price_not_the_ask(exchange):
         e for e in exchange.log.read_by_correlation("c1")
         if e.type == "SETTLEMENT_INITIATED"
     ][0]
-    assert initiated.payload["amount"] == 1900 * 500
+    assert initiated.payload["amount"] == 1900 * 200
 
 
 def test_a_stranger_is_ranked_optimistically_not_neutrally(exchange):

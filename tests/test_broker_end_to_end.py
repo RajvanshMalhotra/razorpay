@@ -44,7 +44,8 @@ def exchange(tmp_path):
 def test_two_brokers_negotiate_and_settle(exchange):
     buyer = Broker("m_buyer", exchange, ScriptedProvider(["candidates found", "advice"]))
 
-    matches = buyer.find_supply("biodegradable compostable mailers", 500, 2200, CORR)
+    # 200 units: the first deal with a stranger has to fit the trial cap.
+    matches = buyer.find_supply("biodegradable compostable mailers", 200, 2200, CORR)
     assert matches
 
     outcome = negotiate(
@@ -55,10 +56,13 @@ def test_two_brokers_negotiate_and_settle(exchange):
     )
     assert outcome.agreed is True
 
-    decision, settlement = buyer.close(matches[0], "m_seller", CORR)
+    decision, settlement = buyer.close(
+        matches[0], "m_seller", CORR, agreed_price=outcome.final_price,
+    )
 
     assert decision.verdict == Verdict.ALLOW
     assert settlement is not None
+    assert settlement.amount == 1900 * 200, "settled at what was agreed, not the ask"
 
 
 def test_the_second_deal_is_informed_by_the_first(exchange):
@@ -98,7 +102,9 @@ def test_a_reliability_lesson_lowers_standing_but_never_excludes(exchange):
 
 def test_the_whole_story_threads_one_correlation_id(exchange):
     buyer = Broker("m_buyer", exchange, ScriptedProvider(["c"]))
-    matches = buyer.find_supply("biodegradable compostable mailers", 500, 2200, CORR)
+    # 200 units: the first deal with a stranger has to fit the trial cap, or
+    # the gate denies it and there is no settlement leg of the story to read.
+    matches = buyer.find_supply("biodegradable compostable mailers", 200, 2200, CORR)
     buyer.close(matches[0], "m_seller", CORR)
 
     types = [e.type for e in exchange.log.read_by_correlation(CORR)]

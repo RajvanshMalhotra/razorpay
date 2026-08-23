@@ -137,11 +137,16 @@ def test_the_full_story_reads_back_from_one_correlation_id(exchange):
 
 
 def test_an_unknown_counterparty_is_bounded_not_excluded(exchange):
-    """The trial-size rule: the trade happens, but only a small one."""
+    """The trial-size rule: the trade happens, but only a small one.
+
+    A 200-unit lot is inside the 500,000 cap an unknown counterparty gets; the
+    same lot at 500 units is not. Both are offered by the matcher — the bound
+    limits the size of a first trade rather than excluding the counterparty.
+    """
     asks = _seed_market(exchange)
     bid = Order(
         order_id="ord_bid", actor_id="m_buyer", side=Side.BID, asset_ref=None,
-        asset_query={"text": "biodegradable compostable mailers"}, qty=500,
+        asset_query={"text": "biodegradable compostable mailers"}, qty=200,
         limit_price=2200, currency=Currency.INR,
         expires_at="2026-08-29T00:00:00+00:00", policy_snapshot={},
     )
@@ -156,7 +161,22 @@ def test_an_unknown_counterparty_is_bounded_not_excluded(exchange):
         matches[0], "m_buyer", "m_unknown", unknown_ctx, correlation_id=CORR
     )
 
-    assert decision.verdict == Verdict.ALLOW  # 1940 is under the 500_000 trial cap
+    assert decision.verdict == Verdict.ALLOW
+    # The gate weighed the whole lot, not one unit's price.
+    assert decision.limits_evaluated["amount"] == matches[0].clearing_price * 200
+    assert decision.limits_evaluated["amount"] < 500_000
+
+    # And the same bid one size up is refused, so the cap is genuinely binding.
+    big = find_candidates(
+        replace(bid, order_id="ord_bid_big", qty=500), asks,
+        exchange.state().assets, exchange.index,
+        counterparty_scores={"m_unknown": 0.0},
+    )
+    refused, _ = exchange.execute_match(
+        big[0], "m_buyer", "m_unknown", unknown_ctx, correlation_id=CORR
+    )
+    assert refused.verdict == Verdict.DENY
+    assert "unknown counterparty cap" in refused.reason
 
 
 def test_every_settlement_is_preceded_by_an_allow_decision(exchange):
