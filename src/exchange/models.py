@@ -109,6 +109,7 @@ class Match:
     bid_order_id: str
     ask_order_id: str
     clearing_price: int
+    qty: int
     score: float
     rationale: str
 

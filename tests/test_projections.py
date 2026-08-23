@@ -225,6 +225,7 @@ def test_match_proposed_lands_in_state_with_its_rationale():
             "bid_order_id": "ord_bid",
             "ask_order_id": "ord_ask",
             "clearing_price": 1940,
+            "qty": 500,
             "score": 0.87,
             "rationale": "ast_2 ranked 0.0328 for 'compostable mailers'; priced 1940",
         }),

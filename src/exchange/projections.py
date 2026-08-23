@@ -109,6 +109,7 @@ def fold(events: Iterable[Event]) -> ExchangeState:
                 bid_order_id=p["bid_order_id"],
                 ask_order_id=p["ask_order_id"],
                 clearing_price=p["clearing_price"],
+                qty=p["qty"],
                 score=p["score"],
                 rationale=p["rationale"],
             )

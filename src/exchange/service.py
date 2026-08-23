@@ -130,7 +130,7 @@ class Exchange:
         )
 
         if settlement is not None and settlement.status == SettlementStatus.COMPLETED:
-            self._record_fill(match, buyer_id, correlation_id, decision_event.event_id)
+            self._record_fill(match, buyer_id, seller_id, correlation_id, decision_event.event_id)
 
         return decision, settlement
 
@@ -157,37 +157,25 @@ class Exchange:
             and e.payload.get("currency") == target
         )
 
-    def _record_fill(
-        self,
-        match: Match,
-        buyer_id: str,
-        correlation_id: str,
-        causation_id: str,
-    ) -> None:
-        """Deplete both sides of a settled trade.
+    def _record_fill(self, match: Match, buyer_id: str, seller_id: str,
+                     correlation_id: str, causation_id: str) -> None:
+        """Deplete both orders. Each side is recorded against its own actor.
 
-        Without this both orders stay open at full quantity, and a broker that
-        folds open_orders and re-runs matching in a loop re-settles the same ask
-        against the same inventory forever — creating a real Razorpay order each
-        time. Only the success path fills: a DENY, a REQUIRE_HUMAN or a failed
-        settlement moved nothing and must leave the book untouched.
+        Sides are handled independently on purpose: if one order is already gone
+        from the book, the other must still be depleted, or it can be re-settled
+        against the same inventory indefinitely.
         """
-        bid_order = self.state().open_orders.get(match.bid_order_id)
-        if bid_order is None:
-            # Nothing in the book to deplete — the caller matched against an
-            # order this log does not hold. Skip rather than raise; the
-            # settlement itself already stands.
-            return
-
-        for order_id in (match.bid_order_id, match.ask_order_id):
+        book = self.state().open_orders
+        for order_id, actor_id in (
+            (match.bid_order_id, buyer_id),
+            (match.ask_order_id, seller_id),
+        ):
+            if order_id not in book:
+                continue
             self.log.append(
-                buyer_id,
+                actor_id,
                 ev.ORDER_FILLED,
-                {
-                    "order_id": order_id,
-                    "qty": bid_order.qty,
-                    "match_id": match.match_id,
-                },
+                {"order_id": order_id, "qty": match.qty},
                 correlation_id=correlation_id,
                 causation_id=causation_id,
             )

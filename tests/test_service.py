@@ -51,6 +51,7 @@ MATCH = Match(
     bid_order_id="ord_bid",
     ask_order_id="ord_ask",
     clearing_price=1940,
+    qty=500,
     score=0.9,
     rationale="test",
 )
@@ -136,6 +137,7 @@ def test_match_requiring_human_approval_does_not_settle(exchange):
         bid_order_id="ord_bid",
         ask_order_id="ord_ask",
         clearing_price=DEFAULT_INR_LIMITS.human_approval_threshold + 1,
+        qty=500,
         score=0.9,
         rationale="test",
     )
@@ -169,7 +171,7 @@ def test_the_rolling_cap_is_derived_from_the_log_not_from_the_caller(tmp_path):
 
     def trade(match_id):
         return ex.execute_match(
-            Match(match_id, "ord_bid", "ord_ask", 150_000, 0.9, "test"),
+            Match(match_id, "ord_bid", "ord_ask", 150_000, 500, 0.9, "test"),
             "m_buyer", "m_seller", TRUSTED, correlation_id="c1",
         )
 
@@ -211,11 +213,11 @@ def test_rolling_spend_is_counted_per_currency(tmp_path):
     )
 
     ex.execute_match(
-        Match("mch_inr", "ord_bid", "ord_ask", 150_000, 0.9, "test"),
+        Match("mch_inr", "ord_bid", "ord_ask", 150_000, 500, 0.9, "test"),
         "m_buyer", "m_seller", TRUSTED, correlation_id="c1",
     )
     decision, _ = ex.execute_match(
-        Match("mch_cr", "ord_bid", "ord_ask", 150_000, 0.9, "test"),
+        Match("mch_cr", "ord_bid", "ord_ask", 150_000, 500, 0.9, "test"),
         "m_buyer", "m_seller", TRUSTED, correlation_id="c1",
         currency=Currency.CREDITS,
     )
@@ -247,3 +249,52 @@ def test_the_whole_story_is_recoverable_from_one_correlation_id(exchange):
     assert types == [
         MATCH_PROPOSED, POLICY_DECIDED, SETTLEMENT_INITIATED, SETTLEMENT_COMPLETED,
     ]
+
+
+def test_fill_is_recorded_for_the_ask_even_when_the_bid_is_not_in_the_book(exchange):
+    """The ask must still be depleted, or it can be re-settled forever."""
+    ask = Order(
+        order_id="ord_ask", actor_id="m_seller", side=Side.ASK, asset_ref="ast_1",
+        asset_query=None, qty=1000, limit_price=1940, currency=Currency.INR,
+        expires_at="2026-09-30T00:00:00+00:00", policy_snapshot={},
+    )
+    exchange.post_order(ask, correlation_id="c1")
+    # note: the bid is deliberately NOT posted
+
+    match = Match(
+        match_id="mch_1", bid_order_id="ord_absent_bid", ask_order_id="ord_ask",
+        clearing_price=1940, qty=400, score=0.9, rationale="test",
+    )
+    exchange.execute_match(match, "m_buyer", "m_seller", TRUSTED, correlation_id="c1")
+
+    assert exchange.state().open_orders["ord_ask"].qty == 600
+
+
+def test_each_side_of_a_fill_is_attributed_to_its_own_actor(exchange):
+    bid = Order(
+        order_id="ord_bid", actor_id="m_buyer", side=Side.BID, asset_ref=None,
+        asset_query={"text": "mailers"}, qty=400, limit_price=2200,
+        currency=Currency.INR, expires_at="2026-09-30T00:00:00+00:00",
+        policy_snapshot={},
+    )
+    ask = Order(
+        order_id="ord_ask", actor_id="m_seller", side=Side.ASK, asset_ref="ast_1",
+        asset_query=None, qty=1000, limit_price=1940, currency=Currency.INR,
+        expires_at="2026-09-30T00:00:00+00:00", policy_snapshot={},
+    )
+    exchange.post_order(bid, correlation_id="c1")
+    exchange.post_order(ask, correlation_id="c1")
+
+    match = Match(
+        match_id="mch_1", bid_order_id="ord_bid", ask_order_id="ord_ask",
+        clearing_price=1940, qty=400, score=0.9, rationale="test",
+    )
+    exchange.execute_match(match, "m_buyer", "m_seller", TRUSTED, correlation_id="c1")
+
+    fills = [e for e in exchange.log.read_by_correlation("c1") if e.type == "ORDER_FILLED"]
+    by_order = {e.payload["order_id"]: e for e in fills}
+
+    assert by_order["ord_bid"].actor_id == "m_buyer"
+    assert by_order["ord_ask"].actor_id == "m_seller"
+    assert by_order["ord_bid"].payload["qty"] == 400
+    assert by_order["ord_ask"].payload["qty"] == 400

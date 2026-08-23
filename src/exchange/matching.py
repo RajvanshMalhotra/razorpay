@@ -74,6 +74,7 @@ def find_candidates(
                     bid_order_id=bid.order_id,
                     ask_order_id=ask.order_id,
                     clearing_price=ask.limit_price,
+                    qty=bid.qty,
                     score=final_score,
                     # Reports the score rather than asserting a match: retrieval
                     # ranks, it does not certify relevance, and this string is

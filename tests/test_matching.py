@@ -205,3 +205,11 @@ def test_cheaper_of_two_equally_ranked_asks_comes_first():
 
     assert matches[0].ask_order_id == "ord_cheap"
     assert matches[0].clearing_price == 1800
+
+
+def test_match_carries_the_filled_quantity():
+    asks = [_ask("ord_2", "m_b", "ast_2", 1940, qty=1000)]
+
+    match = find_candidates(BID, asks, ASSETS, _index())[0]
+
+    assert match.qty == 500  # the bid's qty, which is what actually trades
