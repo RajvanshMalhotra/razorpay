@@ -22,6 +22,9 @@ from exchange.models import (
     Actor, ActorKind, Asset, AssetKind, Currency, Order, Side,
 )
 from exchange.rails.credits import CreditRail
+import razorpay
+
+from exchange.config import Config
 from exchange.rails.inr import RazorpayRail
 from exchange.retrieval import HybridIndex, default_embedder
 from exchange.service import Exchange
@@ -36,12 +39,15 @@ TRIAL_QTY = 200
 def main() -> int:
     load_dotenv()
     provider = provider_from_env()
+    cfg = Config.from_env()
+    client = razorpay.Client(auth=(cfg.razorpay_key_id, cfg.razorpay_key_secret))
     correlation_id = new_id("corr")
     print(f"Correlation id: {correlation_id}\n")
 
     log = EventLog("runs/brokers.db")
     exchange = Exchange(log, HybridIndex(embed_fn=default_embedder()),
-                        RazorpayRail(log, None), CreditRail(log))
+                        RazorpayRail(log, client, poll_attempts=1, poll_interval=0),
+                        CreditRail(log))
 
     for actor_id in ("m_buyer", "m_seller"):
         exchange.register_actor(Actor(actor_id=actor_id, kind=ActorKind.MERCHANT))
