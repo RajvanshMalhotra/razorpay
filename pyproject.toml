@@ -8,6 +8,7 @@ dependencies = [
     "rank-bm25>=0.2.2",
     "model2vec>=0.3.0",
     "numpy>=1.26",
+    "openai>=1.40",
 ]
 
 [project.optional-dependencies]
