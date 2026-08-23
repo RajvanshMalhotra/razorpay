@@ -43,6 +43,26 @@ def test_scripted_provider_reports_token_counts():
     assert response.model == "scripted"
 
 
+def test_deepseek_without_a_key_fails_before_any_client_is_built(monkeypatch):
+    """The raise precedes client construction, so this reaches no network."""
+    from exchange.llm.openai_compat import provider_from_env
+
+    monkeypatch.setenv("LLM_PROVIDER", "deepseek")
+    monkeypatch.delenv("DEEPSEEK_API_KEY", raising=False)
+
+    with pytest.raises(ValueError, match="DEEPSEEK_API_KEY is not set"):
+        provider_from_env()
+
+
+def test_an_unknown_provider_name_is_rejected(monkeypatch):
+    from exchange.llm.openai_compat import provider_from_env
+
+    monkeypatch.setenv("LLM_PROVIDER", "anthropiq")
+
+    with pytest.raises(ValueError, match="Unknown LLM_PROVIDER 'anthropiq'"):
+        provider_from_env()
+
+
 def test_llm_message_is_frozen():
     message = LLMMessage("user", "hi")
 

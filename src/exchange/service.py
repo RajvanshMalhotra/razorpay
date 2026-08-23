@@ -191,8 +191,15 @@ class Exchange:
     def state(self) -> ExchangeState:
         """Current state, extended from the cached projection.
 
-        The cached value and the log can only disagree if this code is wrong,
-        which is exactly what the accountant's periodic full rebuild checks.
+        This re-reads via `read_since` on every call, so a second `Exchange`
+        over the same database, or anything appending to the log directly,
+        cannot cause divergence — their events are picked up on the next read.
+
+        The real precondition is a SINGLE WRITER CONNECTION. Two concurrent
+        SQLite writers could commit seq 10 after seq 11 became visible; a read
+        landing in between would advance the offset past 10 and skip it
+        permanently. The accountant's periodic full rebuild from the log is
+        what would catch that, and `fold()` remains the authority.
         """
         cached = getattr(self, "_state_cache", None)
         if cached is None:

@@ -6,11 +6,14 @@ only in base_url, key and model name.
 """
 from __future__ import annotations
 
+import logging
 import os
 
 from openai import BadRequestError, OpenAI
 
 from exchange.llm.base import LLMMessage, LLMResponse
+
+_log = logging.getLogger(__name__)
 
 OLLAMA_BASE_URL = "http://localhost:11434/v1"
 DEEPSEEK_BASE_URL = "https://api.deepseek.com"
@@ -62,6 +65,13 @@ class OpenAICompatProvider:
             # reasoning_effort param outright rather than ignoring it —
             # retry once without it rather than failing the whole call.
             if extra and "thinking" in str(exc).lower():
+                # Say so. A run where reasoning was silently disabled produces
+                # different agent behaviour from one where it was not, and
+                # without this line the two are indistinguishable afterwards.
+                _log.warning(
+                    "model %r rejected reasoning_effort=%r; retrying without it",
+                    self._model, reasoning_effort,
+                )
                 completion = self._client.chat.completions.create(
                     model=self._model,
                     messages=payload,
