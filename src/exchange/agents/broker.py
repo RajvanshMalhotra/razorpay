@@ -7,6 +7,8 @@ would silently break the thing this project is judged on.
 """
 from __future__ import annotations
 
+from dataclasses import replace
+
 from exchange.agents.context import ContextDelta
 from exchange.agents.journal import AgentJournal
 from exchange.agents.relationships import RelationshipGraph
@@ -15,7 +17,15 @@ from exchange.agents.subconscious import Subconscious
 from exchange.agents.tree import ContextTree
 from exchange.ids import new_id
 from exchange.matching import find_candidates
-from exchange.models import ActorStatus, Currency, Match, Order, Side
+from exchange.models import (
+    ActorStatus,
+    Currency,
+    Match,
+    Order,
+    PolicyDecision,
+    Settlement,
+    Side,
+)
 from exchange.policy import PolicyContext
 
 
@@ -97,8 +107,24 @@ class Broker:
             facts=recalled,
         )
 
-    def close(self, match: Match, seller_id: str, correlation_id: str):
-        """Settle through the exchange's gate, then record the relationship."""
+    def close(
+        self,
+        match: Match,
+        seller_id: str,
+        correlation_id: str,
+        agreed_price: int | None = None,
+    ) -> tuple[PolicyDecision, Settlement | None]:
+        """Settle through the exchange's gate, then record the relationship.
+
+        `agreed_price` is what the negotiation actually landed on, per unit. The
+        match's own `clearing_price` is the ask's asking price — settling at that
+        after agreeing on something else would make the log tell two stories on
+        one correlation_id, so the agreed figure replaces it before anything
+        downstream sees the match.
+        """
+        if agreed_price is not None:
+            match = replace(match, clearing_price=agreed_price)
+
         ctx = PolicyContext(
             actor_status=ActorStatus.ACTIVE,
             rolling_spend=0,  # derived from the log inside execute_match

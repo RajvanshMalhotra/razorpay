@@ -128,6 +128,21 @@ def test_a_settled_trade_checkpoints_each_sub_agents_memory(exchange):
         assert broker.tree.node(agent.node_id).checkpoint is not None
 
 
+def test_the_settled_amount_is_the_negotiated_price_not_the_ask(exchange):
+    """A trail that records agreeing at one price and paying another is not a trail."""
+    broker = Broker("m_buyer", exchange, ScriptedProvider(["ok"]))
+    matches = broker.find_supply("biodegradable compostable mailers", 500, 2200, "c1")
+    assert matches[0].clearing_price == 1940  # the ask
+
+    broker.close(matches[0], "m_seller", "c1", agreed_price=1900)
+
+    initiated = [
+        e for e in exchange.log.read_by_correlation("c1")
+        if e.type == "SETTLEMENT_INITIATED"
+    ][0]
+    assert initiated.payload["amount"] == 1900 * 500
+
+
 def test_a_stranger_is_ranked_optimistically_not_neutrally(exchange):
     """The optimism must survive the trip into the matcher, or the market
     ossifies into cliques and a new merchant never gets a first deal."""
