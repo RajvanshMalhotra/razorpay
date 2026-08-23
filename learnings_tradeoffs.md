@@ -521,6 +521,82 @@ modelled could never reach the stall check at all.
 
 ---
 
+### BUG-16 to BUG-21 — what Plan 2's final whole-branch review found
+
+Twelve per-task reviews all passed. The final review, reading 16 commits at once, found
+six more. **All three Criticals lived in the seams between modules** — the same pattern as
+Plan 1, and the reason the final pass exists.
+
+| # | Bug | Severity | Status |
+|---|---|---|---|
+| 16 | Brokers negotiated one price and paid another | **Critical** | Fixed |
+| 17 | An unpaid settlement was remembered as a delivered deal | **Critical** | Fixed |
+| 18 | The gate saw one unit's price for a 500-unit trade | **Critical** | Fixed |
+| 19 | The memory loop was never closed outside tests | Important | Fixed |
+| 20 | Recall was journalled only if the caller opted in | Important | Fixed |
+| 21 | A settled trade could be lost by a model timeout | Important | **Open** |
+
+**BUG-16 — the negotiation was decorative.** Two brokers would haggle, agree at ₹19.00, and
+then settle at ₹19.40 — the seller's original asking price. `Outcome.final_price` was
+computed, journalled, and consumed by nothing. The log recorded
+`NEGOTIATION_ENDED {final_price: 1900}` immediately followed by
+`SETTLEMENT_INITIATED {amount: …1940…}` **on the same trade**. An audit trail that
+contradicts itself is worse than none, because it looks authoritative.
+
+**BUG-17 — an unpaid bill built trust.** The broker asked "is there a settlement object?"
+where the exchange asked "did it *complete*?". Razorpay settlements legitimately sit at
+PENDING when a capture has not landed — which is precisely the demo's headline failure. So
+the broker recorded the counterparty as having delivered, their standing rose, their
+confidence rose, and the *next* trade with them cleared a **higher** spending cap on the
+strength of a payment that never happened. Exactly backwards, and it corrupted the one
+mechanism meant to contain an unreliable counterparty.
+
+**BUG-18 — the trial-size bound never bound.** Prices are per unit; quantities are separate.
+The gate was handed the per-unit price as if it were the whole exposure. So a 500-unit order
+worth ₹9,700 was checked against a stranger's ₹5,000 cap **as though it were ₹19.40** — and
+allowed. Razorpay was then asked for ₹19.40. The anti-incumbency design rests entirely on
+capping first trades with strangers, and that cap was inert.
+
+The existing test *encoded* the bug, commenting "1940 is far under the trial cap". Adding a
+quantity field in an earlier task is what made the two readings inconsistent — neither
+module was wrong alone.
+
+**BUG-19 — the differentiator never ran.** Nothing outside a test called `consolidate` or
+`apply_lesson`. The Subconscious — the thing that makes a broker feel like it has history —
+learned nothing during an actual run. "The second deal is informed by the first" held only
+because a test called it by hand.
+
+**This one exposed a reasoning error of my own.** I had deferred consolidation deliberately,
+arguing that at settlement time nobody knows whether the counterparty *delivered*, so a
+lesson could only ever say "they paid". That is true — for **reliability** lessons. It is
+false for **behavioural** ones: how someone negotiated, whether they haggled and folded, how
+they responded to a volume offer, is completely known the moment a trade closes. I was right
+about half the problem and applied the conclusion to all of it. Behavioural lessons now
+consolidate at settlement; reliability still waits for a delivery signal.
+
+**BUG-20 — recall left no trace unless asked.** Journalling a recalled lesson was optional on
+the caller. A memory that steered a decision could therefore vanish from the trade's record —
+which is the audit-trail claim, undermined by a default argument.
+
+**BUG-21 — still open, and mine.** The fix for BUG-19 put an **unguarded model call after the
+money moved**. Consolidation is a network round-trip, and it now runs inside the settlement
+path after payment completes. A provider timeout propagates out, so the caller never receives
+the result of a trade that has already been paid for — the same "settled but not recorded"
+shape as BUG-17, arriving through a different door.
+
+Found by the re-review of the fix wave. Parked rather than fixed, because the process allows
+one fix wave and one re-review and this arrived in the second — the value of that rule is
+that it stops exactly this kind of open-ended churn. The fix is three lines: wrap the
+consolidation, log on failure, return the tuple regardless.
+
+**The pattern across Plans 1 and 2, stated plainly.** Twenty-one bugs. **Sixteen were in
+reference code or test code written into the plan itself**, not implementer error. Per-task
+reviews caught the ones inside a single file; every cross-module defect survived until a
+reviewer read the whole branch at once. Tests written from the same document as the code
+inherit its blind spots and pass with confidence.
+
+---
+
 ## 4A. Performance and memory design — decided, mostly not built
 
 A design discussion that produced more decisions than code. Recorded here so none
