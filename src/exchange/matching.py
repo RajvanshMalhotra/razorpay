@@ -1,9 +1,10 @@
 """Match a bid against the open asks.
 
 Feasibility is a hard filter. Retrieval decides relevance. Counterparty
-standing is a soft nudge that can reorder near-ties but can never exclude an
-ask — exclusion by reputation is what ossifies a market into cliques. Risk on
-unfamiliar counterparties is bounded by the policy gate instead.
+standing plays no part here — it never excludes an ask, so giving it a say in
+ranking would only risk what exclusion does: ossifying a market into
+cliques. Standing instead reaches a choosing agent as a fact, and risk on
+unfamiliar counterparties is bounded by the policy gate.
 """
 from __future__ import annotations
 
@@ -11,16 +12,12 @@ from exchange.ids import new_id
 from exchange.models import Asset, Match, Order, Side
 from exchange.retrieval import HybridIndex
 
-# The counterparty nudge is capped at this fraction of the retrieval score.
-COUNTERPARTY_WEIGHT = 0.2
-
 
 def find_candidates(
     bid: Order,
     asks: list[Order],
     assets: dict[str, Asset],
     index: HybridIndex,
-    counterparty_scores: dict[str, float] | None = None,
     top_k: int = 3,
     min_score: float = 0.0,
 ) -> list[Match]:
@@ -34,8 +31,6 @@ def find_candidates(
     rejects valid trades. The hook exists so a later plan can tune it against
     the real book, and the production value must be chosen that way.
     """
-    counterparty_scores = counterparty_scores or {}
-
     feasible: dict[str, list[Order]] = {}
     for ask in asks:
         if (
@@ -61,29 +56,25 @@ def find_candidates(
     scored: list[tuple[float, Match]] = []
     for asset_id, retrieval_score in ranked:
         for ask in feasible.get(asset_id, []):
-            standing = counterparty_scores.get(ask.actor_id, 0.5)
-            final_score = retrieval_score * (1.0 + COUNTERPARTY_WEIGHT * (standing - 0.5) * 2)
-
-            if not final_score > min_score:
+            if not retrieval_score > min_score:
                 continue
 
             scored.append((
-                final_score,
+                retrieval_score,
                 Match(
                     match_id=new_id("mch"),
                     bid_order_id=bid.order_id,
                     ask_order_id=ask.order_id,
                     clearing_price=ask.limit_price,
                     qty=bid.qty,
-                    score=final_score,
+                    score=retrieval_score,
                     # Reports the score rather than asserting a match: retrieval
                     # ranks, it does not certify relevance, and this string is
                     # what the audit trail prints.
                     rationale=(
-                        f"{asset_id} ranked {final_score:.4f} for '{query}'; "
+                        f"{asset_id} ranked {retrieval_score:.4f} for '{query}'; "
                         f"priced {ask.limit_price} (<= bid limit {bid.limit_price}), "
-                        f"qty {ask.qty} >= {bid.qty}; "
-                        f"counterparty {ask.actor_id} standing {standing:.2f}"
+                        f"qty {ask.qty} >= {bid.qty}"
                     ),
                 ),
             ))

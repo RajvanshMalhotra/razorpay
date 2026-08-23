@@ -150,10 +150,7 @@ def test_an_unknown_counterparty_is_bounded_not_excluded(exchange):
         limit_price=2200, currency=Currency.INR,
         expires_at="2026-08-29T00:00:00+00:00", policy_snapshot={},
     )
-    matches = find_candidates(
-        bid, asks, exchange.state().assets, exchange.index,
-        counterparty_scores={"m_unknown": 0.0},
-    )
+    matches = find_candidates(bid, asks, exchange.state().assets, exchange.index)
     assert matches, "an unknown counterparty must still be offered"
 
     unknown_ctx = PolicyContext(ActorStatus.ACTIVE, 0, counterparty_confidence=0.05)
@@ -170,7 +167,6 @@ def test_an_unknown_counterparty_is_bounded_not_excluded(exchange):
     big = find_candidates(
         replace(bid, order_id="ord_bid_big", qty=500), asks,
         exchange.state().assets, exchange.index,
-        counterparty_scores={"m_unknown": 0.0},
     )
     refused, _ = exchange.execute_match(
         big[0], "m_buyer", "m_unknown", unknown_ctx, correlation_id=CORR

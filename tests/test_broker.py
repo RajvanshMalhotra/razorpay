@@ -259,17 +259,16 @@ def test_a_denied_trade_files_no_lesson(exchange):
     ]
 
 
-def test_a_stranger_is_ranked_optimistically_not_neutrally(exchange):
-    """The optimism must survive the trip into the matcher, or the market
-    ossifies into cliques and a new merchant never gets a first deal."""
-    from exchange.agents.relationships import UNKNOWN_STANDING
+def test_a_stranger_still_reaches_the_shortlist(exchange):
+    """Reputation no longer touches ranking — it reaches the choosing agent as
+    a fact instead. What must not change is that a merchant nobody has dealt
+    with is still offered, or the market ossifies into cliques."""
+    broker = Broker("m_buyer", exchange, ScriptedProvider(["ok"]))
 
-    broker = Broker("m_buyer", exchange, ScriptedProvider(
-        ["ok", "BEHAVIOURAL: moved fast on volume"]))
-    matches = broker.find_supply("biodegradable compostable mailers", 500, 2200, "c1")
+    matches = broker.find_supply("biodegradable compostable mailers", 200, 2200, "c1")
 
-    assert matches
-    assert f"standing {UNKNOWN_STANDING:.2f}" in matches[0].rationale
+    assert matches, "a never-dealt-with counterparty must still be a candidate"
+    assert broker.graph.confidence("m_seller") == 0.0, "and still be a stranger"
 
 
 def test_a_consolidation_failure_does_not_lose_a_paid_trade(exchange):
@@ -331,3 +330,60 @@ def test_close_requires_the_negotiated_price(exchange):
 
     with pytest.raises(TypeError):
         broker.close(matches[0], "m_seller", "c1")
+
+
+def test_the_agent_picks_from_the_shortlist_and_says_why(exchange):
+    """A shortlist of two is a real choice. The agent makes it, and the reason
+    it gives is what lands in the audit trail — not a score."""
+    exchange.register_actor(Actor(actor_id="m_rival", kind=ActorKind.MERCHANT))
+    exchange.post_order(Order(
+        order_id="ord_rival", actor_id="m_rival", side=Side.ASK,
+        asset_ref="ast_mailers", asset_query=None, qty=1000, limit_price=1800,
+        currency=Currency.INR, expires_at="2026-12-31T00:00:00+00:00",
+        policy_snapshot={},
+    ), correlation_id="c1")
+
+    broker = Broker("m_buyer", exchange,
+                    ScriptedProvider(["trader ok", "I pick 1: never missed a delivery"]))
+    matches = broker.find_supply("biodegradable compostable mailers", 200, 2200, "c1")
+    assert len(matches) >= 2, "this test needs a real choice to exercise"
+
+    chosen = broker.choose(matches, "c1")
+
+    assert chosen in matches
+    events = [e for e in exchange.log.read_by_correlation("c1")
+              if e.type == "COUNTERPARTY_CHOSEN"]
+    assert len(events) == 1
+    assert "never missed a delivery" in events[0].payload["reason"]
+
+
+def test_an_unparseable_choice_falls_back_to_the_top_of_the_shortlist(exchange):
+    """A model that will not answer must not stop the market."""
+    exchange.register_actor(Actor(actor_id="m_rival", kind=ActorKind.MERCHANT))
+    exchange.post_order(Order(
+        order_id="ord_rival", actor_id="m_rival", side=Side.ASK,
+        asset_ref="ast_mailers", asset_query=None, qty=1000, limit_price=1800,
+        currency=Currency.INR, expires_at="2026-12-31T00:00:00+00:00",
+        policy_snapshot={},
+    ), correlation_id="c1")
+
+    broker = Broker("m_buyer", exchange,
+                    ScriptedProvider(["trader ok", "I have no opinion whatsoever"]))
+    matches = broker.find_supply("biodegradable compostable mailers", 200, 2200, "c1")
+    assert len(matches) >= 2, "this test needs a real choice to exercise"
+
+    chosen = broker.choose(matches, "c1")
+
+    assert chosen is matches[0]
+
+
+def test_choosing_from_one_candidate_makes_no_model_call(exchange):
+    """A shortlist of one is not a choice."""
+    provider = ScriptedProvider(["trader ok"])
+    broker = Broker("m_buyer", exchange, provider)
+    matches = broker.find_supply("biodegradable compostable mailers", 200, 2200, "c1")
+    before = len(provider.calls)
+
+    broker.choose(matches[:1], "c1")
+
+    assert len(provider.calls) == before

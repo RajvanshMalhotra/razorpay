@@ -8,8 +8,10 @@ would silently break the thing this project is judged on.
 from __future__ import annotations
 
 import logging
+import re
 from dataclasses import replace
 
+from exchange import events as ev
 from exchange.agents.context import ContextDelta
 from exchange.agents.journal import AgentJournal
 from exchange.agents.relationships import RelationshipGraph
@@ -86,16 +88,7 @@ class Broker:
 
         state = self._exchange.state()
         asks = [o for o in state.open_orders.values() if o.side == Side.ASK]
-        # standing() returns the optimistic UNKNOWN_STANDING for a counterparty we
-        # have never dealt with; scores() would omit them entirely and let the
-        # matcher fall back to its own neutral default, discarding the optimism.
-        counterparty_scores = {
-            ask.actor_id: self.graph.standing(ask.actor_id) for ask in asks
-        }
-        matches = find_candidates(
-            bid, asks, state.assets, self._exchange.index,
-            counterparty_scores=counterparty_scores,
-        )
+        matches = find_candidates(bid, asks, state.assets, self._exchange.index)
         reply = self._trader.act(
             f"We need {qty} of: {need_text}, at no more than {limit_price} each. "
             f"{len(matches)} candidate(s) found."
@@ -105,6 +98,43 @@ class Broker:
         # so the one-way narrowing the design rests on never actually happened.
         self._promote(reply)
         return matches
+
+    def choose(self, matches: list[Match], correlation_id: str) -> Match:
+        """Pick a counterparty from the shortlist, and record why.
+
+        The shortlist is ranked by relevance alone. Which of them to actually
+        trade with is a judgment — history, reliability, whether a stranger is
+        worth a first try — and it belongs to an agent, in prose, in the log.
+        A weight here would decide it silently and need a number nobody could
+        justify.
+        """
+        if len(matches) <= 1:
+            return matches[0]
+
+        lines = []
+        for i, m in enumerate(matches, start=1):
+            seller = self._exchange.state().open_orders[m.ask_order_id].actor_id
+            recalled = self.subconscious.recall(seller)
+            lines.append(
+                f"{i}. seller {seller} at {m.clearing_price} per unit, "
+                f"{m.qty} units. History: "
+                + ("; ".join(recalled) if recalled else "never dealt with them.")
+            )
+
+        reply = self._diplomat.act(
+            "Choose which of these to trade with. Answer with the number, then one "
+            "sentence of reasoning.\n" + "\n".join(lines)
+        )
+        self._promote(reply)
+
+        index = _first_index(reply, len(matches))
+        chosen = matches[index]
+        AgentJournal(self._exchange.log, self.actor_id, correlation_id)._append(
+            ev.COUNTERPARTY_CHOSEN,
+            {"ask_order_id": chosen.ask_order_id, "reason": reply,
+             "shortlist": [m.ask_order_id for m in matches]},
+        )
+        return chosen
 
     def _promote(self, summary: str) -> None:
         """Narrow a sub-agent's reply into the broker's own context.
@@ -213,3 +243,17 @@ class Broker:
                     seller_id,
                 )
         return decision, settlement
+
+
+def _first_index(text: str, count: int) -> int:
+    """The first 1-based number in `text` that names a shortlist entry.
+
+    A model that will not answer must not stop the market, so an unparseable
+    reply falls back to the most relevant candidate — and the reply is still
+    journalled, so the audit trail shows what it said.
+    """
+    for token in re.findall(r"\d+", text):
+        value = int(token)
+        if 1 <= value <= count:
+            return value - 1
+    return 0

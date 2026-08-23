@@ -124,34 +124,6 @@ def test_a_relevance_floor_excludes_an_otherwise_feasible_ask():
     assert excluded == []
 
 
-def test_counterparty_score_can_reorder_near_ties():
-    """Two identical listings; the better-regarded seller comes first."""
-    assets = {
-        "ast_2": _asset("ast_2", "biodegradable mailers compostable poly", "m_b"),
-        "ast_4": _asset("ast_4", "biodegradable mailers compostable poly", "m_d"),
-    }
-    index = HybridIndex(embed_fn=fake_embedder)
-    index.index([(a.asset_id, a.title) for a in assets.values()])
-    asks = [_ask("ord_2", "m_b", "ast_2", 1940), _ask("ord_4", "m_d", "ast_4", 1940)]
-
-    matches = find_candidates(
-        BID, asks, assets, index, counterparty_scores={"m_b": 0.1, "m_d": 0.95}
-    )
-
-    assert matches[0].ask_order_id == "ord_4"
-
-
-def test_counterparty_score_never_excludes_an_ask():
-    """A distrusted seller is still offered — the gate bounds them, not the match."""
-    asks = [_ask("ord_2", "m_b", "ast_2", 1940)]
-
-    matches = find_candidates(
-        BID, asks, ASSETS, _index(), counterparty_scores={"m_b": 0.0}
-    )
-
-    assert len(matches) == 1
-
-
 def test_top_k_bounds_the_candidate_count():
     asks = [
         _ask("ord_1", "m_a", "ast_1", 1800),
@@ -213,3 +185,18 @@ def test_match_carries_the_filled_quantity():
     match = find_candidates(BID, asks, ASSETS, _index())[0]
 
     assert match.qty == 500  # the bid's qty, which is what actually trades
+
+
+def test_matching_no_longer_takes_counterparty_scores():
+    """Standing is a fact for the agent, not a multiplier on a score."""
+    import inspect
+
+    assert "counterparty_scores" not in inspect.signature(find_candidates).parameters
+
+
+def test_ranking_is_relevance_only():
+    asks = [_ask("ord_1", "m_a", "ast_1", 1800), _ask("ord_2", "m_b", "ast_2", 1940)]
+
+    matches = find_candidates(BID, asks, ASSETS, _index())
+
+    assert matches[0].ask_order_id == "ord_2"  # the semantic match, not the cheaper ask
