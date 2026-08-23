@@ -8,6 +8,7 @@ would silently break the thing this project is judged on.
 from __future__ import annotations
 
 from exchange.agents.context import ContextDelta
+from exchange.agents.journal import AgentJournal
 from exchange.agents.relationships import RelationshipGraph
 from exchange.agents.subagents import make_diplomat, make_scout, make_trader
 from exchange.agents.subconscious import Subconscious
@@ -79,9 +80,12 @@ class Broker:
         )
         return matches
 
-    def assess(self, counterparty_id: str) -> str:
+    def assess(self, counterparty_id: str, correlation_id: str | None = None) -> str:
         """Ask the Diplomat about a counterparty, with recall injected first."""
         recalled = self.subconscious.recall(counterparty_id)
+        if correlation_id and recalled:
+            AgentJournal(self._exchange.log, self.actor_id, correlation_id) \
+                .recall_injected(counterparty_id, recalled)
         return self._diplomat.act(
             f"What should we know about {counterparty_id} before dealing with them?",
             facts=recalled,

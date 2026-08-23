@@ -81,14 +81,20 @@ def negotiate(
     buyer_limit: int,
     seller_floor: int,
     token_budget: int = 8000,
+    journal=None,
 ) -> Outcome:
     offers: list[Offer] = []
     spent = 0
     transcript: list[str] = [f"Opening ask: {opening_price}"]
 
+    if journal:
+        journal.negotiation_opened(seller_id, opening_price)
+
     turn = "buyer"
     while True:
         if spent >= token_budget:
+            if journal:
+                journal.negotiation_ended(False, None, "token budget exhausted")
             return Outcome(False, None, tuple(offers), "token budget exhausted")
 
         if turn == "buyer":
@@ -112,6 +118,8 @@ def negotiate(
         if walking:
             offers.append(Offer(actor, offers[-1].price if offers else opening_price,
                                 response.text))
+            if journal:
+                journal.negotiation_ended(False, None, f"{actor} walked away")
             return Outcome(False, None, tuple(offers), f"{actor} walked away")
 
         if price is None:
@@ -121,15 +129,21 @@ def negotiate(
 
         offers.append(Offer(actor, price, response.text))
         transcript.append(f"{actor}: {response.text}")
+        if journal:
+            journal.negotiation_round(actor, price, response.text)
 
         if (
             len(offers) >= 2
             and offers[-1].actor_id != offers[-2].actor_id
             and offers[-1].price == offers[-2].price
         ):
+            if journal:
+                journal.negotiation_ended(True, price, "agreed")
             return Outcome(True, price, tuple(offers), "agreed")
 
         if gap_stalled(offers):
+            if journal:
+                journal.negotiation_ended(False, None, "stalled")
             return Outcome(False, None, tuple(offers), "stalled")
 
         turn = "seller" if turn == "buyer" else "buyer"
