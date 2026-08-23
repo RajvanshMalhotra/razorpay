@@ -101,11 +101,25 @@ class Broker:
         # Spec 4.2: a sub-agent's summary becomes a fact in the orchestrator's
         # delta. Discarding the reply left the root context permanently empty,
         # so the one-way narrowing the design rests on never actually happened.
-        state_version = len(self._exchange.log.read_all())
-        self.root_id = self.tree.add(
-            self.root_id, ContextDelta(facts_added=(reply,)), state_version,
-        )
+        self._promote(reply)
         return matches
+
+    def _promote(self, summary: str) -> None:
+        """Narrow a sub-agent's reply into the broker's own context.
+
+        Sub-agents branch from `root_id` and never merge; each returns a
+        structured summary that becomes a fact here. Re-parenting the three
+        agents onto the new node is what keeps the promoted facts visible to
+        them — otherwise the orchestrator accumulates a chain its own workers
+        cannot read.
+        """
+        self.root_id = self.tree.add(
+            self.root_id,
+            ContextDelta(facts_added=(summary,)),
+            len(self._exchange.log.read_all()),
+        )
+        for agent in (self._trader, self._scout, self._diplomat):
+            agent.reparent(self.root_id)
 
     def assess(self, counterparty_id: str, correlation_id: str) -> str:
         """Ask the Diplomat about a counterparty, with recall injected first.
@@ -119,28 +133,30 @@ class Broker:
         if recalled:
             AgentJournal(self._exchange.log, self.actor_id, correlation_id) \
                 .recall_injected(counterparty_id, recalled)
-        return self._diplomat.act(
+        reply = self._diplomat.act(
             f"What should we know about {counterparty_id} before dealing with them?",
             facts=recalled,
         )
+        self._promote(reply)
+        return reply
 
     def close(
         self,
         match: Match,
         seller_id: str,
         correlation_id: str,
-        agreed_price: int | None = None,
+        agreed_price: int,
     ) -> tuple[PolicyDecision, Settlement | None]:
         """Settle through the exchange's gate, then record the relationship.
 
-        `agreed_price` is what the negotiation actually landed on, per unit. The
-        match's own `clearing_price` is the ask's asking price — settling at that
-        after agreeing on something else would make the log tell two stories on
-        one correlation_id, so the agreed figure replaces it before anything
-        downstream sees the match.
+        `agreed_price` is what the negotiation actually landed on, per unit, and
+        is required. The match's own `clearing_price` is the ask's asking price —
+        settling at that after agreeing on something else would make the log
+        tell two stories on one correlation_id, and an optional parameter meant
+        a forgetful caller could do exactly that silently. The agreed figure
+        always replaces it before anything downstream sees the match.
         """
-        if agreed_price is not None:
-            match = replace(match, clearing_price=agreed_price)
+        match = replace(match, clearing_price=agreed_price)
 
         ctx = PolicyContext(
             actor_status=ActorStatus.ACTIVE,

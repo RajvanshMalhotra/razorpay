@@ -124,7 +124,8 @@ def test_closing_a_trade_goes_through_the_gate(exchange):
     # 200 units at 1940 is 388,000, inside the 500,000 trial cap a stranger gets.
     matches = broker.find_supply("biodegradable compostable mailers", 200, 2200, "c1")
 
-    decision, settlement = broker.close(matches[0], "m_seller", "c1")
+    decision, settlement = broker.close(
+        matches[0], "m_seller", "c1", agreed_price=matches[0].clearing_price)
 
     assert decision.verdict == Verdict.ALLOW
     assert settlement is not None
@@ -144,7 +145,7 @@ def test_a_stranger_is_gated_by_confidence_not_excluded(exchange):
     matches = broker.find_supply("biodegradable compostable mailers", 500, 2200, "c1")
     assert matches, "a stranger must still reach the book"
 
-    decision, _ = broker.close(matches[0], "m_seller", "c1")
+    decision, _ = broker.close(matches[0], "m_seller", "c1", agreed_price=matches[0].clearing_price)
 
     assert decision.verdict == Verdict.DENY
     assert decision.limits_evaluated["amount"] == 970_000
@@ -158,7 +159,7 @@ def test_a_closed_trade_updates_the_relationship(exchange):
     # Trial-sized, so the stranger's cap allows it and a deal is actually recorded.
     matches = broker.find_supply("biodegradable compostable mailers", 200, 2200, "c1")
 
-    broker.close(matches[0], "m_seller", "c1")
+    broker.close(matches[0], "m_seller", "c1", agreed_price=matches[0].clearing_price)
 
     assert broker.graph.confidence("m_seller") > 0.0
 
@@ -182,7 +183,7 @@ def test_a_settled_trade_checkpoints_each_sub_agents_memory(exchange):
     # Trial-sized, so the trade actually settles and the episode boundary lands.
     matches = broker.find_supply("biodegradable compostable mailers", 200, 2200, "c1")
 
-    broker.close(matches[0], "m_seller", "c1")
+    broker.close(matches[0], "m_seller", "c1", agreed_price=matches[0].clearing_price)
 
     for agent in (broker._trader, broker._scout, broker._diplomat):
         assert broker.tree.node(agent.node_id).checkpoint is not None
@@ -197,7 +198,7 @@ def test_an_uncaptured_payment_is_not_remembered_as_a_delivered_deal(exchange):
     # Trial-sized, so the gate allows it and the settlement is what stalls.
     matches = broker.find_supply("biodegradable compostable mailers", 200, 2200, "c1")
 
-    _, settlement = broker.close(matches[0], "m_seller", "c1")
+    _, settlement = broker.close(matches[0], "m_seller", "c1", agreed_price=matches[0].clearing_price)
 
     assert settlement.status == SettlementStatus.PENDING
     assert broker.graph.confidence("m_seller") == 0.0, "no deal was completed"
@@ -229,7 +230,7 @@ def test_a_settled_trade_files_a_lesson_the_broker_can_recall(exchange):
         ["ok", "BEHAVIOURAL: folded on the third round, moves fast on volume"]))
     matches = broker.find_supply("biodegradable compostable mailers", 200, 2200, "c1")
 
-    broker.close(matches[0], "m_seller", "c1")
+    broker.close(matches[0], "m_seller", "c1", agreed_price=matches[0].clearing_price)
 
     assert broker.subconscious.recall("m_seller") == (
         "folded on the third round, moves fast on volume",
@@ -249,7 +250,7 @@ def test_a_denied_trade_files_no_lesson(exchange):
     broker = Broker("m_buyer", exchange, ScriptedProvider(["ok"]))
     matches = broker.find_supply("biodegradable compostable mailers", 500, 2200, "c1")
 
-    decision, _ = broker.close(matches[0], "m_seller", "c1")
+    decision, _ = broker.close(matches[0], "m_seller", "c1", agreed_price=matches[0].clearing_price)
 
     assert decision.verdict == Verdict.DENY
     assert broker.subconscious.recall("m_seller") == ()
@@ -289,9 +290,44 @@ def test_a_consolidation_failure_does_not_lose_a_paid_trade(exchange):
     broker = Broker("m_buyer", exchange, ExplodingProvider())
     matches = broker.find_supply("biodegradable compostable mailers", 200, 2200, "c1")
 
-    decision, settlement = broker.close(matches[0], "m_seller", "c1")
+    decision, settlement = broker.close(
+        matches[0], "m_seller", "c1", agreed_price=matches[0].clearing_price)
 
     assert settlement is not None, "the trade was paid for; close() must return it"
     assert settlement.status == SettlementStatus.COMPLETED
     assert broker.graph.confidence("m_seller") > 0.0, "the deal itself was recorded"
     assert broker.subconscious.recall("m_seller") == (), "no lesson survived, as expected"
+
+
+def test_every_sub_agent_summary_reaches_the_orchestrator(exchange):
+    """Spec 4.2: each sub-agent narrows upward. Only the Trader's did."""
+    broker = Broker("m_buyer", exchange,
+                    ScriptedProvider(["trader says supply is tight",
+                                      "diplomat says try them small"]))
+
+    broker.find_supply("biodegradable compostable mailers", 200, 2200, "c1")
+    broker.assess("m_seller", "c1")
+
+    root = broker.tree.materialise(broker.root_id)
+    assert any("supply is tight" in f for f in root.facts)
+    assert any("try them small" in f for f in root.facts)
+
+
+def test_the_promoted_chain_is_visible_to_the_sub_agents(exchange):
+    """A promoted fact the sub-agents cannot see is not shared context."""
+    broker = Broker("m_buyer", exchange,
+                    ScriptedProvider(["supply is tight", "second call"]))
+    broker.find_supply("biodegradable compostable mailers", 200, 2200, "c1")
+
+    trader_sees = broker.tree.materialise(broker._trader.node_id)
+
+    assert any("supply is tight" in f for f in trader_sees.facts)
+
+
+def test_close_requires_the_negotiated_price(exchange):
+    """Optional meant a caller could silently settle at the ask again."""
+    broker = Broker("m_buyer", exchange, ScriptedProvider(["ok"]))
+    matches = broker.find_supply("biodegradable compostable mailers", 200, 2200, "c1")
+
+    with pytest.raises(TypeError):
+        broker.close(matches[0], "m_seller", "c1")

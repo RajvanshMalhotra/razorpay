@@ -106,7 +106,7 @@ def test_the_whole_story_threads_one_correlation_id(exchange):
     # 200 units: the first deal with a stranger has to fit the trial cap, or
     # the gate denies it and there is no settlement leg of the story to read.
     matches = buyer.find_supply("biodegradable compostable mailers", 200, 2200, CORR)
-    buyer.close(matches[0], "m_seller", CORR)
+    buyer.close(matches[0], "m_seller", CORR, agreed_price=matches[0].clearing_price)
 
     types = [e.type for e in exchange.log.read_by_correlation(CORR)]
 

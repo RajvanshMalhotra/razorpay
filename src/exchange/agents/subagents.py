@@ -75,6 +75,15 @@ class SubAgent:
         )
         return response.text
 
+    def reparent(self, parent_id: str) -> None:
+        """Re-root this agent's next action under a new shared ancestor.
+
+        Called when the orchestrator promotes a fact, so the agent's later
+        actions see it. Its own prior branch is left intact and unreachable —
+        history is never rewritten, only re-anchored.
+        """
+        self.node_id = self._tree.add(parent_id, ContextDelta(), self._state_version)
+
 
 def make_trader(provider, tree, parent_id, state_version) -> SubAgent:
     return SubAgent("trader", TRADER_PROMPT, provider, tree, parent_id, state_version,
