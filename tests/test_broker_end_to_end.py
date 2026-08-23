@@ -101,7 +101,8 @@ def test_a_reliability_lesson_lowers_standing_but_never_excludes(exchange):
 
 
 def test_the_whole_story_threads_one_correlation_id(exchange):
-    buyer = Broker("m_buyer", exchange, ScriptedProvider(["c"]))
+    buyer = Broker("m_buyer", exchange, ScriptedProvider(
+        ["c", "BEHAVIOURAL: moved fast on volume"]))
     # 200 units: the first deal with a stranger has to fit the trial cap, or
     # the gate denies it and there is no settlement leg of the story to read.
     matches = buyer.find_supply("biodegradable compostable mailers", 200, 2200, CORR)

@@ -75,7 +75,8 @@ def test_recall_is_injected_before_the_diplomat_speaks(exchange):
 
 
 def test_closing_a_trade_goes_through_the_gate(exchange):
-    broker = Broker("m_buyer", exchange, ScriptedProvider(["ok"]))
+    broker = Broker("m_buyer", exchange, ScriptedProvider(
+        ["ok", "BEHAVIOURAL: moved fast on volume"]))
     # 200 units at 1940 is 388,000, inside the 500,000 trial cap a stranger gets.
     matches = broker.find_supply("biodegradable compostable mailers", 200, 2200, "c1")
 
@@ -108,7 +109,8 @@ def test_a_stranger_is_gated_by_confidence_not_excluded(exchange):
 
 
 def test_a_closed_trade_updates_the_relationship(exchange):
-    broker = Broker("m_buyer", exchange, ScriptedProvider(["ok"]))
+    broker = Broker("m_buyer", exchange, ScriptedProvider(
+        ["ok", "BEHAVIOURAL: moved fast on volume"]))
     # Trial-sized, so the stranger's cap allows it and a deal is actually recorded.
     matches = broker.find_supply("biodegradable compostable mailers", 200, 2200, "c1")
 
@@ -131,7 +133,8 @@ def test_each_sub_agent_gets_its_own_branch(exchange):
 def test_a_settled_trade_checkpoints_each_sub_agents_memory(exchange):
     """A completed trade is the episode boundary; without a checkpoint every
     later action re-materialises the whole chain from the root."""
-    broker = Broker("m_buyer", exchange, ScriptedProvider(["ok"]))
+    broker = Broker("m_buyer", exchange, ScriptedProvider(
+        ["ok", "BEHAVIOURAL: moved fast on volume"]))
     # Trial-sized, so the trade actually settles and the episode boundary lands.
     matches = broker.find_supply("biodegradable compostable mailers", 200, 2200, "c1")
 
@@ -145,7 +148,8 @@ def test_an_uncaptured_payment_is_not_remembered_as_a_delivered_deal(exchange):
     """PENDING means nobody paid yet. Trusting a counterparty for it is backwards."""
     exchange._inr_rail = RazorpayRail(exchange.log, FakeRazorpay(payments_by_order={}),
                                       poll_attempts=1, poll_interval=0)
-    broker = Broker("m_buyer", exchange, ScriptedProvider(["ok"]))
+    broker = Broker("m_buyer", exchange, ScriptedProvider(
+        ["ok", "BEHAVIOURAL: moved fast on volume"]))
     # Trial-sized, so the gate allows it and the settlement is what stalls.
     matches = broker.find_supply("biodegradable compostable mailers", 200, 2200, "c1")
 
@@ -157,7 +161,8 @@ def test_an_uncaptured_payment_is_not_remembered_as_a_delivered_deal(exchange):
 
 def test_the_settled_amount_is_the_negotiated_price_not_the_ask(exchange):
     """A trail that records agreeing at one price and paying another is not a trail."""
-    broker = Broker("m_buyer", exchange, ScriptedProvider(["ok"]))
+    broker = Broker("m_buyer", exchange, ScriptedProvider(
+        ["ok", "BEHAVIOURAL: moved fast on volume"]))
     # 200 rather than 500: at 500 the lot is over the stranger's trial cap and
     # the gate denies it, so no settlement would exist to inspect.
     matches = broker.find_supply("biodegradable compostable mailers", 200, 2200, "c1")
@@ -172,12 +177,50 @@ def test_the_settled_amount_is_the_negotiated_price_not_the_ask(exchange):
     assert initiated.payload["amount"] == 1900 * 200
 
 
+def test_a_settled_trade_files_a_lesson_the_broker_can_recall(exchange):
+    """Nothing in src/ closed the memory loop: consolidate was called only by
+    tests, so LESSON_CONSOLIDATED came from no production path and the second
+    deal was informed by the first only when a test did it by hand."""
+    broker = Broker("m_buyer", exchange, ScriptedProvider(
+        ["ok", "BEHAVIOURAL: folded on the third round, moves fast on volume"]))
+    matches = broker.find_supply("biodegradable compostable mailers", 200, 2200, "c1")
+
+    broker.close(matches[0], "m_seller", "c1")
+
+    assert broker.subconscious.recall("m_seller") == (
+        "folded on the third round, moves fast on volume",
+    )
+    consolidated = [
+        e for e in exchange.log.read_by_correlation("c1")
+        if e.type == "LESSON_CONSOLIDATED"
+    ]
+    assert len(consolidated) == 1
+    assert consolidated[0].payload["counterparty_id"] == "m_seller"
+    assert consolidated[0].payload["kind"] == "behavioural"
+    assert consolidated[0].actor_id == "m_buyer"
+
+
+def test_a_denied_trade_files_no_lesson(exchange):
+    """There is nothing to learn about a counterparty we never traded with."""
+    broker = Broker("m_buyer", exchange, ScriptedProvider(["ok"]))
+    matches = broker.find_supply("biodegradable compostable mailers", 500, 2200, "c1")
+
+    decision, _ = broker.close(matches[0], "m_seller", "c1")
+
+    assert decision.verdict == Verdict.DENY
+    assert broker.subconscious.recall("m_seller") == ()
+    assert "LESSON_CONSOLIDATED" not in [
+        e.type for e in exchange.log.read_by_correlation("c1")
+    ]
+
+
 def test_a_stranger_is_ranked_optimistically_not_neutrally(exchange):
     """The optimism must survive the trip into the matcher, or the market
     ossifies into cliques and a new merchant never gets a first deal."""
     from exchange.agents.relationships import UNKNOWN_STANDING
 
-    broker = Broker("m_buyer", exchange, ScriptedProvider(["ok"]))
+    broker = Broker("m_buyer", exchange, ScriptedProvider(
+        ["ok", "BEHAVIOURAL: moved fast on volume"]))
     matches = broker.find_supply("biodegradable compostable mailers", 500, 2200, "c1")
 
     assert matches

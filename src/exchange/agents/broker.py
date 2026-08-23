@@ -147,4 +147,19 @@ class Broker:
             )
             for agent in (self._trader, self._scout, self._diplomat):
                 self.tree.checkpoint(agent.node_id)
+
+            # Consolidation and checkpointing are the same moment: the checkpoint
+            # is everything the broker knew when the deal closed, which is exactly
+            # what there is to distil.
+            #
+            # What is knowable now is BEHAVIOURAL — how they negotiated, how fast
+            # they moved, what they conceded. Whether they actually delivered is
+            # not known at settlement, so reliability lessons wait for a delivery
+            # signal that does not exist yet. apply_lesson ignores anything that
+            # is not a reliability lesson, so feeding it every lesson is safe.
+            episode = self.tree.materialise(self._trader.node_id)
+            lesson = self.subconscious.consolidate(episode, seller_id, category="trade")
+            AgentJournal(self._exchange.log, self.actor_id, correlation_id) \
+                .lesson_consolidated(lesson)
+            self.graph.apply_lesson(lesson)
         return decision, settlement
