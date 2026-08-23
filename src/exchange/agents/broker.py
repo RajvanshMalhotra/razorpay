@@ -70,9 +70,15 @@ class Broker:
 
         state = self._exchange.state()
         asks = [o for o in state.open_orders.values() if o.side == Side.ASK]
+        # standing() returns the optimistic UNKNOWN_STANDING for a counterparty we
+        # have never dealt with; scores() would omit them entirely and let the
+        # matcher fall back to its own neutral default, discarding the optimism.
+        counterparty_scores = {
+            ask.actor_id: self.graph.standing(ask.actor_id) for ask in asks
+        }
         matches = find_candidates(
             bid, asks, state.assets, self._exchange.index,
-            counterparty_scores=self.graph.scores(),
+            counterparty_scores=counterparty_scores,
         )
         self._trader.act(
             f"We need {qty} of: {need_text}, at no more than {limit_price} each. "

@@ -14,6 +14,7 @@ import sys
 from dotenv import load_dotenv
 
 from exchange.agents.broker import Broker
+from exchange.agents.journal import AgentJournal
 from exchange.agents.negotiation import negotiate
 from exchange.eventlog import EventLog
 from exchange.llm.openai_compat import provider_from_env
@@ -65,11 +66,13 @@ def main() -> int:
     print(f"{matches[0].rationale}\n")
 
     print("=== DIPLOMAT ===")
-    print(buyer.assess("m_seller") + "\n")
+    print(buyer.assess("m_seller", correlation_id=correlation_id) + "\n")
 
     print("=== NEGOTIATION ===")
+    journal = AgentJournal(log, "m_buyer", correlation_id)
     outcome = negotiate("m_buyer", "m_seller", provider, provider,
-                        opening_price=1940, buyer_limit=2200, seller_floor=1800)
+                        opening_price=1940, buyer_limit=2200, seller_floor=1800,
+                        journal=journal)
     for offer in outcome.offers:
         print(f"  {offer.actor_id:>10}: {offer.price:>6}  {offer.message.strip()[:70]}")
     print(f"\n  outcome: {outcome.ended_reason}"

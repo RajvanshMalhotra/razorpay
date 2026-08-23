@@ -126,3 +126,15 @@ def test_a_settled_trade_checkpoints_each_sub_agents_memory(exchange):
 
     for agent in (broker._trader, broker._scout, broker._diplomat):
         assert broker.tree.node(agent.node_id).checkpoint is not None
+
+
+def test_a_stranger_is_ranked_optimistically_not_neutrally(exchange):
+    """The optimism must survive the trip into the matcher, or the market
+    ossifies into cliques and a new merchant never gets a first deal."""
+    from exchange.agents.relationships import UNKNOWN_STANDING
+
+    broker = Broker("m_buyer", exchange, ScriptedProvider(["ok"]))
+    matches = broker.find_supply("biodegradable compostable mailers", 500, 2200, "c1")
+
+    assert matches
+    assert f"standing {UNKNOWN_STANDING:.2f}" in matches[0].rationale
