@@ -68,3 +68,31 @@ def test_llm_message_is_frozen():
 
     with pytest.raises(Exception):
         message.content = "changed"
+
+
+def test_providers_from_env_returns_a_strong_and_a_fast_tier(monkeypatch):
+    from exchange.llm.openai_compat import providers_from_env
+
+    monkeypatch.setenv("LLM_PROVIDER", "deepseek")
+    monkeypatch.setenv("DEEPSEEK_API_KEY", "sk-test")
+    monkeypatch.setenv("LLM_MODEL_STRONG", "deepseek-v4-pro")
+    monkeypatch.setenv("LLM_MODEL_FAST", "deepseek-v4-flash")
+
+    strong, fast = providers_from_env()
+
+    assert strong._model == "deepseek-v4-pro"
+    assert fast._model == "deepseek-v4-flash"
+
+
+def test_both_tiers_fall_back_to_one_model_when_unset(monkeypatch):
+    """Local development points both tiers at whatever Ollama has."""
+    from exchange.llm.openai_compat import providers_from_env
+
+    monkeypatch.setenv("LLM_PROVIDER", "ollama")
+    monkeypatch.delenv("LLM_MODEL_STRONG", raising=False)
+    monkeypatch.delenv("LLM_MODEL_FAST", raising=False)
+    monkeypatch.setenv("LLM_MODEL", "llama3.2:latest")
+
+    strong, fast = providers_from_env()
+
+    assert strong._model == fast._model == "llama3.2:latest"

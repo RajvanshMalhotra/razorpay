@@ -39,12 +39,14 @@ class Broker:
         actor_id: str,
         exchange,
         provider,
+        fast_provider=None,
         subconscious: Subconscious | None = None,
         graph: RelationshipGraph | None = None,
     ) -> None:
         self.actor_id = actor_id
         self._exchange = exchange
         self._provider = provider
+        fast = fast_provider or provider
         self.subconscious = subconscious or Subconscious(provider)
         self.graph = graph or RelationshipGraph()
 
@@ -56,9 +58,9 @@ class Broker:
         )
 
         version = len(self._exchange.log.read_all())
-        self._trader = make_trader(provider, self.tree, self.root_id, version)
-        self._scout = make_scout(provider, self.tree, self.root_id, version)
-        self._diplomat = make_diplomat(provider, self.tree, self.root_id, version)
+        self._trader = make_trader(fast, self.tree, self.root_id, version)
+        self._scout = make_scout(fast, self.tree, self.root_id, version)
+        self._diplomat = make_diplomat(fast, self.tree, self.root_id, version)
 
     def find_supply(
         self,

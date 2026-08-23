@@ -114,3 +114,33 @@ def provider_from_env() -> OpenAICompatProvider:
         )
 
     raise ValueError(f"Unknown LLM_PROVIDER {which!r}; expected 'ollama' or 'deepseek'")
+
+
+def providers_from_env() -> tuple[OpenAICompatProvider, OpenAICompatProvider]:
+    """Return (strong, fast).
+
+    The strong tier carries judgment — consolidating an episode, choosing a
+    counterparty, valuing an insight. The fast tier carries the narrow roles.
+    The expensive model is the rarest call, so mixed tiering costs less than
+    running one tier everywhere, not more.
+
+    LLM_MODEL_STRONG / LLM_MODEL_FAST override per tier; both fall back to
+    LLM_MODEL so local development needs no extra configuration.
+    """
+    base = provider_from_env()
+    strong_model = os.environ.get("LLM_MODEL_STRONG")
+    fast_model = os.environ.get("LLM_MODEL_FAST")
+    if not strong_model and not fast_model:
+        return base, base
+    return (
+        _retier(base, strong_model) if strong_model else base,
+        _retier(base, fast_model) if fast_model else base,
+    )
+
+
+def _retier(base: OpenAICompatProvider, model: str) -> OpenAICompatProvider:
+    """A sibling provider on the same endpoint and key, different model."""
+    clone = OpenAICompatProvider.__new__(OpenAICompatProvider)
+    clone._client = base._client
+    clone._model = model
+    return clone
