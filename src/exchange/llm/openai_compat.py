@@ -15,7 +15,11 @@ from exchange.llm.base import LLMMessage, LLMResponse
 OLLAMA_BASE_URL = "http://localhost:11434/v1"
 DEEPSEEK_BASE_URL = "https://api.deepseek.com"
 DEFAULT_DEEPSEEK_MODEL = "deepseek-v4-pro"
-DEFAULT_OLLAMA_MODEL = "qwen3:4b"
+# llama3.2 rather than a reasoning model: qwen3 spends ~700 tokens thinking
+# before emitting anything, so under a small max_tokens it returns an empty
+# string having consumed the whole budget. Negotiation parses a structured
+# reply under a 256-token cap and needs an immediate answer.
+DEFAULT_OLLAMA_MODEL = "llama3.2:latest"
 
 
 class OpenAICompatProvider:
