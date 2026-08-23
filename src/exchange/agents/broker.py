@@ -24,6 +24,7 @@ from exchange.models import (
     Order,
     PolicyDecision,
     Settlement,
+    SettlementStatus,
     Side,
 )
 from exchange.policy import PolicyContext
@@ -133,7 +134,12 @@ class Broker:
         decision, settlement = self._exchange.execute_match(
             match, self.actor_id, seller_id, ctx, correlation_id=correlation_id,
         )
-        if settlement is not None:
+        # COMPLETED, not merely non-None: the rails never return None. A capture
+        # that never lands leaves the settlement PENDING and an SDK failure leaves
+        # it FAILED, and recording either as a delivered deal would raise standing
+        # and confidence — clearing a higher cap next time on the strength of a
+        # payment that never happened.
+        if settlement is not None and settlement.status == SettlementStatus.COMPLETED:
             self.graph.record_deal(
                 seller_id,
                 value=match.clearing_price * match.qty,

@@ -3,7 +3,8 @@ import pytest
 from exchange.agents.broker import Broker
 from exchange.eventlog import EventLog
 from exchange.models import (
-    Actor, ActorKind, ActorStatus, Asset, AssetKind, Currency, Order, Side, Verdict,
+    Actor, ActorKind, ActorStatus, Asset, AssetKind, Currency, Order,
+    SettlementStatus, Side, Verdict,
 )
 from exchange.rails.credits import CreditRail
 from exchange.rails.inr import RazorpayRail
@@ -126,6 +127,19 @@ def test_a_settled_trade_checkpoints_each_sub_agents_memory(exchange):
 
     for agent in (broker._trader, broker._scout, broker._diplomat):
         assert broker.tree.node(agent.node_id).checkpoint is not None
+
+
+def test_an_uncaptured_payment_is_not_remembered_as_a_delivered_deal(exchange):
+    """PENDING means nobody paid yet. Trusting a counterparty for it is backwards."""
+    exchange._inr_rail = RazorpayRail(exchange.log, FakeRazorpay(payments_by_order={}),
+                                      poll_attempts=1, poll_interval=0)
+    broker = Broker("m_buyer", exchange, ScriptedProvider(["ok"]))
+    matches = broker.find_supply("biodegradable compostable mailers", 500, 2200, "c1")
+
+    _, settlement = broker.close(matches[0], "m_seller", "c1")
+
+    assert settlement.status == SettlementStatus.PENDING
+    assert broker.graph.confidence("m_seller") == 0.0, "no deal was completed"
 
 
 def test_the_settled_amount_is_the_negotiated_price_not_the_ask(exchange):
