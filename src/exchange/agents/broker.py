@@ -97,10 +97,16 @@ class Broker:
         )
         return matches
 
-    def assess(self, counterparty_id: str, correlation_id: str | None = None) -> str:
-        """Ask the Diplomat about a counterparty, with recall injected first."""
+    def assess(self, counterparty_id: str, correlation_id: str) -> str:
+        """Ask the Diplomat about a counterparty, with recall injected first.
+
+        `correlation_id` is required, not optional. A recall that steered a
+        decision has to leave a trace on the trade it steered — an opt-in
+        audit trail is not one, and the caller who forgets is exactly the
+        caller whose reasoning goes unrecorded.
+        """
         recalled = self.subconscious.recall(counterparty_id)
-        if correlation_id and recalled:
+        if recalled:
             AgentJournal(self._exchange.log, self.actor_id, correlation_id) \
                 .recall_injected(counterparty_id, recalled)
         return self._diplomat.act(

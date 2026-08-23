@@ -79,7 +79,7 @@ def test_the_second_deal_is_informed_by_the_first(exchange):
         ContextState(facts=("settled at 1940", "delivery slipped")),
         "m_seller", "packaging",
     )
-    advice = buyer.assess("m_seller")
+    advice = buyer.assess("m_seller", CORR)
 
     assert "late delivery" in advice
     assert "delivered two days late" in provider.calls[-1]["messages"][0].content

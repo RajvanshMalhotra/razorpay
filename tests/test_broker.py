@@ -60,7 +60,7 @@ def test_finding_supply_posts_a_real_bid_to_the_book(exchange):
 def test_the_diplomat_advises_on_a_counterparty(exchange):
     broker = Broker("m_buyer", exchange, ScriptedProvider(["unknown, try small"]))
 
-    assert "try small" in broker.assess("m_seller")
+    assert "try small" in broker.assess("m_seller", "c1")
 
 
 def test_recall_is_injected_before_the_diplomat_speaks(exchange):
@@ -69,9 +69,36 @@ def test_recall_is_injected_before_the_diplomat_speaks(exchange):
     from exchange.agents.context import ContextState
     broker.subconscious.consolidate(ContextState(facts=("x",)), "m_seller", "packaging")
 
-    broker.assess("m_seller")
+    broker.assess("m_seller", "c1")
 
     assert "pushes on delivery" in provider.calls[-1]["messages"][0].content
+
+
+def test_an_injected_recall_always_lands_on_the_trade(exchange):
+    """assess used to journal only if the caller happened to pass a
+    correlation_id. A recall that steered a decision and left no trace on the
+    trade is exactly the audit-trail claim going unmet, so it is not optional."""
+    provider = ScriptedProvider(["BEHAVIOURAL: pushes on delivery", "advice here"])
+    broker = Broker("m_buyer", exchange, provider)
+    from exchange.agents.context import ContextState
+    broker.subconscious.consolidate(ContextState(facts=("x",)), "m_seller", "packaging")
+
+    broker.assess("m_seller", "c1")
+
+    injected = [
+        e for e in exchange.log.read_by_correlation("c1")
+        if e.type == "RECALL_INJECTED"
+    ]
+    assert len(injected) == 1
+    assert injected[0].payload["counterparty_id"] == "m_seller"
+    assert injected[0].payload["lessons"] == ["pushes on delivery"]
+
+
+def test_assess_requires_a_correlation_id(exchange):
+    broker = Broker("m_buyer", exchange, ScriptedProvider(["advice"]))
+
+    with pytest.raises(TypeError):
+        broker.assess("m_seller")
 
 
 def test_closing_a_trade_goes_through_the_gate(exchange):
@@ -123,7 +150,7 @@ def test_each_sub_agent_gets_its_own_branch(exchange):
     broker = Broker("m_buyer", exchange, ScriptedProvider(["a", "b"]))
 
     broker.find_supply("mailers", 500, 2200, "c1")
-    broker.assess("m_seller")
+    broker.assess("m_seller", "c1")
 
     trader_node = broker._trader.node_id
     diplomat_node = broker._diplomat.node_id

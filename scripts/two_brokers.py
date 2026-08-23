@@ -66,7 +66,7 @@ def main() -> int:
     print(f"{matches[0].rationale}\n")
 
     print("=== DIPLOMAT ===")
-    print(buyer.assess("m_seller", correlation_id=correlation_id) + "\n")
+    print(buyer.assess("m_seller", correlation_id) + "\n")
 
     print("=== NEGOTIATION ===")
     journal = AgentJournal(log, "m_buyer", correlation_id)
