@@ -1,0 +1,106 @@
+import pytest
+
+from exchange.eventlog import EventLog
+from exchange.events import SETTLEMENT_COMPLETED, SETTLEMENT_INITIATED
+from exchange.house.agent import HouseAgent
+from exchange.llm.scripted import ScriptedProvider
+
+
+@pytest.fixture
+def log(tmp_path):
+    lg = EventLog(str(tmp_path / "house.db"))
+    yield lg
+    lg.close()
+
+
+def _settle(log, actor, amount, corr):
+    log.append(actor, SETTLEMENT_INITIATED,
+               {"settlement_id": f"stl_{corr}", "match_id": f"m_{corr}",
+                "currency": "INR", "amount": amount}, correlation_id=corr)
+    log.append(actor, SETTLEMENT_COMPLETED,
+               {"settlement_id": f"stl_{corr}", "razorpay_payment_id": "pay"},
+               correlation_id=corr)
+
+
+def test_observe_reads_settled_activity_from_the_log(log):
+    for i in range(3):
+        _settle(log, f"m_{i}", 100_000 * (i + 1), f"c{i}")
+
+    observations = HouseAgent(log, ScriptedProvider([])).observe()
+
+    assert len(observations) == 3
+    assert {o["actor_id"] for o in observations} == {"m_0", "m_1", "m_2"}
+
+
+def test_observe_ignores_settlements_that_never_completed(log):
+    """A PENDING settlement is not evidence of anything yet."""
+    log.append("m_a", SETTLEMENT_INITIATED,
+               {"settlement_id": "stl_1", "match_id": "m1",
+                "currency": "INR", "amount": 500}, correlation_id="c")
+
+    assert HouseAgent(log, ScriptedProvider([])).observe() == []
+
+
+def test_minting_needs_enough_distinct_merchants(log):
+    for i in range(30):
+        _settle(log, f"m_{i}", 100_000, f"c{i}")
+    house = HouseAgent(log, ScriptedProvider(["skincare demand is up 12% week on week"]))
+
+    lot = house.mint_from(house.observe(), "c_house")
+
+    assert lot is not None
+    assert lot.spec["k"] == 30
+
+
+def test_minting_refuses_below_the_floor_and_logs_it(log):
+    for i in range(4):
+        _settle(log, f"m_{i}", 100_000, f"c{i}")
+    house = HouseAgent(log, ScriptedProvider(["a headline"]))
+
+    lot = house.mint_from(house.observe(), "c_house")
+
+    assert lot is None
+    types = [e.type for e in log.read_by_correlation("c_house")]
+    assert "PRIVACY_REFUSED" in types
+    assert "INSIGHT_MINTED" not in types
+
+
+def test_a_refusal_records_how_many_merchants_it_had(log):
+    for i in range(4):
+        _settle(log, f"m_{i}", 100_000, f"c{i}")
+    house = HouseAgent(log, ScriptedProvider(["a headline"]))
+
+    house.mint_from(house.observe(), "c_house")
+
+    refused = [e for e in log.read_by_correlation("c_house")
+               if e.type == "PRIVACY_REFUSED"][0]
+    assert refused.payload["k"] == 4
+
+
+def test_minting_writes_the_lot_to_the_log(log):
+    for i in range(30):
+        _settle(log, f"m_{i}", 100_000, f"c{i}")
+    house = HouseAgent(log, ScriptedProvider(["skincare demand is up"]))
+
+    house.mint_from(house.observe(), "c_house")
+
+    minted = [e for e in log.read_by_correlation("c_house")
+              if e.type == "INSIGHT_MINTED"][0]
+    assert minted.payload["headline"] == "skincare demand is up"
+
+
+def test_the_feed_carries_headlines_and_never_playbooks(log):
+    """The free half creates the hunger; the auction sells the answer."""
+    for i in range(30):
+        _settle(log, f"m_{i}", 100_000, f"c{i}")
+    house = HouseAgent(log, ScriptedProvider(["skincare demand is up"]))
+    house.mint_from(house.observe(), "c_house")
+
+    feed = house.feed()
+
+    assert feed == ("skincare demand is up",)
+
+
+def test_the_house_never_bids():
+    """It mints, publishes and clears. A house that buys is not a market."""
+    assert not hasattr(HouseAgent, "bid")
