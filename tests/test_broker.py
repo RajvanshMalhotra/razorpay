@@ -57,6 +57,22 @@ def test_finding_supply_posts_a_real_bid_to_the_book(exchange):
     assert bids[0].is_descriptive is True
 
 
+def test_the_traders_summary_is_promoted_into_the_brokers_own_context(exchange):
+    """Spec 4.2: each sub-agent's summary becomes a fact in the orchestrator's
+    delta. find_supply discarded the Trader's reply, so the root node's context
+    never grew and the one-way narrowing was narrowing into nothing."""
+    broker = Broker("m_buyer", exchange, ScriptedProvider(["merchant m_seller quotes best"]))
+    before = broker.tree.materialise(broker.root_id)
+    assert before.facts == ()
+
+    broker.find_supply("biodegradable compostable mailers", 500, 2200, "c1")
+
+    after = broker.tree.materialise(broker.root_id)
+    assert "merchant m_seller quotes best" in after.facts
+    # Narrowing, not merging: the objective the root started with is still there.
+    assert after.objective == before.objective
+
+
 def test_the_diplomat_advises_on_a_counterparty(exchange):
     broker = Broker("m_buyer", exchange, ScriptedProvider(["unknown, try small"]))
 

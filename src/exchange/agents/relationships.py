@@ -57,7 +57,13 @@ class RelationshipGraph:
 
     def standing(self, counterparty_id: str) -> float:
         record = self._records.get(counterparty_id)
-        if record is None or record.deals == 0:
+        # Falls through on ANY evidence, not just on a recorded deal. Gating on
+        # deals == 0 discarded a reliability lesson's penalty whenever no deal
+        # had been recorded — so a counterparty who took a deal and never
+        # delivered kept the optimistic UNKNOWN_STANDING forever, which is the
+        # one case the penalty exists for.
+        if record is None or (record.deals == 0 and record.failed == 0
+                              and record.delivered == 0):
             return UNKNOWN_STANDING
         # Laplace-smoothed success rate: pulls toward neutral when evidence is thin,
         # so a single outcome cannot swing the score to an extreme.

@@ -90,6 +90,35 @@ def negotiate(
     if journal:
         journal.negotiation_opened(seller_id, opening_price)
 
+    # NEGOTIATION_OPENED is already written. A provider that raises mid-loop
+    # would otherwise leave an opening with no ending in the log — a story that
+    # stops mid-sentence and no way to tell it from one still in progress.
+    try:
+        return _rounds(
+            buyer_id, seller_id, buyer_provider, seller_provider,
+            opening_price, buyer_limit, seller_floor, token_budget, journal,
+            offers, spent, transcript,
+        )
+    except Exception as exc:
+        if journal:
+            journal.negotiation_ended(False, None, f"error: {type(exc).__name__}")
+        raise
+
+
+def _rounds(
+    buyer_id: str,
+    seller_id: str,
+    buyer_provider: LLMProvider,
+    seller_provider: LLMProvider,
+    opening_price: int,
+    buyer_limit: int,
+    seller_floor: int,
+    token_budget: int,
+    journal,
+    offers: list[Offer],
+    spent: int,
+    transcript: list[str],
+) -> Outcome:
     turn = "buyer"
     while True:
         if spent >= token_budget:

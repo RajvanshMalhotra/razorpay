@@ -72,6 +72,27 @@ def test_a_reliability_lesson_moves_standing():
     assert graph.standing("m_41") < before
 
 
+def test_a_reliability_lesson_bites_even_with_no_recorded_deal():
+    """standing used to return UNKNOWN_STANDING whenever deals == 0, so the
+    penalty was silently discarded and a counterparty who took a deal and never
+    delivered kept the optimistic score forever."""
+    graph = RelationshipGraph()
+
+    graph.apply_lesson(Lesson("m_41", "packaging", "took the money, no goods",
+                              "reliability"))
+
+    assert graph.standing("m_41") < UNKNOWN_STANDING
+
+
+def test_a_behavioural_lesson_alone_leaves_a_stranger_optimistic():
+    """The other half: behavioural lessons are advice, not evidence of harm."""
+    graph = RelationshipGraph()
+
+    graph.apply_lesson(Lesson("m_41", "packaging", "haggles hard", "behavioural"))
+
+    assert graph.standing("m_41") == UNKNOWN_STANDING
+
+
 def test_scores_returns_every_known_counterparty():
     graph = RelationshipGraph()
     graph.record_deal("m_41", value=1, delivered=True)

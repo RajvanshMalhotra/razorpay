@@ -1,3 +1,5 @@
+import pytest
+
 from exchange.agents.negotiation import (
     Offer,
     gap_stalled,
@@ -108,16 +110,60 @@ def test_the_token_budget_backstops_a_runaway():
 
 
 def test_a_reply_without_a_price_cannot_manufacture_an_agreement():
-    """One side saying something unpriced must not let the other agree with itself."""
+    """One side saying something unpriced must not let the other agree with itself.
+
+    The buyer names 1900, the seller replies without a price, the buyer names
+    1900 again. Two consecutive same-actor offers at the same price is exactly
+    the shape that used to read as a meeting of minds — the agreement check
+    compares the last two offers, and before the fix the unpriced reply did not
+    interrupt them. It must now sit in the transcript and agree nothing.
+    """
     buyer = ScriptedProvider(["PRICE: 1900 our offer", "PRICE: 1900 again"])
-    seller = ScriptedProvider(["Tell me more about the volumes first.", "WALK: too much back and forth"])
+    seller = ScriptedProvider(["Tell me more about the volumes first.",
+                               "WALK: too much back and forth"])
 
     outcome = negotiate("m_buyer", "m_seller", buyer, seller,
                         opening_price=2000, buyer_limit=2200, seller_floor=1800)
 
-    assert outcome.agreed is False, "the seller never named a price"
-    same_actor_twice = any(
-        outcome.offers[i].actor_id == outcome.offers[i - 1].actor_id
+    consecutive_same_actor_same_price = [
+        (outcome.offers[i - 1], outcome.offers[i])
         for i in range(1, len(outcome.offers))
-    )
-    assert not outcome.agreed or not same_actor_twice
+        if outcome.offers[i].actor_id == outcome.offers[i - 1].actor_id
+        and outcome.offers[i].price == outcome.offers[i - 1].price
+    ]
+    assert consecutive_same_actor_same_price, "the situation under test must occur"
+    assert consecutive_same_actor_same_price[0][0].actor_id == "m_buyer"
+    assert consecutive_same_actor_same_price[0][0].price == 1900
+    assert outcome.agreed is False, "the seller never named a price"
+
+
+def test_a_provider_failure_still_ends_the_negotiation_in_the_log():
+    """NEGOTIATION_OPENED is written before the loop. An exception mid-loop must
+    not leave an opening with no ending — a story that stops mid-sentence."""
+    class Exploding:
+        def complete(self, messages, *, system=None, max_tokens=1024,
+                     reasoning_effort=None):
+            raise RuntimeError("the model fell over")
+
+    class RecordingJournal:
+        def __init__(self):
+            self.entries = []
+
+        def negotiation_opened(self, counterparty_id, opening_price):
+            self.entries.append(("opened", counterparty_id, opening_price))
+
+        def negotiation_round(self, actor_id, price, message):
+            self.entries.append(("round", actor_id, price))
+
+        def negotiation_ended(self, agreed, final_price, reason):
+            self.entries.append(("ended", agreed, final_price, reason))
+
+    journal = RecordingJournal()
+
+    with pytest.raises(RuntimeError, match="fell over"):
+        negotiate("m_buyer", "m_seller", Exploding(), Exploding(),
+                  opening_price=2000, buyer_limit=2200, seller_floor=1800,
+                  journal=journal)
+
+    assert journal.entries[0][0] == "opened"
+    assert journal.entries[-1] == ("ended", False, None, "error: RuntimeError")

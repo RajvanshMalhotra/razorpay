@@ -91,9 +91,16 @@ class Broker:
             bid, asks, state.assets, self._exchange.index,
             counterparty_scores=counterparty_scores,
         )
-        self._trader.act(
+        reply = self._trader.act(
             f"We need {qty} of: {need_text}, at no more than {limit_price} each. "
             f"{len(matches)} candidate(s) found."
+        )
+        # Spec 4.2: a sub-agent's summary becomes a fact in the orchestrator's
+        # delta. Discarding the reply left the root context permanently empty,
+        # so the one-way narrowing the design rests on never actually happened.
+        state_version = len(self._exchange.log.read_all())
+        self.root_id = self.tree.add(
+            self.root_id, ContextDelta(facts_added=(reply,)), state_version,
         )
         return matches
 
