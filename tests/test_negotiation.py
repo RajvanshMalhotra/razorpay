@@ -47,14 +47,16 @@ def test_gap_stalled_is_true_when_the_gap_stops_moving():
 
 
 def test_gap_stalled_sees_through_oscillation():
-    """Each offer moves a lot; the gap does not. Movement is not progress."""
+    """Each side moves a lot every round; the gap between them does not.
+    Non-crossing on purpose: two different actors naming the same price is an
+    agreement, so a crossing oscillation can never reach the stall check."""
     offers = [
-        Offer("buyer", 1900, ""), Offer("seller", 2000, ""),
-        Offer("buyer", 2000, ""), Offer("seller", 1900, ""),
-        Offer("buyer", 1900, ""), Offer("seller", 2000, ""),
+        Offer("buyer", 1900, ""), Offer("seller", 2100, ""),
+        Offer("buyer", 1950, ""), Offer("seller", 2050, ""),
+        Offer("buyer", 1900, ""), Offer("seller", 2100, ""),
     ]
 
-    assert gap_stalled(offers, epsilon=50) is True
+    assert gap_stalled(offers) is True
 
 
 def test_negotiation_agrees_when_the_seller_accepts():
@@ -103,3 +105,19 @@ def test_the_token_budget_backstops_a_runaway():
 
     assert outcome.agreed is False
     assert outcome.ended_reason == "token budget exhausted"
+
+
+def test_a_reply_without_a_price_cannot_manufacture_an_agreement():
+    """One side saying something unpriced must not let the other agree with itself."""
+    buyer = ScriptedProvider(["PRICE: 1900 our offer", "PRICE: 1900 again"])
+    seller = ScriptedProvider(["Tell me more about the volumes first.", "WALK: too much back and forth"])
+
+    outcome = negotiate("m_buyer", "m_seller", buyer, seller,
+                        opening_price=2000, buyer_limit=2200, seller_floor=1800)
+
+    assert outcome.agreed is False, "the seller never named a price"
+    same_actor_twice = any(
+        outcome.offers[i].actor_id == outcome.offers[i - 1].actor_id
+        for i in range(1, len(outcome.offers))
+    )
+    assert not outcome.agreed or not same_actor_twice

@@ -63,9 +63,9 @@ def gap_stalled(offers, lookback: int = 2, epsilon: int = 100) -> bool:
     never on individual offers — a side can move a lot and concede nothing.
     """
     pairs = []
-    for i in range(0, len(offers) - 1, 2):
-        gap = abs(offers[i + 1].price - offers[i].price)
-        pairs.append(gap)
+    for i in range(1, len(offers)):
+        if offers[i].actor_id != offers[i - 1].actor_id:
+            pairs.append(abs(offers[i].price - offers[i - 1].price))
     if len(pairs) < lookback + 1:
         return False
     recent = pairs[-(lookback + 1):]
@@ -122,7 +122,11 @@ def negotiate(
         offers.append(Offer(actor, price, response.text))
         transcript.append(f"{actor}: {response.text}")
 
-        if len(offers) >= 2 and offers[-1].price == offers[-2].price:
+        if (
+            len(offers) >= 2
+            and offers[-1].actor_id != offers[-2].actor_id
+            and offers[-1].price == offers[-2].price
+        ):
             return Outcome(True, price, tuple(offers), "agreed")
 
         if gap_stalled(offers):
