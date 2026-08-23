@@ -14,7 +14,7 @@ from exchange.events import (
     Event,
 )
 from exchange.models import ActorStatus, Currency, SettlementStatus, Side
-from exchange.projections import fold
+from exchange.projections import fold, fold_from
 
 
 def _ev(seq, type, payload, actor_id="m_a", correlation_id="c"):
@@ -244,3 +244,38 @@ def test_fold_is_deterministic_for_the_same_events():
     events = [_ev(1, ACTOR_REGISTERED, ACTOR_PAYLOAD), _ev(2, ORDER_POSTED, ORDER_PAYLOAD)]
 
     assert fold(events) == fold(events)
+
+
+def test_fold_records_the_offset_it_is_correct_through():
+    state = fold([_ev(1, ORDER_POSTED, ORDER_PAYLOAD), _ev(2, ORDER_EXPIRED, {"order_id": "ord_1"})])
+
+    assert state.event_offset == 2
+
+
+def test_fold_from_applies_only_the_new_events():
+    base = fold([_ev(1, ACTOR_REGISTERED, ACTOR_PAYLOAD)])
+
+    grown = fold_from(base, [_ev(2, ORDER_POSTED, ORDER_PAYLOAD)])
+
+    assert "ord_1" in grown.open_orders
+    assert grown.event_offset == 2
+    assert "m_a" in grown.actors  # inherited, not recomputed
+
+
+def test_fold_from_equals_a_full_fold():
+    """The incremental path must never disagree with the authority."""
+    events = [
+        _ev(1, ACTOR_REGISTERED, ACTOR_PAYLOAD),
+        _ev(2, ORDER_POSTED, ORDER_PAYLOAD),
+        _ev(3, CREDITS_TRANSFERRED, {"from_actor_id": "m_a", "to_actor_id": "m_b", "amount": 500}),
+    ]
+
+    incremental = fold_from(fold(events[:1]), events[1:])
+
+    assert incremental == fold(events)
+
+
+def test_fold_from_with_no_new_events_is_unchanged():
+    base = fold([_ev(1, ACTOR_REGISTERED, ACTOR_PAYLOAD)])
+
+    assert fold_from(base, []) == base

@@ -23,7 +23,7 @@ from exchange.models import (
     Verdict,
 )
 from exchange.policy import PolicyContext
-from exchange.projections import ExchangeState, fold
+from exchange.projections import ExchangeState, fold, fold_from
 from exchange.retrieval import HybridIndex
 
 
@@ -181,7 +181,19 @@ class Exchange:
             )
 
     def state(self) -> ExchangeState:
-        return fold(self.log.read_all())
+        """Current state, extended from the cached projection.
+
+        The cached value and the log can only disagree if this code is wrong,
+        which is exactly what the accountant's periodic full rebuild checks.
+        """
+        cached = getattr(self, "_state_cache", None)
+        if cached is None:
+            self._state_cache = fold(self.log.read_all())
+        else:
+            new_events = self.log.read_since(cached.event_offset)
+            if new_events:
+                self._state_cache = fold_from(cached, new_events)
+        return self._state_cache
 
 
 def _serialize(record) -> dict:

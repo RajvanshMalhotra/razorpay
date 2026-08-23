@@ -34,26 +34,39 @@ class ExchangeState:
     credit_balances: dict[str, int] = field(default_factory=dict)
     settlements: dict[str, Settlement] = field(default_factory=dict)
     matches: dict[str, Match] = field(default_factory=dict)
+    event_offset: int = 0
 
 
 def fold(events: Iterable[Event]) -> ExchangeState:
-    """Fold a complete event log into state.
+    """Rebuild state from a complete log starting at seq 1.
 
     PRECONDITION: `events` must be the whole log from seq 1, in order. Folding
     a partial slice — anything from `read_since(seq)` — is not supported and
     raises `KeyError`: a SETTLEMENT_COMPLETED whose SETTLEMENT_INITIATED fell
-    outside the slice has no record to update. An incremental
-    `fold_from(state, events)` would be the way to support resuming; it does
-    not exist yet.
+    outside the slice has no record to update. `fold_from(state, events)` is
+    the way to support resuming from an already-folded state.
+
+    This remains the authority. `fold_from` is an optimisation over it and
+    must always agree with it — the accountant's job is to prove that.
     """
-    actors: dict[str, Actor] = {}
-    assets: dict[str, Asset] = {}
-    open_orders: dict[str, Order] = {}
-    balances: dict[str, int] = defaultdict(int)
-    settlements: dict[str, Settlement] = {}
-    matches: dict[str, Match] = {}
+    return fold_from(ExchangeState(), events)
+
+
+def fold_from(state: ExchangeState, events: Iterable[Event]) -> ExchangeState:
+    """Apply only `events` to an existing state.
+
+    Cost depends on how many events are new, not on how many exist.
+    """
+    actors: dict[str, Actor] = dict(state.actors)
+    assets: dict[str, Asset] = dict(state.assets)
+    open_orders: dict[str, Order] = dict(state.open_orders)
+    balances: dict[str, int] = defaultdict(int, state.credit_balances)
+    settlements: dict[str, Settlement] = dict(state.settlements)
+    matches: dict[str, Match] = dict(state.matches)
+    offset = state.event_offset
 
     for event in events:
+        offset = max(offset, event.seq)
         p = event.payload
 
         if event.type == ev.ACTOR_REGISTERED:
@@ -162,4 +175,5 @@ def fold(events: Iterable[Event]) -> ExchangeState:
         credit_balances=dict(balances),
         settlements=settlements,
         matches=matches,
+        event_offset=offset,
     )
