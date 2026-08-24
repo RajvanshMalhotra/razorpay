@@ -84,4 +84,4 @@ def test_the_accountant_finds_nothing_wrong_with_a_clean_run(log):
 
     accountant = Accountant(log, client)
 
-    assert accountant.reconcile() == []
+    assert accountant.reconcile().clean

@@ -50,7 +50,9 @@ class Broker:
     ) -> None:
         self.actor_id = actor_id
         self._exchange = exchange
-        self._provider = provider
+        # `provider` is not kept: the Subconscious takes it directly and the
+        # three sub-agents take `fast`. A stored copy nothing reads is a field
+        # someone later reaches for without noticing which tier it is.
         fast = fast_provider or provider
         self.subconscious = subconscious or Subconscious(provider)
         self.graph = graph or RelationshipGraph()
@@ -344,6 +346,12 @@ class Broker:
             # reaching this line still gets a DENY.
             actor_status=ActorStatus.ACTIVE,
             rolling_spend=0,
+            # NOT one of the two above, and not covered by that guarantee.
+            # This one IS taken from the caller, because it is the caller's
+            # own process memory: RelationshipGraph is not folded from the
+            # log, so there is nothing for the gate to re-derive it from and
+            # the accountant cannot check it. A known gap, deferred with the
+            # work on a populated market — see relationships.py.
             counterparty_confidence=self.graph.confidence(seller_id),
         )
         decision, settlement = self._exchange.execute_match(

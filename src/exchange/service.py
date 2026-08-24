@@ -1,8 +1,15 @@
 """The exchange service — the single chokepoint through which money moves.
 
-Nothing settles without passing `execute_match`, and `execute_match` always
+No money moves without passing `execute_match`, and `execute_match` always
 records its policy decision before acting. That ordering is the audit trail's
 guarantee: the gate is visible even when it says yes.
+
+Said precisely, because the claim is worth more than its rhetoric: every
+SETTLEMENT_INITIATED — the moment exposure is committed on either rail — is
+written by a rail that only `execute_match` calls. The one other writer of a
+settlement event is `Accountant.repair`, which appends SETTLEMENT_COMPLETED
+for a settlement that already passed this gate, from a capture Razorpay
+confirms. It records an outcome; it cannot open an exposure.
 
 BOTH RAILS, not just rupees. Points convert to Razorpay fee rebates, so a
 points transfer is a money action and goes through here too — the insight

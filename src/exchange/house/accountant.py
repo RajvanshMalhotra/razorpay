@@ -11,7 +11,7 @@ reliability, one that drifts is evidence against.
 from __future__ import annotations
 
 from collections import defaultdict
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from exchange import events as ev
 from exchange.eventlog import EventLog
@@ -22,9 +22,68 @@ ACCOUNTANT_ACTOR_ID = "accountant"
 
 @dataclass(frozen=True)
 class Drift:
+    """Captured upstream, still PENDING here — the dropped webhook.
+
+    REPAIRABLE, and repairable for a specific reason: the remote is the
+    authority on whether money moved, the remote says it did, and recording
+    that is telling the truth about a fact that already exists. `repair()`
+    takes this and only this.
+    """
     settlement_id: str
     local_status: str
     remote_status: str
+    correlation_id: str | None = None
+    razorpay_order_id: str | None = None
+
+
+@dataclass(frozen=True)
+class UnbackedCompletion:
+    """COMPLETED here, and the remote shows no captured payment.
+
+    A SEPARATE TYPE FROM `Drift`, deliberately and permanently. These are not
+    two flavours of one problem; they are opposites, and the same code must
+    never handle both:
+
+    - A `Drift` is repaired by writing what the remote confirms.
+    - An `UnbackedCompletion` CANNOT be repaired by anything here. The wrong
+      record is a `SETTLEMENT_COMPLETED` that is already in an append-only
+      log; it cannot be withdrawn, and writing a second completion the remote
+      denies is precisely what `repair()` refuses to do. Passing one to
+      `repair()` raises.
+
+    It is the dangerous direction. `HouseAgent.observe` mines only completed
+    settlements, and the memory loop reads a clean settlement as a delivery
+    signal — so an unbacked completion quietly becomes evidence of
+    reliability, gets sold on as market intelligence, earns its "contributor"
+    a royalty, and raises the trial cap for a merchant that may never have
+    paid. Left undetected it does not sit still; it compounds.
+
+    `actor_id` is whoever initiated the settlement — the party the books
+    currently credit with having paid, and therefore the party to stop.
+    """
+    settlement_id: str
+    actor_id: str
+    local_status: str
+    remote_status: str
+    correlation_id: str | None = None
+    razorpay_order_id: str | None = None
+
+
+@dataclass(frozen=True)
+class Reconciliation:
+    """What one reconciliation run found, with the two directions kept apart.
+
+    Deliberately NOT a flat list. A caller iterating one sequence of "problems"
+    is one `isinstance` away from repairing the thing that must not be
+    repaired; splitting them at the type level means a caller has to name which
+    direction it is handling before it can touch anything.
+    """
+    drifts: list[Drift] = field(default_factory=list)
+    unbacked: list[UnbackedCompletion] = field(default_factory=list)
+
+    @property
+    def clean(self) -> bool:
+        return not self.drifts and not self.unbacked
 
 
 @dataclass(frozen=True)
@@ -43,20 +102,40 @@ class Accountant:
         # truth, so the cache is only safe BECAUSE this exists.
         self._exchange = exchange
 
-    def reconcile(self) -> list[Drift]:
+    def reconcile(self) -> Reconciliation:
         """Compare local settlement records against Razorpay's own state.
 
-        Catches the dropped webhook: captured upstream, still PENDING here.
-        That mismatch is what the failure demo turns on, and it is a far
-        better thing to show than a declined card.
+        BOTH DIRECTIONS, because only one of them is safe to miss.
+
+        - PENDING here, captured upstream: the dropped webhook. Repairable,
+          and what the failure demo turns on.
+        - COMPLETED here, no captured payment upstream: an unbacked
+          completion. This used to be computed and thrown away — the loop
+          asked only about the direction the demo needed. It is the one that
+          costs money: the books say a merchant paid, the remote says it did
+          not, and every downstream reader (the insight miner, the memory
+          loop, the trial cap) treats the local record as fact.
+
+        The response to the second is `_contain_unbacked`, not repair. See
+        `UnbackedCompletion` for why the two can never share a code path.
         """
         events = self._log.read_all()
         completed = {
             e.payload["settlement_id"]
             for e in events if e.type == ev.SETTLEMENT_COMPLETED
         }
+        # An unbacked completion cannot be undone — the log is append-only —
+        # so the condition holds on every later run. It is REPORTED every run
+        # (the books are still wrong) but only ACTED ON once: re-freezing an
+        # already-frozen actor on every reconciliation would bury the trade's
+        # thread in duplicates of one event.
+        already_contained = {
+            e.payload["settlement_id"]
+            for e in events if e.type == ev.UNBACKED_COMPLETION_DETECTED
+        }
 
         drifts: list[Drift] = []
+        unbacked: list[UnbackedCompletion] = []
         checked = 0
         for event in events:
             if event.type != ev.SETTLEMENT_INITIATED:
@@ -76,7 +155,13 @@ class Accountant:
                     break
 
             if local == "PENDING" and remote == "captured":
-                drift = Drift(sid, local, remote)
+                drift = Drift(
+                    settlement_id=sid,
+                    local_status=local,
+                    remote_status=remote,
+                    correlation_id=event.correlation_id,
+                    razorpay_order_id=order_id,
+                )
                 drifts.append(drift)
                 # On the TRADE's correlation, not the reconciliation's. The
                 # drift is a chapter in that trade's story; filed under
@@ -90,13 +175,72 @@ class Accountant:
                     correlation_id=event.correlation_id,
                     causation_id=event.event_id,
                 )
+            elif local == "COMPLETED" and remote != "captured":
+                found = UnbackedCompletion(
+                    settlement_id=sid,
+                    actor_id=event.actor_id,
+                    local_status=local,
+                    remote_status=remote,
+                    correlation_id=event.correlation_id,
+                    razorpay_order_id=order_id,
+                )
+                unbacked.append(found)
+                if sid not in already_contained:
+                    self._contain_unbacked(found, event)
 
         self._log.append(
             ACCOUNTANT_ACTOR_ID, ev.RECONCILED,
-            {"settlements_checked": checked, "drifts": len(drifts)},
+            {"settlements_checked": checked, "drifts": len(drifts),
+             "unbacked_completions": len(unbacked)},
             correlation_id="recon",
         )
-        return drifts
+        return Reconciliation(drifts=drifts, unbacked=unbacked)
+
+    def _contain_unbacked(self, found: UnbackedCompletion, initiated) -> None:
+        """Record an unbacked completion and stop the actor it credits.
+
+        CONTAIN, NOT REPAIR — there is nothing to repair. The false record is
+        already in an append-only log and the honest response is to say so,
+        loudly, in three places at once:
+
+        1. `UNBACKED_COMPLETION_DETECTED` on the TRADE's own correlation, so a
+           judge replaying that trade sees the completion contradicted right
+           where the completion is, rather than having to know that a
+           reconciliation index exists.
+        2. A FREEZE, and not an optional one. A `Drift` is repairable, so
+           whether to freeze on one is a judgment its caller makes. This is
+           not: no code path in this system can make these books honest again,
+           so leaving the response to a caller means the only available
+           response is one nobody is obliged to take. Meanwhile the record is
+           already live — feeding the insight miner, earning royalties, and
+           ratcheting a trial cap on a payment the remote denies. The freeze
+           is what bounds that, and it binds because `execute_match` derives
+           `actor_status` from the log for itself.
+        3. `assert_invariants` reports it as a violation on every subsequent
+           run. A freeze can be lifted by a resume; the fact that the books
+           contain a completion nobody was paid for cannot be, and an auditor
+           that mentions it once is an auditor that lets it be forgotten.
+        """
+        detected = self._log.append(
+            ACCOUNTANT_ACTOR_ID, ev.UNBACKED_COMPLETION_DETECTED,
+            {"settlement_id": found.settlement_id,
+             "actor_id": found.actor_id,
+             "local_status": found.local_status,
+             "remote_status": found.remote_status,
+             "razorpay_order_id": found.razorpay_order_id},
+            correlation_id=initiated.correlation_id,
+            causation_id=initiated.event_id,
+        )
+        self.freeze(
+            found.actor_id,
+            reason=(
+                f"settlement {found.settlement_id} is COMPLETED locally but "
+                f"Razorpay shows no captured payment on "
+                f"{found.razorpay_order_id}"
+            ),
+            correlation_id=initiated.correlation_id,
+            causation_id=detected.event_id,
+        )
 
     def mint(
         self,
@@ -248,6 +392,41 @@ class Accountant:
                     f"match {e.payload.get('match_id')} never reached the gate",
                 ))
 
+        # A completion the remote denied. `reconcile()` writes
+        # UNBACKED_COMPLETION_DETECTED when it finds one; this reports it
+        # forever after, because the log cannot be un-appended and the books
+        # therefore contain a payment that was never made. Deliberately not
+        # cleared by the resume that lifts the freeze: the freeze is a
+        # containment measure and is meant to end, the false record is not.
+        for e in events:
+            if e.type != ev.UNBACKED_COMPLETION_DETECTED:
+                continue
+            violations.append(Violation(
+                "unbacked_completion",
+                f"settlement {e.payload['settlement_id']} is COMPLETED locally "
+                f"but Razorpay shows no captured payment on "
+                f"{e.payload.get('razorpay_order_id')}",
+            ))
+
+        # A completion with no initiation. `fold` no longer raises on one —
+        # see projections.py — but "does not crash the audit trail" is not the
+        # same as "is fine", and the settlement it projects has no known
+        # amount, match or currency to check anything against.
+        initiated_ids = {
+            e.payload["settlement_id"]
+            for e in events if e.type == ev.SETTLEMENT_INITIATED
+        }
+        for e in events:
+            if e.type != ev.SETTLEMENT_COMPLETED:
+                continue
+            sid = e.payload["settlement_id"]
+            if sid not in initiated_ids:
+                violations.append(Violation(
+                    "orphaned_completion",
+                    f"settlement {sid} completed with no SETTLEMENT_INITIATED; "
+                    "there is no record of what was owed or to whom",
+                ))
+
         # The incremental projection must still agree with the authority.
         if self._exchange is not None:
             from exchange.projections import fold
@@ -267,7 +446,13 @@ class Accountant:
                 )
         return violations
 
-    def freeze(self, actor_id: str, reason: str) -> None:
+    def freeze(
+        self,
+        actor_id: str,
+        reason: str,
+        correlation_id: str | None = None,
+        causation_id: str | None = None,
+    ) -> None:
         """Stop an actor trading until its books agree again.
 
         Per-actor, never global: one merchant's drift must not stop the market.
@@ -278,11 +463,30 @@ class Accountant:
         caller supplied — so ACTOR_FROZEN denies the frozen merchant's very
         next money action no matter what its broker claims about itself. A
         matching ACTOR_RESUMED is what lifts it.
+
+        WHICH THREAD THE FREEZE BELONGS ON is a genuine question and the
+        answer is "it depends", which is why `correlation_id` is optional
+        rather than either hard-coded or required:
+
+        - A freeze caused by ONE specific trade is a chapter of that trade's
+          story. Pass that trade's correlation and a replay of the failure
+          shows initiated -> drift -> frozen -> completed -> resumed, which is
+          the whole point of the failure demo. Filed elsewhere, the two middle
+          chapters simply are not in the story the video tells.
+        - A freeze that is NOT about one trade — an actor-level suspension, a
+          manual intervention, a pattern across several deals — genuinely
+          spans more than one correlation, and nailing it to whichever trade
+          happened to be last would be a lie about what caused it.
+
+        So the default stays `freeze_{actor_id}`: an actor-scoped index of
+        every freeze and resume, which remains a useful second index even when
+        a freeze is also threaded onto a trade.
         """
         self._log.append(
             ACCOUNTANT_ACTOR_ID, ev.ACTOR_FROZEN,
             {"actor_id": actor_id, "reason": reason},
-            correlation_id=f"freeze_{actor_id}",
+            correlation_id=correlation_id or f"freeze_{actor_id}",
+            causation_id=causation_id,
         )
 
     def repair(self, drift: Drift) -> None:
@@ -291,8 +495,44 @@ class Accountant:
         The remote is the authority for whether money moved — we did not take
         the payment, they did. Repair means recording what actually happened,
         never asserting what we wish had.
+
+        Takes a `Drift` and nothing else. An `UnbackedCompletion` is the
+        opposite problem and is refused here explicitly rather than left to
+        fail somewhere further in: "repairing" one would mean appending a
+        completion the remote denies, which is the exact hazard the null
+        payment-id refusal below exists to prevent, arriving through the front
+        door instead.
         """
+        if isinstance(drift, UnbackedCompletion):
+            raise ValueError(
+                f"refusing to repair {drift.settlement_id}: an unbacked "
+                "completion is not a drift. The local record already claims "
+                "money moved and the remote denies it; there is no truth here "
+                "to write down. It is contained by a freeze and reported as a "
+                "violation, not repaired."
+            )
+        if not isinstance(drift, Drift):
+            raise TypeError(
+                f"repair() takes a Drift, got {type(drift).__name__}"
+            )
+
         events = self._log.read_all()
+
+        # Idempotent by refusal, not by silence. A second repair used to
+        # append a second SETTLEMENT_COMPLETED for one settlement: the fold
+        # absorbs it, so nothing crashes, and the audit trail quietly grows a
+        # duplicate chapter that a reader has to work out is not two payments.
+        if any(
+            e.type == ev.SETTLEMENT_COMPLETED
+            and e.payload["settlement_id"] == drift.settlement_id
+            for e in events
+        ):
+            raise ValueError(
+                f"settlement {drift.settlement_id} is already COMPLETED in the "
+                "log; a second repair would append a second completion for one "
+                "payment"
+            )
+
         initiated = next(
             e for e in events
             if e.type == ev.SETTLEMENT_INITIATED
@@ -323,9 +563,23 @@ class Accountant:
             causation_id=initiated.event_id,
         )
 
-    def resume(self, actor_id: str) -> None:
+    def resume(
+        self,
+        actor_id: str,
+        correlation_id: str | None = None,
+        causation_id: str | None = None,
+    ) -> None:
+        """Lift a freeze. Threaded exactly like `freeze` and for the reasons
+        given there — a resume that ends one trade's failure belongs on that
+        trade, and one that ends an actor-level suspension does not.
+
+        A resume filed away from the freeze it lifts is the worse half of the
+        bug: the trail then shows a merchant that stopped trading and no
+        record of anyone deciding it could start again.
+        """
         self._log.append(
             ACCOUNTANT_ACTOR_ID, ev.ACTOR_RESUMED,
             {"actor_id": actor_id},
-            correlation_id=f"freeze_{actor_id}",
+            correlation_id=correlation_id or f"freeze_{actor_id}",
+            causation_id=causation_id,
         )

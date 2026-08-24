@@ -93,12 +93,27 @@ def test_a_behavioural_lesson_alone_leaves_a_stranger_optimistic():
     assert graph.standing("m_41") == UNKNOWN_STANDING
 
 
-def test_scores_returns_every_known_counterparty():
-    graph = RelationshipGraph()
-    graph.record_deal("m_41", value=1, delivered=True)
-    graph.record_deal("m_09", value=1, delivered=True)
+def test_confidence_is_process_memory_and_says_so():
+    """A known, deferred gap that must not be mistaken for a log projection.
 
-    assert set(graph.scores()) == {"m_41", "m_09"}
+    `counterparty_confidence` is the input deciding whether the unknown-
+    counterparty cap binds. It comes from this in-memory graph, so a fresh
+    process starts at 0.0 no matter what the log contains — the accountant
+    cannot verify it and the trial cap never ratchets. The docstring is the
+    only place that is recorded, so it is pinned here.
+    """
+    import exchange.agents.relationships as rel
+
+    graph = rel.RelationshipGraph()
+    for _ in range(rel.CONFIDENCE_FULL_AT):
+        graph.record_deal("m_41", value=1, delivered=True)
+    assert graph.confidence("m_41") == 1.0
+
+    assert rel.RelationshipGraph().confidence("m_41") == 0.0, "nothing is folded in"
+
+    doc = " ".join(rel.__doc__.split())
+    assert "process memory" in doc, "the gap must be stated where it lives"
+    assert "NOT a projection of the event log" in doc
 
 
 def test_standing_stays_within_zero_and_one():

@@ -42,6 +42,11 @@ BID_PLACED = "BID_PLACED"
 AUCTION_CLEARED = "AUCTION_CLEARED"
 RECONCILED = "RECONCILED"
 DRIFT_DETECTED = "DRIFT_DETECTED"
+# Deliberately NOT a second flavour of DRIFT_DETECTED. The two directions the
+# books can disagree in demand opposite responses — one is repaired, the other
+# can only be contained — and a reader who has to inspect a payload field to
+# tell them apart will eventually not bother.
+UNBACKED_COMPLETION_DETECTED = "UNBACKED_COMPLETION_DETECTED"
 INVARIANT_VIOLATED = "INVARIANT_VIOLATED"
 POINTS_MINTED = "POINTS_MINTED"
 ACTOR_FROZEN = "ACTOR_FROZEN"

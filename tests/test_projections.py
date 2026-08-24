@@ -1,5 +1,3 @@
-import pytest
-
 from exchange.events import (
     ACTOR_REGISTERED,
     ASSET_LISTED,
@@ -201,20 +199,79 @@ def test_settlement_transitions_to_failed_keeping_fields_set_at_initiation():
     assert stl.match_id == "mch_1"
 
 
-def test_folding_a_partial_slice_raises_rather_than_inventing_state():
-    """Pins fold's precondition: the whole log from seq 1, never a slice.
+def test_an_orphaned_completion_does_not_brick_the_projection():
+    """A completion with no initiation must not make the log unreadable.
 
-    read_since(seq) hands back exactly this shape — a completion whose
-    initiation fell outside the window — and there is no correct state to
-    produce from it, so it must fail loudly rather than fabricate a record.
+    This used to raise KeyError. The log is append-only and enforced by SQLite
+    triggers, so one malformed or duplicated SETTLEMENT_COMPLETED would have
+    made fold() — and therefore every read of exchange state — raise forever on
+    a database that by design cannot be mended. Nothing reachable writes one,
+    and the cost if anything ever did was the whole audit trail.
+
+    read_since(seq) hands back exactly this shape, which is why fold() must
+    still not be handed a partial slice: it produces usable state, not correct
+    state, and the accountant is what names the difference.
     """
-    with pytest.raises(KeyError):
-        fold([
-            _ev(7, SETTLEMENT_COMPLETED, {
-                "settlement_id": "stl_1",
-                "razorpay_payment_id": "pay_xyz",
-            }),
-        ])
+    state = fold([
+        _ev(7, SETTLEMENT_COMPLETED, {
+            "settlement_id": "stl_1",
+            "razorpay_payment_id": "pay_xyz",
+        }),
+    ])
+
+    stl = state.settlements["stl_1"]
+    assert stl.status == SettlementStatus.COMPLETED
+    assert stl.razorpay_payment_id == "pay_xyz"
+    # Unknown, not zero — the completion payload carries no amount to recover.
+    assert stl.amount == 0
+    assert stl.match_id == ""
+
+
+def test_folding_carries_on_past_an_orphaned_completion():
+    """Usable state, not just a non-crash: the rest of the log still folds."""
+    state = fold([
+        _ev(1, SETTLEMENT_COMPLETED, {
+            "settlement_id": "stl_orphan",
+            "razorpay_payment_id": "pay_xyz",
+        }),
+        _ev(2, ACTOR_REGISTERED, {"actor_id": "m_a", "kind": "MERCHANT"}),
+        _ev(3, SETTLEMENT_INITIATED, {
+            "settlement_id": "stl_2",
+            "match_id": "mch_2",
+            "currency": "INR",
+            "amount": 970_000,
+            "razorpay_order_id": "order_abc",
+        }),
+        _ev(4, SETTLEMENT_COMPLETED, {
+            "settlement_id": "stl_2",
+            "razorpay_payment_id": "pay_2",
+        }),
+    ])
+
+    assert state.actors["m_a"].actor_id == "m_a"
+    assert state.settlements["stl_2"].amount == 970_000
+    assert state.settlements["stl_2"].status == SettlementStatus.COMPLETED
+    assert state.event_offset == 4
+
+
+def test_an_orphaned_completion_is_reported_by_the_accountant(tmp_path):
+    """Surviving it is not the same as it being fine. The fold keeps going;
+    the auditor is what says the record is unbacked by any initiation."""
+    from exchange.eventlog import EventLog
+    from exchange.house.accountant import Accountant
+    from tests.test_rails import FakeRazorpay
+
+    lg = EventLog(str(tmp_path / "orphan.db"))
+    try:
+        lg.append("m_a", SETTLEMENT_COMPLETED,
+                  {"settlement_id": "stl_1", "razorpay_payment_id": "pay_xyz"},
+                  correlation_id="c")
+
+        violations = Accountant(lg, FakeRazorpay()).assert_invariants()
+
+        assert any(v.kind == "orphaned_completion" for v in violations)
+    finally:
+        lg.close()
 
 
 def test_match_proposed_lands_in_state_with_its_rationale():

@@ -1,4 +1,8 @@
-from exchange.house.points import points_for_settlement, royalty_for
+from exchange.house.points import (
+    ROYALTY_SHARE_BPS,
+    points_for_settlement,
+    royalty_for,
+)
 
 
 def test_negotiating_below_the_ask_earns_more_than_paying_it():
@@ -44,4 +48,18 @@ def test_a_royalty_scales_with_the_clearing_price():
 
 
 def test_a_royalty_never_exceeds_the_clearing_price():
-    assert royalty_for(1200, 1) <= 1200
+    """The property is about the WHOLE distribution, not one share.
+
+    `royalty_for(1200, 1) <= 1200` passed with a factor of three in hand and
+    told us nothing: the hazard is n contributors each being paid, summing to
+    more than the house took in. Floor division on basis points means the
+    residual is kept rather than created, so the sum is bounded by the share
+    and can never exceed the price — checked across sizes and splits, and at
+    the odd numbers where the rounding actually lands.
+    """
+    for price in (0, 1, 7, 999, 1200, 2401, 1_000_000):
+        for n in (1, 2, 3, 7, 30, 999):
+            per = royalty_for(price, n)
+            assert per >= 0
+            assert per * n <= (price * ROYALTY_SHARE_BPS) // 10_000
+            assert per * n <= price

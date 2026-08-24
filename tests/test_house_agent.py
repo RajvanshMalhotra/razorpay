@@ -102,5 +102,30 @@ def test_the_feed_carries_headlines_and_never_playbooks(log):
 
 
 def test_the_house_never_bids():
-    """It mints, publishes and clears. A house that buys is not a market."""
-    assert not hasattr(HouseAgent, "bid")
+    """It mints, publishes and clears. A house that buys is not a market.
+
+    `not hasattr(HouseAgent, "bid")` passed for any class that happens not to
+    spell a method exactly that way — it would have let through a `place_bid`,
+    a `buy`, or the house being handed to `run_auction` as a bidder. The
+    property is about behaviour: the house has no way to express a valuation,
+    and a bid carrying its id cannot survive an auction.
+    """
+    import inspect
+
+    public = {n for n, _ in inspect.getmembers(HouseAgent, inspect.isfunction)
+              if not n.startswith("_")}
+
+    # Pinned as an exhaustive set rather than a blocklist of spellings. A
+    # blocklist only catches the names someone thought of; this catches any
+    # new capability at all, and whoever adds one has to come here and say
+    # what it is.
+    assert public == {"observe", "mint_from", "feed"}, (
+        f"the house grew a capability: {public ^ {'observe', 'mint_from', 'feed'}}"
+    )
+
+    # Nor can it be handed to the auction as a bidder: producing a Bid is the
+    # act of buying, and nothing here produces one.
+    from exchange.house.auction import Bid
+
+    sources = "".join(inspect.getsource(getattr(HouseAgent, n)) for n in public)
+    assert Bid.__name__ not in sources

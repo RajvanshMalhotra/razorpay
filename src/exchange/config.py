@@ -1,11 +1,23 @@
-"""Configuration loaded from the environment."""
+"""Configuration loaded from the environment.
+
+Two constants used to live here and neither did anything.
+
+`K_MIN` was a SECOND definition of the privacy floor. `check_privacy` defaults
+to `insights.K_MIN` and no caller ever passed `Config.k_min`, so the
+configurable-looking one was inert — two numbers that had to agree, with
+nothing making them agree, and the wrong one is the one a reader finds first.
+The floor is defined once, in `house/insights.py`, where the check that
+enforces it lives.
+
+`MAX_NEGOTIATION_ROUNDS` contradicted the design it appeared to configure:
+`negotiate()` bounds by token budget and stall detection on purpose, and a
+round cap nothing reads is a claim about how negotiation is bounded that is
+not true.
+"""
 from __future__ import annotations
 
 import os
 from dataclasses import dataclass
-
-K_MIN = 25
-MAX_NEGOTIATION_ROUNDS = 4
 
 
 @dataclass(frozen=True)
@@ -13,8 +25,6 @@ class Config:
     razorpay_key_id: str
     razorpay_key_secret: str
     db_path: str
-    k_min: int = K_MIN
-    max_negotiation_rounds: int = MAX_NEGOTIATION_ROUNDS
 
     @classmethod
     def from_env(cls) -> "Config":

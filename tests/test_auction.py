@@ -33,9 +33,15 @@ def test_a_single_bid_does_not_clear():
 
 
 def test_no_bids_does_not_clear():
+    """And says so accurately. The reason used to read 'no bids; a market of
+    one has no price' — there is no market of one here, there is no market, and
+    a judge reading AUCTION_CLEARED saw the system describe a state it was not
+    in. Checking only `winner_id is None` is how that string survived."""
     result = clear([])
 
     assert result.winner_id is None
+    assert result.price is None
+    assert result.reason == "no bids; there is no market"
 
 
 def test_a_tie_at_the_top_clears_at_that_price():

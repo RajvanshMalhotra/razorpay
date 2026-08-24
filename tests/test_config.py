@@ -12,8 +12,15 @@ def test_from_env_reads_values(monkeypatch):
     assert cfg.razorpay_key_id == "rzp_test_abc"
     assert cfg.razorpay_key_secret == "secret123"
     assert cfg.db_path == "runs/test.db"
-    assert cfg.k_min == 25
-    assert cfg.max_negotiation_rounds == 4
+
+
+def test_the_privacy_floor_is_defined_in_exactly_one_place():
+    """It used to be defined twice — here and in insights — and only one of
+    them was read. Two constants that must agree, and nothing making them."""
+    import exchange.config as config
+
+    assert not hasattr(config, "K_MIN")
+    assert not hasattr(Config, "k_min")
 
 
 def test_from_env_rejects_live_keys(monkeypatch):

@@ -41,10 +41,14 @@ def fold(events: Iterable[Event]) -> ExchangeState:
     """Rebuild state from a complete log starting at seq 1.
 
     PRECONDITION: `events` must be the whole log from seq 1, in order. Folding
-    a partial slice — anything from `read_since(seq)` — is not supported and
-    raises `KeyError`: a SETTLEMENT_COMPLETED whose SETTLEMENT_INITIATED fell
-    outside the slice has no record to update. `fold_from(state, events)` is
-    the way to support resuming from an already-folded state.
+    a partial slice — anything from `read_since(seq)` — is not supported: a
+    SETTLEMENT_COMPLETED whose SETTLEMENT_INITIATED fell outside the slice has
+    no record to update, and projects as a settlement with no known amount,
+    match or currency. It no longer raises, because a fold that can raise on a
+    log that cannot be edited is a permanently unreadable audit trail — but a
+    partial fold still produces wrong state, and the accountant reports the
+    shape as `orphaned_completion`. `fold_from(state, events)` is the way to
+    resume from an already-folded state.
 
     This remains the authority. `fold_from` is an optimisation over it and
     must always agree with it — the accountant's job is to prove that.
@@ -150,12 +154,41 @@ def fold_from(state: ExchangeState, events: Iterable[Event]) -> ExchangeState:
             )
 
         elif event.type == ev.SETTLEMENT_COMPLETED:
-            existing = settlements[p["settlement_id"]]
-            settlements[p["settlement_id"]] = replace(
-                existing,
-                status=SettlementStatus.COMPLETED,
-                razorpay_payment_id=p.get("razorpay_payment_id"),
-            )
+            existing = settlements.get(p["settlement_id"])
+            if existing is None:
+                # A completion whose initiation is missing. Nothing reachable
+                # writes one today — both rails initiate first and
+                # `Accountant.repair` looks the initiation up before writing —
+                # but this used to raise KeyError, and the log is append-only
+                # and enforced by triggers. One malformed event would have made
+                # `fold()`, and therefore every read of exchange state, raise
+                # forever on a database that by design cannot be mended: the
+                # audit trail becomes unreadable, which is the one failure this
+                # project cannot survive. SETTLEMENT_FAILED twelve lines below
+                # has always handled the same case gracefully.
+                #
+                # The values here are UNKNOWN, NOT ZERO: the completion payload
+                # carries only the settlement and payment ids, so there is no
+                # match, currency or amount to recover. Nothing may read this
+                # record as a settled exposure — `_spend_to_date` counts from
+                # SETTLEMENT_INITIATED in the log rather than from here, and
+                # `HouseAgent.observe` skips a completion with no initiation —
+                # and `assert_invariants` reports it as `orphaned_completion`
+                # so it is named rather than merely survived.
+                settlements[p["settlement_id"]] = Settlement(
+                    settlement_id=p["settlement_id"],
+                    match_id=p.get("match_id", ""),
+                    currency=Currency(p.get("currency", Currency.INR)),
+                    amount=p.get("amount", 0),
+                    status=SettlementStatus.COMPLETED,
+                    razorpay_payment_id=p.get("razorpay_payment_id"),
+                )
+            else:
+                settlements[p["settlement_id"]] = replace(
+                    existing,
+                    status=SettlementStatus.COMPLETED,
+                    razorpay_payment_id=p.get("razorpay_payment_id"),
+                )
 
         elif event.type == ev.SETTLEMENT_FAILED:
             existing = settlements.get(p["settlement_id"])

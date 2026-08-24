@@ -123,8 +123,6 @@ class Settlement:
     status: SettlementStatus
     razorpay_order_id: str | None = None
     razorpay_payment_id: str | None = None
-    reconciled_at: str | None = None
-    reconciliation_status: str | None = None
 
 
 @dataclass(frozen=True)
@@ -136,25 +134,3 @@ class PolicyDecision:
     reason: str
     limits_evaluated: dict[str, Any]
     ts: str
-
-
-@dataclass(frozen=True)
-class CreditLedgerEntry:
-    entry_id: str
-    actor_id: str
-    delta: int
-    reason: str
-    source_settlement_id: str | None
-    ts: str
-
-
-@dataclass(frozen=True)
-class RelationshipEdge:
-    from_actor_id: str
-    to_actor_id: str
-    deals_count: int = 0
-    total_value: int = 0
-    reliability_score: float = 0.5
-    confidence: float = 0.0
-    last_interaction_at: str | None = None
-    lessons_ref: str | None = None

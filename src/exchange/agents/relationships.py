@@ -14,10 +14,31 @@ it.
 
 Evidence is weighted: one bad deal against a long good record barely moves
 the number, because one data point is weak evidence, not a verdict.
+
+KNOWN GAP, STATED PLAINLY BECAUSE IT IS A POLICY INPUT. `_records` is process
+memory. It is NOT a projection of the event log, nothing folds it, and nothing
+persists it. `confidence()` therefore has two consequences worth naming rather
+than discovering:
+
+  - The accountant cannot verify it. `counterparty_confidence` is the input
+    that decides whether the unknown-counterparty cap binds, and it is the one
+    figure reaching the gate that is not reconstructible from the log — so the
+    audit trail records what the gate was told, not that what it was told was
+    true. Everywhere else in this system the authoritative figure is derived
+    from the log precisely so the party it constrains cannot supply it; this
+    is the exception, and it is an exception by omission, not by design.
+  - It does not ratchet across runs. Every process starts with an empty graph,
+    so confidence is 0.0 on the hundredth deal as on the first and the trial
+    cap binds identically forever. "Cap rises with track record" has no path
+    to firing until this is folded from the log.
+
+Deferred deliberately: folding it belongs with the work on a populated market,
+where a track record exists to ratchet. Until then, no comment here or at the
+call site may describe this number as log-derived.
 """
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 
 UNKNOWN_STANDING = 0.65
 CONFIDENCE_FULL_AT = 5  # deals needed before we consider ourselves informed
@@ -75,6 +96,3 @@ class RelationshipGraph:
         if record is None:
             return 0.0
         return min(1.0, record.deals / CONFIDENCE_FULL_AT)
-
-    def scores(self) -> dict[str, float]:
-        return {cid: self.standing(cid) for cid in self._records}
