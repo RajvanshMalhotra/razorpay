@@ -111,13 +111,14 @@ class Accountant:
                     f"{actor} holds {balance}; only the accountant may mint",
                 ))
 
-        # A settlement must have been permitted first. Joined on
-        # correlation_id, the id that threads a single story (match →
-        # policy decision → settlement) through the log — not on
-        # action_ref/match_id, which only names the match being decided and
-        # says nothing about which settlement it gated.
-        allowed_correlations = {
-            e.correlation_id
+        # A settlement must have been permitted first. Joined on the match
+        # itself (settlement.match_id == decision.action_ref), not on
+        # correlation_id: a single correlation can carry a DENY and a later
+        # ALLOW side by side (a merchant capped on a full lot retrying
+        # smaller), and asking "was there an ALLOW anywhere in this story"
+        # would let money move on the match that was actually refused.
+        allowed = {
+            e.payload["action_ref"]
             for e in events
             if e.type == ev.POLICY_DECIDED and e.payload.get("verdict") == "ALLOW"
         }
@@ -127,7 +128,7 @@ class Accountant:
         for e in events:
             if e.type != ev.SETTLEMENT_INITIATED:
                 continue
-            if e.correlation_id not in allowed_correlations:
+            if e.payload.get("match_id") not in allowed:
                 violations.append(Violation(
                     "ungated_settlement",
                     f"settlement {e.payload['settlement_id']} has no preceding ALLOW",

@@ -19,9 +19,9 @@ def log(tmp_path):
     lg.close()
 
 
-def _initiated(log, sid, order_id, corr="c"):
+def _initiated(log, sid, order_id, corr="c", match_id="mch"):
     log.append("m_a", SETTLEMENT_INITIATED,
-               {"settlement_id": sid, "match_id": "mch", "currency": "INR",
+               {"settlement_id": sid, "match_id": match_id, "currency": "INR",
                 "amount": 970_000, "razorpay_order_id": order_id},
                correlation_id=corr)
 
@@ -172,6 +172,33 @@ def test_a_clean_log_has_no_violations(log):
                {"decision_id": "d1", "action_ref": "mch_1", "verdict": "ALLOW",
                 "reason": "ok", "limits_evaluated": {}, "ts": "t"},
                correlation_id="c")
-    _initiated(log, "stl_1", "order_1")
+    _initiated(log, "stl_1", "order_1", match_id="mch_1")
 
     assert Accountant(log, FakeRazorpay()).assert_invariants() == []
+
+
+def test_settling_a_denied_match_is_caught_even_beside_an_allowed_one(log):
+    """An agent capped on a full lot and retrying smaller puts a DENY and an
+    ALLOW on one correlation id. Asking 'was there an ALLOW somewhere in this
+    story' would let the denied match settle."""
+    log.append("m_a", MATCH_PROPOSED,
+               {"match_id": "mch_big", "bid_order_id": "b", "ask_order_id": "a",
+                "clearing_price": 1940, "qty": 500, "score": 0.9, "rationale": "r"},
+               correlation_id="c")
+    log.append("m_a", POLICY_DECIDED,
+               {"decision_id": "d1", "action_ref": "mch_big", "verdict": "DENY",
+                "reason": "over the trial cap", "limits_evaluated": {}, "ts": "t"},
+               correlation_id="c")
+    log.append("m_a", MATCH_PROPOSED,
+               {"match_id": "mch_small", "bid_order_id": "b", "ask_order_id": "a",
+                "clearing_price": 1940, "qty": 200, "score": 0.9, "rationale": "r"},
+               correlation_id="c")
+    log.append("m_a", POLICY_DECIDED,
+               {"decision_id": "d2", "action_ref": "mch_small", "verdict": "ALLOW",
+                "reason": "ok", "limits_evaluated": {}, "ts": "t"},
+               correlation_id="c")
+    _initiated(log, "stl_1", "order_1", match_id="mch_big")
+
+    violations = Accountant(log, FakeRazorpay()).assert_invariants()
+
+    assert any(v.kind == "ungated_settlement" for v in violations)
