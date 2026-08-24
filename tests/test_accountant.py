@@ -202,3 +202,74 @@ def test_settling_a_denied_match_is_caught_even_beside_an_allowed_one(log):
     violations = Accountant(log, FakeRazorpay()).assert_invariants()
 
     assert any(v.kind == "ungated_settlement" for v in violations)
+
+
+def test_freezing_an_actor_stops_it_trading(log):
+    from exchange.models import ActorStatus
+    from exchange.projections import fold
+
+    log.append("m_a", "ACTOR_REGISTERED",
+               {"actor_id": "m_a", "kind": "MERCHANT"}, correlation_id="reg")
+    Accountant(log, FakeRazorpay()).freeze("m_a", "books disagree")
+
+    assert fold(log.read_all()).actors["m_a"].status == ActorStatus.FROZEN
+
+
+def test_repairing_a_drift_completes_the_settlement_from_the_remote_truth(log):
+    _initiated(log, "stl_1", "order_1")
+    client = FakeRazorpay(payments_by_order={
+        "order_1": {"count": 1, "items": [{"id": "pay_1", "status": "captured"}]}
+    })
+    accountant = Accountant(log, client)
+    drift = accountant.reconcile()[0]
+
+    accountant.repair(drift)
+
+    assert accountant.reconcile() == [], "the drift must be gone after repair"
+
+
+def test_repair_records_the_payment_id_it_recovered(log):
+    _initiated(log, "stl_1", "order_1")
+    client = FakeRazorpay(payments_by_order={
+        "order_1": {"count": 1, "items": [{"id": "pay_recovered", "status": "captured"}]}
+    })
+    accountant = Accountant(log, client)
+    accountant.repair(accountant.reconcile()[0])
+
+    completed = [e for e in log.read_all() if e.type == "SETTLEMENT_COMPLETED"][0]
+    assert completed.payload["razorpay_payment_id"] == "pay_recovered"
+
+
+def test_the_whole_failure_path_is_readable_from_the_log(log):
+    """Freeze, repair, resume — the forty-five seconds of the video."""
+    log.append("m_a", "ACTOR_REGISTERED",
+               {"actor_id": "m_a", "kind": "MERCHANT"}, correlation_id="reg")
+    _initiated(log, "stl_1", "order_1")
+    client = FakeRazorpay(payments_by_order={
+        "order_1": {"count": 1, "items": [{"id": "pay_1", "status": "captured"}]}
+    })
+    accountant = Accountant(log, client)
+
+    drift = accountant.reconcile()[0]
+    accountant.freeze("m_a", f"drift on {drift.settlement_id}")
+    accountant.repair(drift)
+    accountant.resume("m_a")
+
+    types = [e.type for e in log.read_all()]
+    for expected in ("DRIFT_DETECTED", "ACTOR_FROZEN",
+                     "SETTLEMENT_COMPLETED", "ACTOR_RESUMED"):
+        assert expected in types, expected
+    assert types.index("ACTOR_FROZEN") < types.index("ACTOR_RESUMED")
+
+
+def test_a_resumed_actor_can_trade_again(log):
+    from exchange.models import ActorStatus
+    from exchange.projections import fold
+
+    log.append("m_a", "ACTOR_REGISTERED",
+               {"actor_id": "m_a", "kind": "MERCHANT"}, correlation_id="reg")
+    accountant = Accountant(log, FakeRazorpay())
+    accountant.freeze("m_a", "books disagree")
+    accountant.resume("m_a")
+
+    assert fold(log.read_all()).actors["m_a"].status == ActorStatus.ACTIVE

@@ -164,3 +164,51 @@ class Accountant:
                     correlation_id="invariants",
                 )
         return violations
+
+    def freeze(self, actor_id: str, reason: str) -> None:
+        """Stop an actor trading until its books agree again.
+
+        Per-actor, never global: one merchant's drift must not stop the market.
+        The policy gate already denies a FROZEN actor, so this is enforcement,
+        not advice.
+        """
+        self._log.append(
+            ACCOUNTANT_ACTOR_ID, ev.ACTOR_FROZEN,
+            {"actor_id": actor_id, "reason": reason},
+            correlation_id=f"freeze_{actor_id}",
+        )
+
+    def repair(self, drift: Drift) -> None:
+        """Make the local record agree with Razorpay's.
+
+        The remote is the authority for whether money moved — we did not take
+        the payment, they did. Repair means recording what actually happened,
+        never asserting what we wish had.
+        """
+        events = self._log.read_all()
+        initiated = next(
+            e for e in events
+            if e.type == ev.SETTLEMENT_INITIATED
+            and e.payload["settlement_id"] == drift.settlement_id
+        )
+        order_id = initiated.payload["razorpay_order_id"]
+
+        payment_id = None
+        for item in self._client.order.payments(order_id).get("items", []):
+            if item.get("status") == "captured":
+                payment_id = item["id"]
+                break
+
+        self._log.append(
+            ACCOUNTANT_ACTOR_ID, ev.SETTLEMENT_COMPLETED,
+            {"settlement_id": drift.settlement_id, "razorpay_payment_id": payment_id},
+            correlation_id=initiated.correlation_id,
+            causation_id=initiated.event_id,
+        )
+
+    def resume(self, actor_id: str) -> None:
+        self._log.append(
+            ACCOUNTANT_ACTOR_ID, ev.ACTOR_RESUMED,
+            {"actor_id": actor_id},
+            correlation_id=f"freeze_{actor_id}",
+        )

@@ -168,6 +168,16 @@ def fold_from(state: ExchangeState, events: Iterable[Event]) -> ExchangeState:
                     existing, status=SettlementStatus.FAILED
                 )
 
+        elif event.type == ev.ACTOR_FROZEN:
+            existing = actors.get(p["actor_id"])
+            if existing is not None:
+                actors[p["actor_id"]] = replace(existing, status=ActorStatus.FROZEN)
+
+        elif event.type == ev.ACTOR_RESUMED:
+            existing = actors.get(p["actor_id"])
+            if existing is not None:
+                actors[p["actor_id"]] = replace(existing, status=ActorStatus.ACTIVE)
+
     return ExchangeState(
         actors=actors,
         assets=assets,
