@@ -412,13 +412,26 @@ def test_a_valuation_above_the_cap_is_clamped_not_refused(exchange):
     assert bid.amount == 50_000
 
 
-def test_an_unparseable_valuation_bids_nothing(exchange):
-    """Silence is not a bid. Guessing one would put points at risk on noise."""
+def test_an_unparseable_valuation_is_not_a_bid_at_all(exchange):
+    """Silence is not a bid — and it must not be spelled like one.
+
+    `amount == 0` alone was indistinguishable from an agent that genuinely
+    valued the lot at nothing, and it counted toward the auction's two-bid
+    minimum. `parsed` is what carries the difference into `clear()`.
+    """
     broker = Broker("m_buyer", exchange, ScriptedProvider(["I am not sure about this"]))
 
     bid = broker.value_insight("skincare AOV up 12%", "skincare", cap=50_000)
 
+    assert bid.parsed is False
     assert bid.amount == 0
+    assert bid.reason == "I am not sure about this", "the reply is still on record"
+
+
+def test_a_readable_valuation_is_marked_as_one(exchange):
+    broker = Broker("m_buyer", exchange, ScriptedProvider(["BID: 900 worth a look"]))
+
+    assert broker.value_insight("skincare AOV up 12%", "skincare", cap=50_000).parsed
 
 
 def test_the_headline_and_recall_both_reach_the_scout(exchange):

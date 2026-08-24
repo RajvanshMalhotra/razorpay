@@ -131,6 +131,14 @@ def fold_from(state: ExchangeState, events: Iterable[Event]) -> ExchangeState:
             balances[p["from_actor_id"]] -= p["amount"]
             balances[p["to_actor_id"]] += p["amount"]
 
+        elif event.type == ev.POINTS_MINTED:
+            # The only event that increases the total supply. A transfer moves
+            # points between two balances and nets to zero; a mint credits one
+            # balance from nowhere, which is why the accountant is the only
+            # actor allowed to write one and why `assert_invariants` checks
+            # that it was.
+            balances[p["actor_id"]] += p["points"]
+
         elif event.type == ev.SETTLEMENT_INITIATED:
             settlements[p["settlement_id"]] = Settlement(
                 settlement_id=p["settlement_id"],

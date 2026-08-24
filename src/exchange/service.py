@@ -3,6 +3,16 @@
 Nothing settles without passing `execute_match`, and `execute_match` always
 records its policy decision before acting. That ordering is the audit trail's
 guarantee: the gate is visible even when it says yes.
+
+BOTH RAILS, not just rupees. Points convert to Razorpay fee rebates, so a
+points transfer is a money action and goes through here too — the insight
+auction's purchase and its royalty payouts included. The auction used to pay
+out with a raw `log.append`, which put the entire points economy outside the
+gate and outside the accountant's invariants; the one flow built to showcase
+the gate was the only flow that never fired it.
+
+A settled INR trade also MINTS here, through the accountant. Earning is the
+other half of the economy and the settlement is the moment it is established.
 """
 from __future__ import annotations
 
@@ -11,6 +21,8 @@ from dataclasses import asdict, replace
 from exchange import events as ev
 from exchange import policy
 from exchange.eventlog import EventLog
+from exchange.house.accountant import Accountant
+from exchange.house.points import points_for_settlement
 from exchange.models import (
     Actor,
     ActorStatus,
@@ -37,11 +49,18 @@ class Exchange:
         credit_rail,
         inr_limits: policy.PolicyLimits | None = None,
         credit_limits: policy.PolicyLimits | None = None,
+        minter: Accountant | None = None,
     ) -> None:
         self.log = log
         self.index = index
         self._inr_rail = inr_rail
         self._credit_rail = credit_rail
+        # Wired by default, not optionally. Earning is half the economy, and an
+        # optional minter is a minter someone forgets to pass — which is how
+        # `points_for_settlement` came to be a well-tested function with no
+        # caller. Minting reads and writes the log only, so the accountant
+        # needs no Razorpay client to do it.
+        self._minter = minter or Accountant(log, client=None)
         # Limits are configuration, set once per exchange. Deliberately not a
         # parameter of execute_match: a caller must not be able to hand the gate
         # the caps it would like applied to itself.
@@ -163,8 +182,74 @@ class Exchange:
 
         if settlement is not None and settlement.status == SettlementStatus.COMPLETED:
             self._record_fill(match, buyer_id, seller_id, correlation_id, decision_event.event_id)
+            self._mint_earned(match, buyer_id, settlement, currency,
+                              correlation_id, decision_event.event_id)
 
         return decision, settlement
+
+    def _mint_earned(self, match: Match, buyer_id: str, settlement: Settlement,
+                     currency: Currency, correlation_id: str, causation_id: str) -> None:
+        """Trading well earns points, at the moment the trade actually settles.
+
+        On the trade's own correlation id, so "what did this deal earn" is
+        answered by replaying the deal rather than by knowing where else to
+        look — the same reasoning that put DRIFT_DETECTED on the trade's
+        thread.
+
+        INR ONLY. Points are earned by trading goods well; minting for a
+        points-denominated purchase would pay merchants to spend points and
+        turn the economy into a loop that funds itself.
+
+        The ask price comes from the ORDER_POSTED event, not from
+        `match.clearing_price` — the broker overwrites the clearing price with
+        the negotiated figure, so the match no longer remembers what was
+        asked, and the margin this rule pays for is exactly the difference
+        between the two. Read from the log rather than from the book because
+        a filled ask leaves the book.
+
+        No ask on record means no margin can be established, and an
+        unestablished margin is not a zero one: nothing is minted rather than
+        BASE_POINTS being paid on an unknown. That is the same refusal to
+        invent a fact the record does not hold that governs the rest of this
+        system.
+        """
+        if currency != Currency.INR:
+            return
+
+        ask_price = self._posted_limit(match.ask_order_id)
+        if ask_price is None:
+            return
+
+        points = points_for_settlement(
+            amount=settlement.amount,
+            ask_price=ask_price,
+            qty=match.qty,
+            delivered=settlement.status == SettlementStatus.COMPLETED,
+        )
+        if points <= 0:
+            return
+
+        self._minter.mint(
+            actor_id=buyer_id,
+            points=points,
+            source_settlement_id=settlement.settlement_id,
+            correlation_id=correlation_id,
+            causation_id=causation_id,
+            reason=(
+                f"margin captured on {settlement.settlement_id}: paid "
+                f"{settlement.amount} against an ask of {ask_price} x {match.qty}"
+            ),
+        )
+
+    def _posted_limit(self, order_id: str) -> int | None:
+        """The per-unit limit this order was posted at, read from the log."""
+        for event in self.log.read_all():
+            if (
+                event.type == ev.ORDER_POSTED
+                and event.payload.get("order_id") == order_id
+            ):
+                return event.payload["limit_price"]
+        return None
 
     def _already_decided(self, match_id: str) -> bool:
         """Has this match_id already carried a policy decision?"""

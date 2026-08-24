@@ -163,8 +163,19 @@ class Broker:
         self._promote(reply)
 
         match = re.search(r"BID:\s*(\d+)", reply, re.IGNORECASE)
-        amount = min(int(match.group(1)), cap) if match else 0
-        return Bid(actor_id=self.actor_id, amount=amount, reason=reply)
+        if match is None:
+            # Not a bid of zero — no bid. The reply is still returned and still
+            # logged, because an agent that answered unusably is worth seeing
+            # in the trail; but `parsed=False` keeps it out of the ranking,
+            # where a fabricated zero could have set a clearing price nobody
+            # named.
+            return Bid(actor_id=self.actor_id, amount=0, reason=reply, parsed=False)
+        return Bid(
+            actor_id=self.actor_id,
+            amount=min(int(match.group(1)), cap),
+            reason=reply,
+            parsed=True,
+        )
 
     def _promote(self, summary: str) -> None:
         """Narrow a sub-agent's reply into the broker's own context.

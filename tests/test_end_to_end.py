@@ -9,6 +9,7 @@ from exchange.events import (
     MATCH_PROPOSED,
     ORDER_FILLED,
     ORDER_POSTED,
+    POINTS_MINTED,
     POLICY_DECIDED,
     SETTLEMENT_COMPLETED,
     SETTLEMENT_INITIATED,
@@ -130,10 +131,12 @@ def test_the_full_story_reads_back_from_one_correlation_id(exchange):
 
     types = [e.type for e in exchange.log.read_by_correlation(CORR)]
 
+    # POINTS_MINTED is part of the trade's story, not a footnote filed
+    # elsewhere: what a deal earned is answered by replaying the deal.
     assert types == [
         ORDER_POSTED, ORDER_POSTED, ORDER_POSTED,
         MATCH_PROPOSED, POLICY_DECIDED, SETTLEMENT_INITIATED, SETTLEMENT_COMPLETED,
-        ORDER_FILLED, ORDER_FILLED,
+        ORDER_FILLED, ORDER_FILLED, POINTS_MINTED,
     ]
 
 
@@ -341,3 +344,76 @@ def test_state_folded_from_the_log_matches_live_state(exchange):
     from exchange.projections import fold
 
     assert fold(exchange.log.read_all()) == exchange.state()
+
+
+def test_a_settled_trade_earns_its_buyer_points(exchange):
+    """The earning half of the economy. `points_for_settlement` was a pure
+    function with nine passing tests and no caller — nothing in the running
+    system turned a settled trade into points."""
+    from exchange.house.points import points_for_settlement
+
+    asks = _seed_market(exchange)
+    bid = Order(
+        order_id="ord_bid", actor_id="m_buyer", side=Side.BID, asset_ref=None,
+        asset_query={"text": "biodegradable compostable mailers"}, qty=200,
+        limit_price=2200, currency=Currency.INR,
+        expires_at="2026-08-29T00:00:00+00:00", policy_snapshot={},
+    )
+    exchange.post_order(bid, correlation_id=CORR)
+    matches = find_candidates(bid, asks, exchange.state().assets, exchange.index)
+    # Negotiated down from the 1940 ask: the margin this rule pays for.
+    negotiated = replace(matches[0], clearing_price=1900)
+
+    exchange.execute_match(
+        negotiated, "m_buyer", "m_unknown",
+        PolicyContext(ActorStatus.ACTIVE, 0, 0.9), correlation_id=CORR,
+    )
+
+    earned = points_for_settlement(380_000, ask_price=1940, qty=200, delivered=True)
+    assert earned > 0, "this test needs the trade to actually earn"
+    assert exchange.state().credit_balances["m_buyer"] == earned
+
+
+def test_the_mint_names_the_settlement_it_was_earned_on(exchange):
+    asks = _seed_market(exchange)
+    bid = Order(
+        order_id="ord_bid", actor_id="m_buyer", side=Side.BID, asset_ref=None,
+        asset_query={"text": "biodegradable compostable mailers"}, qty=200,
+        limit_price=2200, currency=Currency.INR,
+        expires_at="2026-08-29T00:00:00+00:00", policy_snapshot={},
+    )
+    exchange.post_order(bid, correlation_id=CORR)
+    matches = find_candidates(bid, asks, exchange.state().assets, exchange.index)
+    exchange.execute_match(
+        replace(matches[0], clearing_price=1900), "m_buyer", "m_unknown",
+        PolicyContext(ActorStatus.ACTIVE, 0, 0.9), correlation_id=CORR,
+    )
+
+    events = exchange.log.read_by_correlation(CORR)
+    minted = [e for e in events if e.type == POINTS_MINTED][0]
+    initiated = [e for e in events if e.type == SETTLEMENT_INITIATED][0]
+
+    assert minted.actor_id == "accountant", "only the accountant mints"
+    assert minted.payload["source_settlement_id"] == initiated.payload["settlement_id"]
+
+
+def test_a_trade_that_paid_the_ask_or_more_mints_nothing(exchange):
+    """You cannot be paid for overpaying — and a mint of zero is not written."""
+    asks = _seed_market(exchange)
+    bid = Order(
+        order_id="ord_bid", actor_id="m_buyer", side=Side.BID, asset_ref=None,
+        asset_query={"text": "biodegradable compostable mailers"}, qty=200,
+        limit_price=2200, currency=Currency.INR,
+        expires_at="2026-08-29T00:00:00+00:00", policy_snapshot={},
+    )
+    exchange.post_order(bid, correlation_id=CORR)
+    matches = find_candidates(bid, asks, exchange.state().assets, exchange.index)
+
+    exchange.execute_match(
+        replace(matches[0], clearing_price=2100), "m_buyer", "m_unknown",
+        PolicyContext(ActorStatus.ACTIVE, 0, 0.9), correlation_id=CORR,
+    )
+
+    types = [e.type for e in exchange.log.read_by_correlation(CORR)]
+    assert SETTLEMENT_COMPLETED in types
+    assert POINTS_MINTED not in types

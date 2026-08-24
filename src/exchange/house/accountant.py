@@ -15,7 +15,7 @@ from dataclasses import dataclass
 
 from exchange import events as ev
 from exchange.eventlog import EventLog
-from exchange.house.insights import HOUSE_ACTOR_ID
+from exchange.house.points import OPENING_GRANT_CAP
 
 ACCOUNTANT_ACTOR_ID = "accountant"
 
@@ -98,24 +98,120 @@ class Accountant:
         )
         return drifts
 
+    def mint(
+        self,
+        actor_id: str,
+        points: int,
+        source_settlement_id: str | None,
+        correlation_id: str,
+        causation_id: str | None = None,
+        reason: str = "earned on a settled trade",
+    ) -> None:
+        """Create points. The only way points enter the economy.
+
+        Points convert to fee rebates, so this is a money action and the
+        answer to "where do points come from?" has to be a bounded one.
+        Two kinds of mint exist and no third:
+
+        - Against a settled trade. `source_settlement_id` names the
+          settlement, the amount comes from `points_for_settlement`, and the
+          settlement may be minted against ONCE — a second call for the same
+          settlement is refused, so a replayed or retried settlement path
+          cannot double-pay.
+        - An opening grant (`source_settlement_id=None`), capped at
+          `OPENING_GRANT_CAP` and logged with its reason. This stands in for
+          earning that predates the log; it is capped rather than free
+          because an uncapped grant is exactly the unbounded source this
+          method exists to replace.
+
+        The house is not exempt from either rule. It holds a real balance,
+        funded by what it sells, and `assert_invariants` now checks it.
+        """
+        if points <= 0:
+            raise ValueError(f"refusing to mint {points} points: a mint is an increase")
+
+        if source_settlement_id is None:
+            if points > OPENING_GRANT_CAP:
+                raise ValueError(
+                    f"refusing an opening grant of {points} to {actor_id}: "
+                    f"above the cap of {OPENING_GRANT_CAP}"
+                )
+        elif self._already_minted(source_settlement_id):
+            raise ValueError(
+                f"settlement {source_settlement_id} has already been minted "
+                "against; a settlement earns points once"
+            )
+
+        self._log.append(
+            ACCOUNTANT_ACTOR_ID,
+            ev.POINTS_MINTED,
+            {
+                "actor_id": actor_id,
+                "points": points,
+                "source_settlement_id": source_settlement_id,
+                "reason": reason,
+            },
+            correlation_id=correlation_id,
+            causation_id=causation_id,
+        )
+
+    def _already_minted(self, settlement_id: str) -> bool:
+        return any(
+            e.type == ev.POINTS_MINTED
+            and e.payload.get("source_settlement_id") == settlement_id
+            for e in self._log.read_all()
+        )
+
     def assert_invariants(self) -> list[Violation]:
         """Everything that must be true of the log, checked against the log."""
         events = self._log.read_all()
         violations: list[Violation] = []
 
-        # Points are conserved and minted only here. A negative balance means
-        # an actor spent points it was never given.
+        # Points are conserved and minted only here. Transfers net to zero;
+        # POINTS_MINTED is the only event that adds supply, so a negative
+        # balance means an actor spent points it was never given or minted.
+        #
+        # NOBODY is exempt. The house used to be, which made this check blind
+        # to the only actor that actually created points — it conjured them
+        # with a raw transfer from an empty balance and the auditor reported
+        # zero violations. The house now holds a real balance funded by what
+        # it sells, and an overspend by the house is a violation like anyone
+        # else's.
         balances: dict[str, int] = defaultdict(int)
         for e in events:
             if e.type == ev.CREDITS_TRANSFERRED:
                 balances[e.payload["from_actor_id"]] -= e.payload["amount"]
                 balances[e.payload["to_actor_id"]] += e.payload["amount"]
+            elif e.type == ev.POINTS_MINTED:
+                balances[e.payload["actor_id"]] += e.payload["points"]
         for actor, balance in balances.items():
-            if balance < 0 and actor not in (HOUSE_ACTOR_ID, ACCOUNTANT_ACTOR_ID):
+            if balance < 0:
                 violations.append(Violation(
                     "points_not_conserved",
                     f"{actor} holds {balance}; only the accountant may mint",
                 ))
+
+        # "Minted only by the accountant" was a docstring claim in two files
+        # and a check in none. It is a check now.
+        minted_against: set[str] = set()
+        for e in events:
+            if e.type != ev.POINTS_MINTED:
+                continue
+            if e.actor_id != ACCOUNTANT_ACTOR_ID:
+                violations.append(Violation(
+                    "unauthorized_mint",
+                    f"{e.actor_id} minted {e.payload.get('points')} points; "
+                    "only the accountant may mint",
+                ))
+            sid = e.payload.get("source_settlement_id")
+            if sid is None:
+                continue
+            if sid in minted_against:
+                violations.append(Violation(
+                    "duplicate_mint",
+                    f"settlement {sid} was minted against more than once",
+                ))
+            minted_against.add(sid)
 
         # A settlement must have been permitted first. Joined on the match
         # itself (settlement.match_id == decision.action_ref), not on

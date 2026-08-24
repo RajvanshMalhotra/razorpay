@@ -7,13 +7,24 @@ CAPTURED — the gap between the ask and what was actually paid — which a
 small merchant can win by negotiating well and a large one can lose by
 overpaying.
 
-Minted only by the accountant. Nothing else may mint.
+Minted only by the accountant, and only two ways: against a settled trade
+(once per settlement, by the rule below) or as a capped opening grant. Both
+run through `Accountant.mint`, and `assert_invariants` checks that no other
+actor wrote a POINTS_MINTED — the claim is enforced rather than asserted.
 """
 from __future__ import annotations
 
 EARNING_RATE_BPS = 500      # 5% of margin captured, in basis points
 BASE_POINTS = 10            # a completed trade is worth something on its own
 ROYALTY_SHARE_BPS = 3000    # 30% of a clearing price goes back to contributors
+
+# The one mint that is not derived from a settled trade: an opening balance for
+# a merchant whose earning history predates this log. It is capped rather than
+# free because "where do points come from?" must have a bounded answer, and an
+# uncapped grant is the same unbounded source the raw `log.append` was. Every
+# grant is logged with its reason and carries no source settlement, so the two
+# kinds of mint are distinguishable in the trail forever.
+OPENING_GRANT_CAP = 2_000
 
 
 def points_for_settlement(

@@ -316,3 +316,111 @@ def test_a_resumed_actor_can_trade_again(log):
     accountant.resume("m_a")
 
     assert fold(log.read_all()).actors["m_a"].status == ActorStatus.ACTIVE
+
+
+# --- minting: where points come from ---------------------------------------
+
+
+def test_the_accountant_mints_points_against_their_source_settlement(log):
+    """POINTS_MINTED was in the vocabulary and nothing emitted it. The earning
+    half of the economy is only real if something writes this event."""
+    Accountant(log, FakeRazorpay()).mint("m_a", 510, "stl_1", correlation_id="c")
+
+    minted = [e for e in log.read_all() if e.type == "POINTS_MINTED"]
+    assert len(minted) == 1
+    assert minted[0].actor_id == "accountant"
+    assert minted[0].payload["actor_id"] == "m_a"
+    assert minted[0].payload["points"] == 510
+    assert minted[0].payload["source_settlement_id"] == "stl_1"
+
+
+def test_minted_points_land_in_the_balance(log):
+    from exchange.projections import fold
+
+    Accountant(log, FakeRazorpay()).mint("m_a", 510, "stl_1", correlation_id="c")
+
+    assert fold(log.read_all()).credit_balances["m_a"] == 510
+
+
+def test_a_settlement_earns_points_only_once(log):
+    """A retried or replayed settlement path must not double-pay."""
+    accountant = Accountant(log, FakeRazorpay())
+    accountant.mint("m_a", 510, "stl_1", correlation_id="c")
+
+    with pytest.raises(ValueError, match="already been minted"):
+        accountant.mint("m_a", 510, "stl_1", correlation_id="c")
+
+
+def test_an_opening_grant_above_the_cap_is_refused(log):
+    """The grant is the one mint not derived from a trade, so it is the one
+    that has to be bounded explicitly."""
+    from exchange.house.points import OPENING_GRANT_CAP
+
+    accountant = Accountant(log, FakeRazorpay())
+    accountant.mint("m_a", OPENING_GRANT_CAP, None, correlation_id="c",
+                    reason="opening balance")
+
+    with pytest.raises(ValueError, match="above the cap"):
+        accountant.mint("m_b", OPENING_GRANT_CAP + 1, None, correlation_id="c",
+                        reason="opening balance")
+
+
+def test_minting_nothing_is_refused(log):
+    with pytest.raises(ValueError, match="a mint is an increase"):
+        Accountant(log, FakeRazorpay()).mint("m_a", 0, "stl_1", correlation_id="c")
+
+
+def test_a_house_that_spends_more_than_it_minted_is_caught(log):
+    """The conservation check used to exempt the house by name — the one actor
+    that actually created points. It conjured 3,850 out of nothing and the
+    auditor reported zero violations."""
+    log.append("house", CREDITS_TRANSFERRED,
+               {"from_actor_id": "house", "to_actor_id": "m_a", "amount": 3_850},
+               correlation_id="c")
+
+    violations = Accountant(log, FakeRazorpay()).assert_invariants()
+
+    assert any(v.kind == "points_not_conserved" and "house" in v.detail
+               for v in violations)
+
+
+def test_a_house_funded_by_what_it_sold_is_not_a_violation(log):
+    """The house holds a real balance: it can pay out what it took in."""
+    Accountant(log, FakeRazorpay()).mint("m_a", 1_200, "stl_1", correlation_id="c")
+    log.append("m_a", CREDITS_TRANSFERRED,
+               {"from_actor_id": "m_a", "to_actor_id": "house", "amount": 1_200},
+               correlation_id="c")
+    log.append("house", CREDITS_TRANSFERRED,
+               {"from_actor_id": "house", "to_actor_id": "m_b", "amount": 360},
+               correlation_id="c")
+
+    violations = Accountant(log, FakeRazorpay()).assert_invariants()
+
+    assert not any(v.kind == "points_not_conserved" for v in violations)
+
+
+def test_a_mint_by_anyone_but_the_accountant_is_a_violation(log):
+    """'Minted only by the accountant' was a docstring in two files and a
+    check in none."""
+    log.append("house", "POINTS_MINTED",
+               {"actor_id": "house", "points": 5_000,
+                "source_settlement_id": None, "reason": "because"},
+               correlation_id="c")
+
+    violations = Accountant(log, FakeRazorpay()).assert_invariants()
+
+    assert any(v.kind == "unauthorized_mint" for v in violations)
+
+
+def test_two_mints_against_one_settlement_are_a_violation(log):
+    """mint() refuses it; the auditor catches it even if it arrived some
+    other way, because the log cannot be un-appended."""
+    for _ in range(2):
+        log.append("accountant", "POINTS_MINTED",
+                   {"actor_id": "m_a", "points": 510,
+                    "source_settlement_id": "stl_1", "reason": "earned"},
+                   correlation_id="c")
+
+    violations = Accountant(log, FakeRazorpay()).assert_invariants()
+
+    assert any(v.kind == "duplicate_mint" for v in violations)
