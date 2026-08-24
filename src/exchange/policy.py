@@ -12,6 +12,13 @@ from datetime import datetime, timezone
 from exchange.ids import new_id
 from exchange.models import ActorStatus, Currency, PolicyDecision, Verdict
 
+# The gate signs its own decisions, and lives here rather than in `service`
+# so the accountant can check the signature without importing the thing it
+# audits. A merchant can write a POLICY_DECIDED — `Broker._log_refusal` does,
+# so a refusal reads in the gate's vocabulary — and an ALLOW is only worth
+# anything if you can tell who wrote it.
+GATE_ACTOR_ID = "gate"
+
 
 @dataclass(frozen=True)
 class PolicyLimits:

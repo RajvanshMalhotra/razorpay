@@ -42,7 +42,7 @@ from exchange.models import (
     SettlementStatus,
     Verdict,
 )
-from exchange.policy import PolicyContext
+from exchange.policy import GATE_ACTOR_ID, PolicyContext
 from exchange.projections import ExchangeState, fold, fold_from
 from exchange.retrieval import HybridIndex
 
@@ -167,7 +167,7 @@ class Exchange:
         )
 
         decision_event = self.log.append(
-            buyer_id,
+            GATE_ACTOR_ID,
             ev.POLICY_DECIDED,
             _serialize(decision),
             correlation_id=correlation_id,

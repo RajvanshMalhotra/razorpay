@@ -16,6 +16,7 @@ from dataclasses import dataclass, field
 from exchange import events as ev
 from exchange.eventlog import EventLog
 from exchange.house.points import OPENING_GRANT_CAP
+from exchange.policy import GATE_ACTOR_ID
 
 ACCOUNTANT_ACTOR_ID = "accountant"
 
@@ -363,11 +364,30 @@ class Accountant:
         # ALLOW side by side (a merchant capped on a full lot retrying
         # smaller), and asking "was there an ALLOW anywhere in this story"
         # would let money move on the match that was actually refused.
+        # Only the gate's own ALLOWs count. A merchant can write a
+        # POLICY_DECIDED — `Broker._log_refusal` does, deliberately, so a
+        # refusal reads in the gate's vocabulary — and without this check a
+        # broker could sign its own permit and satisfy `ungated_settlement`.
+        # The mint invariant above already checks its author; this one has to
+        # for the same reason.
         allowed = {
             e.payload["action_ref"]
             for e in events
-            if e.type == ev.POLICY_DECIDED and e.payload.get("verdict") == "ALLOW"
+            if e.type == ev.POLICY_DECIDED
+            and e.payload.get("verdict") == "ALLOW"
+            and e.actor_id == GATE_ACTOR_ID
         }
+        for e in events:
+            if (
+                e.type == ev.POLICY_DECIDED
+                and e.payload.get("verdict") == "ALLOW"
+                and e.actor_id != GATE_ACTOR_ID
+            ):
+                violations.append(Violation(
+                    "self_signed_allow",
+                    f"{e.actor_id} wrote its own ALLOW for "
+                    f"{e.payload.get('action_ref')}; only the gate may permit",
+                ))
         decided = {
             e.payload["action_ref"] for e in events if e.type == ev.POLICY_DECIDED
         }

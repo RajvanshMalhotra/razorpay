@@ -9,6 +9,7 @@ from exchange.events import (
     SETTLEMENT_INITIATED,
 )
 from exchange.house.accountant import Accountant
+from exchange.policy import GATE_ACTOR_ID
 from tests.test_rails import FakeRazorpay
 
 
@@ -295,13 +296,41 @@ def test_a_clean_log_has_no_violations(log):
     log.append("m_a", MATCH_PROPOSED,
                {"match_id": "mch_1", "clearing_price": 1940, "qty": 200},
                correlation_id="c")
-    log.append("m_a", POLICY_DECIDED,
+    # Authored by the gate, which is the only signature that permits anything.
+    log.append(GATE_ACTOR_ID, POLICY_DECIDED,
                {"decision_id": "d1", "action_ref": "mch_1", "verdict": "ALLOW",
                 "reason": "ok", "limits_evaluated": {}, "ts": "t"},
                correlation_id="c")
     _initiated(log, "stl_1", "order_1", match_id="mch_1")
 
     assert Accountant(log, FakeRazorpay()).assert_invariants() == []
+
+
+def test_a_merchant_cannot_sign_its_own_permit(log):
+    """The auditor built `allowed` from any ALLOW, whoever wrote it.
+
+    A broker can write a POLICY_DECIDED — `Broker._log_refusal` does, so a
+    refusal reads in the gate's vocabulary — so a merchant could author its
+    own ALLOW and satisfy `ungated_settlement`. The mint invariant checked
+    its author; this one did not. Same shape as the freeze that never bound:
+    a value the checker must be authoritative about, supplied by the party
+    it constrains.
+    """
+    log.append("m_a", MATCH_PROPOSED,
+               {"match_id": "mch_1", "clearing_price": 1940, "qty": 200},
+               correlation_id="c")
+    log.append("m_a", POLICY_DECIDED,  # the merchant permits itself
+               {"decision_id": "d1", "action_ref": "mch_1", "verdict": "ALLOW",
+                "reason": "looks fine to me", "limits_evaluated": {}, "ts": "t"},
+               correlation_id="c")
+    _initiated(log, "stl_1", "order_1", match_id="mch_1")
+
+    violations = Accountant(log, FakeRazorpay()).assert_invariants()
+    kinds = {v.kind for v in violations}
+
+    assert "self_signed_allow" in kinds
+    # And the permit must not have worked: the settlement is still ungated.
+    assert "ungated_settlement" in kinds
 
 
 def test_settling_a_denied_match_is_caught_even_beside_an_allowed_one(log):
