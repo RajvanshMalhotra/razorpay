@@ -26,10 +26,17 @@ class PolicyLimits:
 class PolicyContext:
     """The facts the gate weighs about the actor making the request.
 
-    `rolling_spend` is overwritten by `Exchange.execute_match` with a figure
-    derived from the event log — whatever a caller supplies for it there is
-    ignored. It stays on the context because `evaluate` is also called directly
-    (in tests, and by anything gating an action the exchange has not logged yet).
+    `rolling_spend` and `actor_status` are both overwritten by
+    `Exchange.execute_match` with figures derived from the event log — whatever
+    a caller supplies for either one there is ignored. A cap the actor supplies
+    its own usage figure for is not a cap, and a status the actor asserts about
+    itself is not a status. They stay on the context because `evaluate` is also
+    called directly (in tests, and by anything gating an action the exchange
+    has not logged yet); on that path the caller is responsible for deriving
+    them from the log itself.
+
+    `counterparty_confidence` is genuinely the caller's to supply: it is the
+    caller's own opinion of someone else, not a claim about itself.
     """
 
     actor_status: ActorStatus

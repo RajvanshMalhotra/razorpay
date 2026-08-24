@@ -4,6 +4,7 @@ import pytest
 
 from exchange.eventlog import EventLog
 from exchange.events import (
+    ACTOR_FROZEN,
     ASSET_LISTED,
     MATCH_PROPOSED,
     ORDER_FILLED,
@@ -236,9 +237,13 @@ def test_a_deny_on_another_match_cannot_satisfy_the_allow_invariant(exchange):
     matches = find_candidates(bid, asks, exchange.state().assets, exchange.index, top_k=2)
     match_a, match_b = matches[0], matches[1]
 
-    frozen = PolicyContext(ActorStatus.FROZEN, 0, 0.9)
+    # A denies on the trial-size bound: 500 units at 1940 is 970,000 against a
+    # 500,000 cap for a counterparty this buyer does not know. (It used to deny
+    # on a hand-supplied FROZEN status; the gate now derives that from the log,
+    # so a caller can no longer stage a denial by asserting one.)
+    stranger = PolicyContext(ActorStatus.ACTIVE, 0, counterparty_confidence=0.05)
     denied, no_settlement = exchange.execute_match(
-        match_a, "m_buyer", "m_unknown", frozen, correlation_id=CORR
+        match_a, "m_buyer", "m_unknown", stranger, correlation_id=CORR
     )
     assert denied.verdict == Verdict.DENY
     assert no_settlement is None
@@ -303,7 +308,11 @@ def test_a_settled_trade_depletes_both_sides_of_the_book(exchange):
 
 
 def test_a_denied_match_leaves_the_book_untouched(exchange):
+    """Frozen for real, in the log — the caller still says it is ACTIVE."""
     asks = _seed_market(exchange)
+    exchange.log.append("accountant", ACTOR_FROZEN,
+                        {"actor_id": "m_buyer", "reason": "books disagree"},
+                        correlation_id="freeze_m_buyer")
     bid = Order(
         order_id="ord_bid", actor_id="m_buyer", side=Side.BID, asset_ref=None,
         asset_query={"text": "biodegradable compostable mailers"}, qty=500,
@@ -315,10 +324,11 @@ def test_a_denied_match_leaves_the_book_untouched(exchange):
 
     decision, _ = exchange.execute_match(
         matches[0], "m_buyer", "m_unknown",
-        PolicyContext(ActorStatus.FROZEN, 0, 0.9), correlation_id=CORR,
+        PolicyContext(ActorStatus.ACTIVE, 0, 0.9), correlation_id=CORR,
     )
 
     assert decision.verdict == Verdict.DENY
+    assert "frozen" in decision.reason.lower()
     book = exchange.state().open_orders
     assert book["ord_bid"].qty == 500
     assert book["ord_ask_mailers"].qty == 1000

@@ -2,8 +2,10 @@ import pytest
 
 from exchange.agents.broker import Broker
 from exchange.eventlog import EventLog
+from exchange.house.accountant import Accountant
+from exchange.matching import resize
 from exchange.models import (
-    Actor, ActorKind, ActorStatus, Asset, AssetKind, Currency, Order,
+    Actor, ActorKind, ActorStatus, Asset, AssetKind, Currency, Match, Order,
     SettlementStatus, Side, Verdict,
 )
 from exchange.rails.credits import CreditRail

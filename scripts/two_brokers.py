@@ -28,7 +28,7 @@ from exchange.config import Config
 from exchange.rails.inr import RazorpayRail
 from exchange.retrieval import HybridIndex, default_embedder
 from exchange.service import Exchange
-from dataclasses import replace
+from exchange.matching import resize
 
 from exchange.ids import new_id
 
@@ -103,9 +103,12 @@ def main() -> int:
     print(f"  exposure evaluated: {decision.limits_evaluated['amount']}"
           f"  against trial cap {decision.limits_evaluated['unknown_counterparty_cap']}\n")
 
-    # Now the same trade at a size a first dealing can carry.
+    # Now the same trade at a size a first dealing can carry. `resize`, not
+    # `replace`: a retry at different terms is a new match with its own id, so
+    # the refusal above stays refused in the log and in the projection instead
+    # of being overwritten by the trade that succeeded.
     if settlement is None:
-        small = replace(matches[0], qty=TRIAL_QTY)
+        small = resize(matches[0], TRIAL_QTY)
         print(f"=== RETRY AT {TRIAL_QTY} UNITS ===")
         decision, settlement = buyer.close(
             small, "m_seller", correlation_id, agreed_price=agreed_price,

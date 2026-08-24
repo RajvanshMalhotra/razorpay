@@ -8,9 +8,31 @@ unfamiliar counterparties is bounded by the policy gate.
 """
 from __future__ import annotations
 
+from dataclasses import replace
+
 from exchange.ids import new_id
 from exchange.models import Asset, Match, Order, Side
 from exchange.retrieval import HybridIndex
+
+
+def resize(match: Match, qty: int) -> Match:
+    """The same counterparty at a different size — as a NEW match.
+
+    A trade the gate refused and the merchant retries smaller is not the same
+    action asked twice; it is a second action on different terms, and it must
+    reach the gate with its own id. `dataclasses.replace` alone preserves
+    `match_id`, which would file a DENY and a later ALLOW under one
+    `action_ref` — and the accountant joins settlements to decisions on exactly
+    that id, precisely so a denied match and an allowed one on the same
+    correlation cannot be mistaken for each other. Reusing the id reopens that
+    hole from the inside: a settlement of the refused exposure would find an
+    ALLOW under its own id and pass. `fold` overwrites on match_id too, so the
+    refused proposal would vanish from the projection as well.
+
+    `Exchange.execute_match` now refuses a match_id that has already been
+    decided, so this is the supported way to retry.
+    """
+    return replace(match, match_id=new_id("mch"), qty=qty)
 
 
 def find_candidates(

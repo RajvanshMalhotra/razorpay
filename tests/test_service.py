@@ -2,6 +2,8 @@ import pytest
 
 from exchange.eventlog import EventLog
 from exchange.events import (
+    ACTOR_FROZEN,
+    ACTOR_RESUMED,
     CREDITS_TRANSFERRED,
     MATCH_PROPOSED,
     POLICY_DECIDED,
@@ -117,15 +119,24 @@ def test_a_policy_decision_is_logged_even_when_the_verdict_is_allow(exchange):
 
 
 def test_denied_match_logs_the_decision_and_moves_no_money(exchange):
-    frozen = PolicyContext(
-        actor_status=ActorStatus.FROZEN, rolling_spend=0, counterparty_confidence=0.9
-    )
+    """The freeze is in the log, not in the argument.
+
+    This test used to hand the gate a FROZEN context, which proved only that
+    `policy.evaluate` reads the flag. The actor is frozen in the log here and
+    the caller still claims ACTIVE — the DENY has to come from the projection.
+    """
+    exchange.register_actor(Actor(actor_id="m_buyer", kind=ActorKind.MERCHANT))
+    exchange.log.append("accountant", ACTOR_FROZEN,
+                        {"actor_id": "m_buyer", "reason": "books disagree"},
+                        correlation_id="freeze_m_buyer")
 
     decision, settlement = exchange.execute_match(
-        MATCH, "m_buyer", "m_seller", frozen, correlation_id="c1"
+        MATCH, "m_buyer", "m_seller", TRUSTED, correlation_id="c1"
     )
 
     assert decision.verdict == Verdict.DENY
+    assert "frozen" in decision.reason.lower()
+    assert decision.limits_evaluated["actor_status"] == "FROZEN"
     assert settlement is None
     types = [e.type for e in exchange.log.read_by_correlation("c1")]
     assert SETTLEMENT_INITIATED not in types

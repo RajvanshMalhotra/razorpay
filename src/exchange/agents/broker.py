@@ -9,7 +9,8 @@ from __future__ import annotations
 
 import logging
 import re
-from dataclasses import replace
+from dataclasses import asdict, replace
+from datetime import datetime, timezone
 
 from exchange import events as ev
 from exchange.agents.context import ContextDelta
@@ -30,6 +31,7 @@ from exchange.models import (
     Settlement,
     SettlementStatus,
     Side,
+    Verdict,
 )
 from exchange.policy import PolicyContext
 
@@ -200,6 +202,103 @@ class Broker:
         self._promote(reply)
         return reply
 
+    def _posted_bid_limit(self, bid_order_id: str) -> int | None:
+        """The per-unit ceiling this merchant advertised, read from the log.
+
+        Not from `state().open_orders`: a bid leaves the book once it is
+        filled, and the limit it was posted under still binds the trade it was
+        posted for. The log keeps it either way — and, as everywhere else here,
+        the authoritative figure comes from the log rather than from whoever is
+        asking to spend against it.
+        """
+        for event in self._exchange.log.read_all():
+            if (
+                event.type == ev.ORDER_POSTED
+                and event.payload.get("order_id") == bid_order_id
+            ):
+                return event.payload["limit_price"]
+        return None
+
+    def _refuse_above_posted_limit(
+        self, match: Match, agreed_price: int, correlation_id: str,
+    ) -> PolicyDecision | None:
+        """Refuse a negotiated price that breaches the bid's own ceiling.
+
+        `negotiate()` puts the buyer's limit in front of the model as prompt
+        text and nothing more, so a long haggle can end above the number this
+        merchant published on the book. The matcher checked
+        `ask.limit_price <= bid.limit_price` when it built the match; the
+        agreed price then replaces that vetted figure with an unvetted one, and
+        the policy caps only bound the absolute exposure — not this merchant's
+        own stated maximum.
+
+        REFUSED, NOT CLAMPED, deliberately. Clamping would settle at a price
+        neither side agreed to and leave a SETTLEMENT_INITIATED whose amount
+        matches neither the negotiation nor the ask, with no event explaining
+        the difference — a silent correction is the same defect wearing a
+        different hat. A refusal is a logged DENY that names the agreed price,
+        the posted limit and the order they belong to, and moves no money. The
+        deal is not lost: re-negotiating or re-sizing produces a new match
+        (`matching.resize`), which the gate treats on its own terms.
+
+        A bid with no ORDER_POSTED in the log is refused too. An unfindable
+        ceiling is not an absent one, and defaulting to "unbounded" would make
+        this check advisory for exactly the caller that skipped the book.
+        """
+        limit = self._posted_bid_limit(match.bid_order_id)
+        if limit is None:
+            return self._log_refusal(
+                match, correlation_id,
+                reason=(
+                    f"Bid order {match.bid_order_id} is not in the log; there is "
+                    f"no posted limit to check {agreed_price} against"
+                ),
+                evaluated={"agreed_price": agreed_price, "bid_limit_price": None},
+            )
+        if agreed_price > limit:
+            return self._log_refusal(
+                match, correlation_id,
+                reason=(
+                    f"Agreed price {agreed_price} exceeds the limit {limit} posted "
+                    f"on bid {match.bid_order_id}"
+                ),
+                evaluated={"agreed_price": agreed_price, "bid_limit_price": limit},
+            )
+        return None
+
+    def _log_refusal(
+        self, match: Match, correlation_id: str, reason: str, evaluated: dict,
+    ) -> PolicyDecision:
+        """Record a DENY on the trade's own thread, in the gate's vocabulary.
+
+        Written as POLICY_DECIDED so a replay of this correlation shows one
+        kind of record for "a money action was refused and here is why",
+        whether the bound that bound it was the exchange's cap or the
+        merchant's own posted ceiling. `execute_match` is never reached, so no
+        MATCH_PROPOSED and no settlement exist for this action_ref — and the
+        match_id is now spent: a corrected retry is a new match.
+        """
+        decision = PolicyDecision(
+            decision_id=new_id("dec"),
+            action_ref=match.match_id,
+            actor_id=self.actor_id,
+            verdict=Verdict.DENY,
+            reason=reason,
+            limits_evaluated={
+                **evaluated,
+                "bid_order_id": match.bid_order_id,
+                "qty": match.qty,
+            },
+            ts=datetime.now(timezone.utc).isoformat(),
+        )
+        self._exchange.log.append(
+            self.actor_id,
+            ev.POLICY_DECIDED,
+            {**asdict(decision), "verdict": str(decision.verdict)},
+            correlation_id=correlation_id,
+        )
+        return decision
+
     def close(
         self,
         match: Match,
@@ -215,12 +314,25 @@ class Broker:
         tell two stories on one correlation_id, and an optional parameter meant
         a forgetful caller could do exactly that silently. The agreed figure
         always replaces it before anything downstream sees the match.
+
+        Before it does, the agreed figure is checked against the ceiling this
+        merchant actually posted on its bid — see `_refuse_above_posted_limit`.
         """
+        refusal = self._refuse_above_posted_limit(match, agreed_price, correlation_id)
+        if refusal is not None:
+            return refusal, None
+
         match = replace(match, clearing_price=agreed_price)
 
         ctx = PolicyContext(
+            # Both of these are discarded inside execute_match and re-derived
+            # from the log. They are here because the dataclass requires them,
+            # not because this caller is trusted for them: a cap the actor
+            # supplies its own usage figure for is not a cap, and a status the
+            # actor asserts about itself is not a status. A frozen broker
+            # reaching this line still gets a DENY.
             actor_status=ActorStatus.ACTIVE,
-            rolling_spend=0,  # derived from the log inside execute_match
+            rolling_spend=0,
             counterparty_confidence=self.graph.confidence(seller_id),
         )
         decision, settlement = self._exchange.execute_match(

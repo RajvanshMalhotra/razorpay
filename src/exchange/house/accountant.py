@@ -175,8 +175,13 @@ class Accountant:
         """Stop an actor trading until its books agree again.
 
         Per-actor, never global: one merchant's drift must not stop the market.
-        The policy gate already denies a FROZEN actor, so this is enforcement,
-        not advice.
+
+        Enforcement, not advice: this event is the whole mechanism.
+        `Exchange.execute_match` folds the buyer's status out of the log for
+        itself and hands that to the gate, discarding whatever status the
+        caller supplied — so ACTOR_FROZEN denies the frozen merchant's very
+        next money action no matter what its broker claims about itself. A
+        matching ACTOR_RESUMED is what lifts it.
         """
         self._log.append(
             ACCOUNTANT_ACTOR_ID, ev.ACTOR_FROZEN,

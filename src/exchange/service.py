@@ -13,6 +13,7 @@ from exchange import policy
 from exchange.eventlog import EventLog
 from exchange.models import (
     Actor,
+    ActorStatus,
     Asset,
     Currency,
     Match,
@@ -85,6 +86,21 @@ class Exchange:
     ) -> tuple[PolicyDecision, Settlement | None]:
         limits = self._inr_limits if currency == Currency.INR else self._credit_limits
 
+        # A match_id reaches the gate at most once. `assert_invariants` joins
+        # settlements to decisions on match_id — rather than on correlation_id —
+        # exactly so that a DENY and a later ALLOW on one story cannot be
+        # confused for each other; that join is only sound while the id is
+        # unique. A retry at different terms is a NEW match and must be minted
+        # as one (`matching.resize`), so a repeat here is a caller bug rather
+        # than a market event. Refused before anything is written: logging a
+        # second decision under the same action_ref would create the very
+        # ambiguity the join exists to prevent.
+        if self._already_decided(match.match_id):
+            raise ValueError(
+                f"match {match.match_id} has already been through the gate; "
+                "a retry at different terms needs a fresh match_id"
+            )
+
         # `clearing_price` is PER UNIT — the matcher sets it from the ask's
         # limit_price and compares limits across orders of different sizes. The
         # exposure a cap must bound, and the figure the rail must charge, is the
@@ -107,12 +123,20 @@ class Exchange:
         # supplies its own usage figure for is not a cap.
         spent = self._spend_to_date(buyer_id, currency)
 
+        # Same reasoning, same authority: a status the actor asserts about
+        # itself is not a status. The accountant freezes a merchant by
+        # appending ACTOR_FROZEN, and the freeze has to bind the frozen
+        # broker's very next money action — which it can only do if the gate
+        # reads the projection instead of the argument. Whatever the caller
+        # put in `ctx.actor_status` is discarded here.
+        status = self._status_of(buyer_id)
+
         decision = policy.evaluate(
             action_ref=match.match_id,
             actor_id=buyer_id,
             amount=amount,
             currency=currency,
-            ctx=replace(ctx, rolling_spend=spent),
+            ctx=replace(ctx, rolling_spend=spent, actor_status=status),
             limits=limits,
         )
 
@@ -141,6 +165,25 @@ class Exchange:
             self._record_fill(match, buyer_id, seller_id, correlation_id, decision_event.event_id)
 
         return decision, settlement
+
+    def _already_decided(self, match_id: str) -> bool:
+        """Has this match_id already carried a policy decision?"""
+        return any(
+            e.type == ev.POLICY_DECIDED and e.payload.get("action_ref") == match_id
+            for e in self.log.read_all()
+        )
+
+    def _status_of(self, actor_id: str) -> ActorStatus:
+        """This actor's status as the log records it.
+
+        An actor with no ACTOR_REGISTERED event has nothing frozen on record,
+        so it is treated as ACTIVE: absence of a registration is not a freeze,
+        and whether an unregistered actor may trade at all is a different
+        question this gate does not answer. A freeze, once appended, is what
+        `fold` projects until an ACTOR_RESUMED follows it.
+        """
+        actor = self.state().actors.get(actor_id)
+        return actor.status if actor is not None else ActorStatus.ACTIVE
 
     def _spend_to_date(self, actor_id: str, currency: Currency) -> int:
         """Total this actor has already committed on this rail, read from the log.
