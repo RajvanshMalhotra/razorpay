@@ -863,6 +863,100 @@ one of the two defects carried out of Plan 1.
 
 ---
 
+## 4C. The one that was worth the whole review process
+
+Plan 3's final whole-branch review returned **request changes**: one Critical, five
+Major, four Moderate. The money *arithmetic* was clean — integer throughout, no floats,
+privacy floor correct, second-price correct. What was not clean was more embarrassing
+and more interesting: **three of the four things the project claims to enforce were
+advisory.**
+
+### BUG-24 (Critical) — the freeze stopped nothing
+
+`Accountant.freeze()` appended `ACTOR_FROZEN`. The policy gate genuinely denies a frozen
+actor — `policy.py` has the branch, and it works. The gate simply never saw a freeze,
+because the broker built its own context:
+
+```python
+ctx = PolicyContext(
+    actor_status=ActorStatus.ACTIVE,   # hardcoded, always
+    rolling_spend=0,                   # derived from the log inside execute_match
+    counterparty_confidence=self.graph.confidence(seller_id),
+)
+```
+
+So a frozen merchant settled a real capture on its very next call, and the comment in
+`accountant.py` reading *"the policy gate already denies a FROZEN actor, so this is
+enforcement, not advice"* was false. **The failure demo — the track's required "one
+failure handled gracefully", the thing the submission is built around — froze an agent
+that carried on trading.**
+
+**The part that stings.** The fix was already written in this codebase, one field down.
+`rolling_spend` is overwritten from the log, with this comment:
+
+> *Derived from the log, never taken from the caller. A cap the actor supplies its own
+> usage figure for is not a cap.*
+
+That reasoning is exactly, word-for-word, the reasoning for `actor_status`. I wrote it
+for one field and never asked which other fields it applied to. The fix was to generalise
+a sentence already sitting in the file.
+
+### The root cause, stated once
+
+Three of the findings are the same defect wearing different clothes:
+
+| Where | The value | Supplied by |
+|---|---|---|
+| The freeze | `actor_status` | the actor it constrains |
+| The retry | `match_id` on a resized match | the caller, via `dataclasses.replace` |
+| The negotiation | the agreed price vs the buyer's posted limit | the model, as prompt text |
+
+**A value the gate must be authoritative about was being supplied by the party it
+constrains.** Every one of them type-checked, passed its tests, and read fine in review —
+because each is locally correct. The defect only exists in the relationship between the
+caller and the checker, which is invisible from inside either file.
+
+### BUG-25 — a retry reused its match id
+
+`replace(match, qty=200)` preserves `match_id`. So a capped-then-retried trade filed a
+DENY and a later ALLOW under **one `action_ref`** — which is precisely the hole
+`assert_invariants` had moved its join to `match_id` to close. The invariant was
+defeated from the inside by the very scenario it was written for. `fold` overwrites on
+`match_id` too, so the denied proposal vanished from the projection as well.
+
+Retries now mint a fresh match through `matching.resize`, and `execute_match` **raises**
+on a reused id — a caller bug, not a market event, so it refuses before writing anything.
+Logging a second decision under the same `action_ref` would manufacture the exact
+ambiguity the join exists to prevent.
+
+### BUG-26 — the agreed price was never checked against our own limit
+
+The negotiated figure replaced the matcher's vetted clearing price. The buyer's own
+posted `limit_price` — the ceiling it published on the book — reached the model as prompt
+text and nothing more. Nothing structural stopped a negotiator agreeing above its own
+stated maximum.
+
+**Refused, not clamped**, deliberately. Clamping would settle at a price neither side
+agreed to and leave a `SETTLEMENT_INITIATED` whose amount matches neither the negotiation
+nor the ask, with no event explaining the gap — a silent correction is the same defect
+wearing a different hat.
+
+### What this says about the process
+
+Twenty-one bugs across Plans 1 and 2 were found the same way: a reviewer reading a whole
+branch at once, catching what per-file review structurally cannot. Plan 3 repeated it.
+The per-task reviews on these files all passed, correctly — every file was fine.
+
+The lesson is not "review harder." It is that **defects living in the relationship
+between two files are invisible to any process that reviews one file at a time**, and no
+amount of care inside a file substitutes for one pass that holds both ends at once.
+
+Related and equally worth keeping: the review graded BUG-23 *Minor* on reachability, and
+it was nearly unreachable. Blast radius and likelihood are different axes, and for money
+code the first one decides.
+
+---
+
 ## 5. Standing risks
 
 | Risk | Status |
