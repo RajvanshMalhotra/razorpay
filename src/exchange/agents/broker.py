@@ -18,6 +18,7 @@ from exchange.agents.relationships import RelationshipGraph
 from exchange.agents.subagents import make_diplomat, make_scout, make_trader
 from exchange.agents.subconscious import Subconscious
 from exchange.agents.tree import ContextTree
+from exchange.house.auction import Bid
 from exchange.ids import new_id
 from exchange.matching import find_candidates
 from exchange.models import (
@@ -135,6 +136,33 @@ class Broker:
              "shortlist": [m.ask_order_id for m in matches]},
         )
         return chosen
+
+    def value_insight(self, headline: str, category: str, cap: int) -> Bid:
+        """Ask the Scout what this lot is worth to us, and bound the answer.
+
+        No formula prices an insight — what a headline is worth depends on
+        this merchant's position, which is a judgment. Under second-price
+        the honest number is also the optimal one, so the reasoning that
+        lands in the log is about worth rather than about rivals.
+
+        The cap is not a suggestion. An agent that wants to spend more than
+        it may still bids, at the limit — judgment picks the number, the
+        bound decides what is allowed.
+        """
+        recalled = self.subconscious.recall("house", category=category)
+        reply = self._scout.act(
+            f"A market intelligence lot is up for auction:\n\n  {headline}\n\n"
+            f"Category: {category}. You may bid at most {cap} points.\n"
+            "Answer with 'BID: <integer>' then one sentence on why it is worth "
+            "that to us. Bid what it is actually worth — you pay the runner-up's "
+            "price, not your own.",
+            facts=recalled,
+        )
+        self._promote(reply)
+
+        match = re.search(r"BID:\s*(\d+)", reply, re.IGNORECASE)
+        amount = min(int(match.group(1)), cap) if match else 0
+        return Bid(actor_id=self.actor_id, amount=amount, reason=reply)
 
     def _promote(self, summary: str) -> None:
         """Narrow a sub-agent's reply into the broker's own context.

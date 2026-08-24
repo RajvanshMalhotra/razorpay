@@ -387,3 +387,47 @@ def test_choosing_from_one_candidate_makes_no_model_call(exchange):
     broker.choose(matches[:1], "c1")
 
     assert len(provider.calls) == before
+
+
+def test_the_scout_values_a_lot_and_says_why(exchange):
+    broker = Broker("m_buyer", exchange,
+                    ScriptedProvider(["BID: 1850 we spend 40k a month in this category"]))
+
+    bid = broker.value_insight("skincare AOV up 12%", "skincare", cap=50_000)
+
+    assert bid.amount == 1850
+    assert "40k a month" in bid.reason
+    assert bid.actor_id == "m_buyer"
+
+
+def test_a_valuation_above_the_cap_is_clamped_not_refused(exchange):
+    """Judgment picks the number; the cap decides what is allowed. An agent
+    that wants more than it may spend still bids — at the limit."""
+    broker = Broker("m_buyer", exchange, ScriptedProvider(["BID: 999999 worth everything"]))
+
+    bid = broker.value_insight("skincare AOV up 12%", "skincare", cap=50_000)
+
+    assert bid.amount == 50_000
+
+
+def test_an_unparseable_valuation_bids_nothing(exchange):
+    """Silence is not a bid. Guessing one would put points at risk on noise."""
+    broker = Broker("m_buyer", exchange, ScriptedProvider(["I am not sure about this"]))
+
+    bid = broker.value_insight("skincare AOV up 12%", "skincare", cap=50_000)
+
+    assert bid.amount == 0
+
+
+def test_the_headline_and_recall_both_reach_the_scout(exchange):
+    provider = ScriptedProvider(["BEHAVIOURAL: past lots in this category paid off",
+                                 "BID: 900 worth a look"])
+    broker = Broker("m_buyer", exchange, provider)
+    from exchange.agents.context import ContextState
+    broker.subconscious.consolidate(ContextState(facts=("x",)), "house", "skincare")
+
+    broker.value_insight("skincare AOV up 12%", "skincare", cap=50_000)
+
+    sent = provider.calls[-1]["messages"][0].content
+    assert "skincare AOV up 12%" in sent
+    assert "past lots in this category paid off" in sent
