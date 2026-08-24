@@ -595,6 +595,53 @@ reviews caught the ones inside a single file; every cross-module defect survived
 reviewer read the whole branch at once. Tests written from the same document as the code
 inherit its blind spots and pass with confidence.
 
+### BUG-22 and BUG-23 — the failure demo, filed in the wrong drawer
+
+Both found in Plan 3's Task 10 review, both in code the plan specified, both mine.
+
+**BUG-22 — the drama happened off-thread.** The accountant wrote `DRIFT_DETECTED` under a
+correlation id of its own (`recon_{settlement_id}`), and the freeze and resume under another
+(`freeze_{actor_id}`). Only the repaired completion joined the trade's own thread. So the
+design's central promise — *one correlation id threads a complete story* — quietly failed on
+the one story the whole submission is built around. Pinning that trade showed:
+
+```
+SETTLEMENT_INITIATED
+SETTLEMENT_COMPLETED
+```
+
+A settlement that mysteriously fixed itself. The drift, the freeze, the repair-from-authority
+— every part worth showing — sat in two other drawers, findable only by someone who already
+knew to look for them. The code was correct. The audit trail was not legible, which for this
+project is the same as being wrong.
+
+Fixed by filing `DRIFT_DETECTED` on the trade's correlation with causation pointing at the
+initiating event. `ACTOR_FROZEN` and `ACTOR_RESUMED` deliberately stay actor-scoped: a frozen
+merchant legitimately spans more than one trade, and forcing an actor-level fact onto one
+trade's thread would be the same mistake in the other direction.
+
+**The lesson.** Every earlier bug was caught by asking *is this correct?* This one needed a
+different question: *can someone read it?* Correctness and legibility are separate properties,
+and a project judged on "show the audit trail" needs a test for the second. The test now
+asserts the exact sequence a replay produces, not merely that the events exist somewhere.
+
+**BUG-23 — the repair tool could assert a payment that never happened.** `repair()` searched
+Razorpay's payment list for a captured item, and if it found none, left `payment_id` as `None`
+and **wrote `SETTLEMENT_COMPLETED` anyway** — a completion with a null payment id. Reachable
+whenever a payment is reversed between `reconcile()` and `repair()`.
+
+The reviewer graded it Minor: unreachable in tests, implemented verbatim from the brief. I
+ruled it up. The entire reconciliation design rests on one sentence — *the remote is the
+authority for whether money moved; we did not take the payment, they did* — and this branch
+inverted it. A repair tool that can assert unconfirmed payments is worse than no repair tool,
+because it launders a gap in the record into a settled fact. It now raises. The settlement
+stays PENDING and gets re-caught on the next reconcile, which is the correct outcome anyway.
+
+**Worth noting about severity.** A finding's blast radius is not its reachability. This one
+was nearly unreachable and would have been catastrophic if reached, in a component whose only
+job is being trustworthy about money. Reviewers rank by likelihood; that is the right default
+and it was wrong here.
+
 ---
 
 ## 4A. Performance and memory design — decided, mostly not built
