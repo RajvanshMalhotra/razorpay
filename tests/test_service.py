@@ -333,3 +333,101 @@ def test_each_side_of_a_fill_is_attributed_to_its_own_actor(exchange):
     assert by_order["ord_ask"].actor_id == "m_seller"
     assert by_order["ord_bid"].payload["qty"] == 400
     assert by_order["ord_ask"].payload["qty"] == 400
+
+
+# --- The gate is authoritative, not advised -------------------------------
+#
+# Three regressions for one root cause: a value the gate must be authoritative
+# about was being supplied by the party it constrains. Each of these failed
+# before the fix, and each would fail silently — with money moving — rather
+# than raising.
+
+
+def _frozen_buyer(exchange):
+    """A registered, then frozen, merchant and a counterparty to trade with."""
+    from exchange.house.accountant import Accountant
+
+    exchange.register_actor(Actor(actor_id="m_buyer", kind=ActorKind.MERCHANT))
+    exchange.register_actor(Actor(actor_id="m_seller", kind=ActorKind.MERCHANT))
+    Accountant(exchange.log, FakeRazorpay()).freeze("m_buyer", "books disagree")
+
+
+def test_a_frozen_actor_is_denied_even_though_its_broker_claims_active(exchange):
+    """The freeze must bind the caller that has every reason to ignore it.
+
+    TRUSTED carries actor_status=ACTIVE. That is not an artificial test
+    setup — it is exactly what the broker sent in production, which is why
+    the freeze was decorative: the gate checked FROZEN and never saw one.
+    """
+    _frozen_buyer(exchange)
+
+    decision, settlement = exchange.execute_match(
+        MATCH, "m_buyer", "m_seller", TRUSTED, correlation_id="c1",
+    )
+
+    assert decision.verdict == Verdict.DENY
+    assert "frozen" in decision.reason.lower()
+    assert settlement is None
+    # The gate refusing is not enough; nothing may reach the rail.
+    types = [e.type for e in exchange.log.read_all()]
+    assert "SETTLEMENT_INITIATED" not in types
+
+
+def test_a_resumed_actor_may_trade_again(exchange):
+    """The freeze lifts, or it is a ban rather than a hold."""
+    from exchange.house.accountant import Accountant
+
+    _frozen_buyer(exchange)
+    Accountant(exchange.log, FakeRazorpay()).resume("m_buyer")
+
+    decision, _ = exchange.execute_match(
+        MATCH, "m_buyer", "m_seller", TRUSTED, correlation_id="c1",
+    )
+
+    assert decision.verdict == Verdict.ALLOW
+
+
+def test_a_retry_at_a_smaller_size_gets_its_own_match_id(exchange):
+    """A DENY and a later ALLOW must never share an action_ref.
+
+    The accountant joins settlements to decisions on match_id precisely so a
+    refused match and an allowed one on the same correlation cannot be
+    confused. `replace(match, qty=...)` preserved the id and reopened that
+    hole from the inside.
+    """
+    from exchange.matching import resize
+
+    exchange.register_actor(Actor(actor_id="m_buyer", kind=ActorKind.MERCHANT))
+    exchange.register_actor(Actor(actor_id="m_seller", kind=ActorKind.MERCHANT))
+    unknown = PolicyContext(
+        actor_status=ActorStatus.ACTIVE, rolling_spend=0, counterparty_confidence=0.0,
+    )
+
+    denied, _ = exchange.execute_match(
+        MATCH, "m_buyer", "m_seller", unknown, correlation_id="c1",
+    )
+    allowed, _ = exchange.execute_match(
+        resize(MATCH, qty=200), "m_buyer", "m_seller", unknown, correlation_id="c1",
+    )
+
+    assert denied.verdict == Verdict.DENY
+    assert allowed.verdict == Verdict.ALLOW
+    assert denied.action_ref != allowed.action_ref
+
+
+def test_reusing_a_decided_match_id_is_refused_before_anything_is_written(exchange):
+    """Caller bug, not a market event — so it raises rather than logging."""
+    from dataclasses import replace
+
+    exchange.register_actor(Actor(actor_id="m_buyer", kind=ActorKind.MERCHANT))
+    exchange.register_actor(Actor(actor_id="m_seller", kind=ActorKind.MERCHANT))
+    exchange.execute_match(MATCH, "m_buyer", "m_seller", TRUSTED, correlation_id="c1")
+    before = len(exchange.log.read_all())
+
+    with pytest.raises(ValueError, match="fresh match_id"):
+        exchange.execute_match(
+            replace(MATCH, qty=200), "m_buyer", "m_seller", TRUSTED,
+            correlation_id="c1",
+        )
+
+    assert len(exchange.log.read_all()) == before
