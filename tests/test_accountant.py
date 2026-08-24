@@ -262,6 +262,49 @@ def test_the_whole_failure_path_is_readable_from_the_log(log):
     assert types.index("ACTOR_FROZEN") < types.index("ACTOR_RESUMED")
 
 
+def test_the_trades_own_thread_carries_the_whole_arc(log):
+    """Pin the trade and the drift is right there, not filed elsewhere.
+
+    A judge replaying one correlation must see initiated -> drift -> completed.
+    Filed under a reconciliation id, the middle chapter is only findable by
+    someone who already knew it existed.
+    """
+    _initiated(log, "stl_1", "order_1")
+    trade = next(e for e in log.read_all()
+                 if e.type == "SETTLEMENT_INITIATED").correlation_id
+    client = FakeRazorpay(payments_by_order={
+        "order_1": {"count": 1, "items": [{"id": "pay_1", "status": "captured"}]}
+    })
+    accountant = Accountant(log, client)
+    accountant.repair(accountant.reconcile()[0])
+
+    story = [e.type for e in log.read_by_correlation(trade)]
+    assert story == ["SETTLEMENT_INITIATED", "DRIFT_DETECTED",
+                     "SETTLEMENT_COMPLETED"]
+
+
+def test_repair_refuses_when_the_remote_shows_no_captured_payment(log):
+    """The remote is the authority. No captured payment, no completion.
+
+    Reachable when a payment is reversed between reconcile() and repair().
+    Writing SETTLEMENT_COMPLETED with a null payment id would turn the
+    repair tool into a machine for asserting payments that never occurred.
+    """
+    _initiated(log, "stl_1", "order_1")
+    captured = FakeRazorpay(payments_by_order={
+        "order_1": {"count": 1, "items": [{"id": "pay_1", "status": "captured"}]}
+    })
+    drift = Accountant(log, captured).reconcile()[0]
+
+    gone = FakeRazorpay(payments_by_order={
+        "order_1": {"count": 1, "items": [{"id": "pay_1", "status": "refunded"}]}
+    })
+    with pytest.raises(ValueError, match="no captured payment"):
+        Accountant(log, gone).repair(drift)
+
+    assert not any(e.type == "SETTLEMENT_COMPLETED" for e in log.read_all())
+
+
 def test_a_resumed_actor_can_trade_again(log):
     from exchange.models import ActorStatus
     from exchange.projections import fold

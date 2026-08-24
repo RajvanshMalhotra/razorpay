@@ -78,11 +78,17 @@ class Accountant:
             if local == "PENDING" and remote == "captured":
                 drift = Drift(sid, local, remote)
                 drifts.append(drift)
+                # On the TRADE's correlation, not the reconciliation's. The
+                # drift is a chapter in that trade's story; filed under
+                # recon_* it would be discoverable only by someone who
+                # already knew to go looking, and a replay of the trade
+                # would show a settlement that mysteriously fixed itself.
                 self._log.append(
                     ACCOUNTANT_ACTOR_ID, ev.DRIFT_DETECTED,
                     {"settlement_id": sid, "local_status": local,
                      "remote_status": remote, "razorpay_order_id": order_id},
-                    correlation_id=f"recon_{sid}",
+                    correlation_id=event.correlation_id,
+                    causation_id=event.event_id,
                 )
 
         self._log.append(
@@ -198,6 +204,16 @@ class Accountant:
             if item.get("status") == "captured":
                 payment_id = item["id"]
                 break
+
+        # No captured payment means the remote does not agree money moved,
+        # whatever reconcile() saw a moment ago. Refuse rather than write a
+        # completion with a null payment id: a repair tool that can assert
+        # unconfirmed payments is worse than no repair tool.
+        if payment_id is None:
+            raise ValueError(
+                f"refusing to complete {drift.settlement_id}: "
+                f"no captured payment on {order_id}"
+            )
 
         self._log.append(
             ACCOUNTANT_ACTOR_ID, ev.SETTLEMENT_COMPLETED,
