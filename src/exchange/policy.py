@@ -109,6 +109,21 @@ def evaluate(
     if ctx.actor_status == ActorStatus.FROZEN:
         return decide(Verdict.DENY, "Actor is frozen pending reconciliation")
 
+    # A money action has to involve money. The gate was all ceilings and no
+    # floor, so a settlement at zero passed every check: it consumed no cap,
+    # moved nothing, and still counted as a completed trade — which minted
+    # BASE_POINTS and raised the counterparty's standing. Repeat it and you
+    # have unlimited points for no spend.
+    #
+    # Refused here rather than only at the minter because the mint is not the
+    # only thing a settlement of nothing corrupts: it also buys reputation,
+    # and reputation lifts the trial cap.
+    if amount <= 0:
+        return decide(
+            Verdict.DENY,
+            f"Amount {amount} is not a payment; a settlement must move money",
+        )
+
     if amount > limits.per_txn_cap:
         return decide(
             Verdict.DENY,

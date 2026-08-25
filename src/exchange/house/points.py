@@ -60,6 +60,18 @@ def points_for_settlement(
     if not delivered:
         return 0
 
+    # BASE_POINTS used to sit OUTSIDE the bound below, which made the bound
+    # leak: a settlement of zero was still "a completed trade", so it paid
+    # BASE_POINTS while consuming none of the spend cap. Ten of them minted a
+    # hundred points for nothing, and the auditor had nothing to report.
+    #
+    # The gate now refuses a non-positive amount outright, so this is the
+    # second lock on the same door. It stays because the rule belongs here
+    # too: BASE_POINTS is what a *trade* is worth on its own, and a transfer
+    # of nothing is not a trade.
+    if amount <= 0:
+        return 0
+
     asked = ask_price * qty
     margin = asked - amount
     if margin < 0:

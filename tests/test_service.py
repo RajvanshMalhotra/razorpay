@@ -613,3 +613,50 @@ def test_freezing_an_unregistered_actor_stops_its_next_money_action(exchange):
     assert "frozen" in decision.reason.lower()
     assert settlement is None
     assert SETTLEMENT_INITIATED not in [e.type for e in exchange.log.read_all()]
+
+
+def test_a_settlement_that_moves_no_money_is_refused_by_the_gate(exchange):
+    """The gate was all ceilings and no floor.
+
+    A settlement at zero passed every check: under the per-transaction cap,
+    consuming none of the rolling cap, from an unfrozen actor. It moved
+    nothing, minted BASE_POINTS, and raised the counterparty's standing —
+    which lifts the trial cap. Repeat it for free points and free reputation.
+    """
+    from dataclasses import replace as dc_replace
+
+    exchange.register_actor(Actor(actor_id="m_buyer", kind=ActorKind.MERCHANT))
+    exchange.register_actor(Actor(actor_id="m_seller", kind=ActorKind.MERCHANT))
+
+    decision, settlement = exchange.execute_match(
+        dc_replace(MATCH, clearing_price=0), "m_buyer", "m_seller", TRUSTED,
+        correlation_id="c1",
+    )
+
+    assert decision.verdict == Verdict.DENY
+    assert settlement is None
+    assert "must move money" in decision.reason
+    types = [e.type for e in exchange.log.read_all()]
+    assert "SETTLEMENT_INITIATED" not in types
+    assert "POINTS_MINTED" not in types
+
+
+def test_the_free_points_loop_mints_nothing(exchange):
+    """Ten zero-value trades used to mint a hundred points, spend nothing,
+    and leave the auditor with nothing to report."""
+    from dataclasses import replace as dc_replace
+
+    from exchange.house.accountant import Accountant
+    from exchange.projections import fold
+
+    exchange.register_actor(Actor(actor_id="m_buyer", kind=ActorKind.MERCHANT))
+    exchange.register_actor(Actor(actor_id="m_seller", kind=ActorKind.MERCHANT))
+
+    for i in range(10):
+        exchange.execute_match(
+            dc_replace(MATCH, match_id=f"mch_{i}", clearing_price=0),
+            "m_buyer", "m_seller", TRUSTED, correlation_id="c1",
+        )
+
+    assert fold(exchange.log.read_all()).credit_balances.get("m_buyer", 0) == 0
+    assert Accountant(exchange.log, FakeRazorpay()).assert_invariants() == []

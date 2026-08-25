@@ -1,4 +1,6 @@
 from exchange.house.points import (
+    BASE_POINTS,
+    EARNING_RATE_BPS,
     ROYALTY_SHARE_BPS,
     points_for_settlement,
     royalty_for,
@@ -63,3 +65,33 @@ def test_a_royalty_never_exceeds_the_clearing_price():
             assert per >= 0
             assert per * n <= (price * ROYALTY_SHARE_BPS) // 10_000
             assert per * n <= price
+
+
+def test_a_settlement_of_nothing_earns_nothing():
+    """BASE_POINTS used to sit outside the margin bound, so it leaked.
+
+    A settlement at zero consumed none of the spend cap and still counted as
+    a completed trade, paying BASE_POINTS. Looping it minted points for free
+    while the auditor found nothing to report.
+    """
+    assert points_for_settlement(
+        amount=0, ask_price=1940, qty=500, delivered=True,
+    ) == 0
+
+
+def test_a_negative_amount_earns_nothing():
+    assert points_for_settlement(
+        amount=-100, ask_price=1940, qty=500, delivered=True,
+    ) == 0
+
+
+def test_a_real_trade_still_earns_its_base_and_its_margin():
+    """The floor must not cost an honest trade anything.
+
+    Asked 1940 x 500 = 970,000; paid 880,000; so the margin captured is
+    90,000 and that — not the amount paid — is what earns.
+    """
+    margin = (1940 * 500) - 880_000
+    assert points_for_settlement(
+        amount=880_000, ask_price=1940, qty=500, delivered=True,
+    ) == BASE_POINTS + ((margin * EARNING_RATE_BPS) // 10_000)
