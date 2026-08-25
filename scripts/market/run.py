@@ -138,13 +138,24 @@ def _is_a_size_refusal(reason: str) -> bool:
     return "cap" in lowered or "rolling window" in lowered
 
 
-def _affordable_qty(match, decision) -> int | None:
+def _affordable_qty(decision, unit_price: int) -> int | None:
     """The largest quantity that fits every cap the gate just evaluated.
 
     Read out of the decision's own `limits_evaluated`, not guessed and not
     passed in: the gate is the authority on what it allows, and a caller that
     invents a trial size is one more instance of the defect this project keeps
     finding — the constrained party choosing its own bound.
+
+    `unit_price` MUST be the price that will actually be charged, which is the
+    AGREED price and not the match's `clearing_price`. Sizing against the ask
+    while `close()` charges the negotiated figure put the retry just over the
+    line whenever the negotiation landed above the ask:
+
+        qty 900 at 1764 -> 1,587,600, over the 500,000 cap
+        retry qty 285   ->   502,740, over it again by 2,740
+
+    A bound computed from a different number than the one being bounded is the
+    same defect as the freeze that read a status nobody set.
     """
     limits = getattr(decision, "limits_evaluated", None) or {}
     ceilings = [
@@ -154,9 +165,9 @@ def _affordable_qty(match, decision) -> int | None:
         and value > 0
         and ("cap" in key or "threshold" in key)
     ]
-    if not ceilings or match.clearing_price <= 0:
+    if not ceilings or unit_price <= 0:
         return None
-    return min(ceilings) // match.clearing_price
+    return min(ceilings) // unit_price
 
 
 def run_turn(exchange, broker, merchant, need, round_no, budget) -> TurnResult:
@@ -217,7 +228,7 @@ def run_turn(exchange, broker, merchant, need, round_no, budget) -> TurnResult:
         # the later ALLOW share one action_ref and the accountant's join
         # cannot tell which one the money moved on.
         if settlement is None and _is_a_size_refusal(decision.reason):
-            trial = _affordable_qty(match, decision)
+            trial = _affordable_qty(decision, outcome.final_price)
             if trial and trial < match.qty:
                 smaller = resize(match, trial)
                 decision, settlement = broker.close(
