@@ -7,6 +7,8 @@ combined by reciprocal rank fusion.
 """
 from __future__ import annotations
 
+import threading
+
 from typing import Callable
 
 from rank_bm25 import BM25Okapi
@@ -61,9 +63,16 @@ class HybridIndex:
         self._texts: list[str] = []
         self._bm25: BM25Okapi | None = None
         self._vectors: list[list[float]] = []
+        # Every broker shares one index and brokers run concurrently, so the
+        # four fields above are written as a group and must be read as one.
+        self._lock = threading.Lock()
 
     def index(self, docs: list[tuple[str, str]]) -> None:
         """REPLACE the corpus. Every text is re-embedded."""
+        with self._lock:
+            self._index_locked(docs)
+
+    def _index_locked(self, docs: list[tuple[str, str]]) -> None:
         self._doc_ids = [doc_id for doc_id, _ in docs]
         self._texts = [text for _, text in docs]
         if not docs:
@@ -95,11 +104,19 @@ class HybridIndex:
         """
         if not docs:
             return
-        self._doc_ids.extend(doc_id for doc_id, _ in docs)
+        # Embed OUTSIDE the lock — it is the slow half, and holding the lock
+        # through it would stall every concurrent search behind one listing.
         new_texts = [text for _, text in docs]
-        self._texts.extend(new_texts)
-        self._vectors.extend(self._embed(new_texts))
-        self._bm25 = BM25Okapi([t.lower().split() for t in self._texts])
+        new_vectors = self._embed(new_texts)
+        new_ids = [doc_id for doc_id, _ in docs]
+
+        # Then swap the four fields together, so no search can observe ids
+        # that its scores do not cover.
+        with self._lock:
+            self._doc_ids.extend(new_ids)
+            self._texts.extend(new_texts)
+            self._vectors.extend(new_vectors)
+            self._bm25 = BM25Okapi([t.lower().split() for t in self._texts])
 
     @property
     def size(self) -> int:
@@ -107,19 +124,42 @@ class HybridIndex:
         return len(self._doc_ids)
 
     def search(self, query: str, top_k: int = 5) -> list[tuple[str, float]]:
-        if not self._doc_ids:
+        """Search a CONSISTENT SNAPSHOT of the corpus.
+
+        The index is shared by every broker, and brokers run concurrently. A
+        search reads `_doc_ids`, `_bm25` and `_vectors` and assumes all three
+        describe the same corpus — but another thread listing an asset calls
+        `index()`, which REPLACES all three. A search that read the doc ids
+        before the swap and the scores after it indexes a long list with a
+        short one:
+
+            self._doc_ids[i], scores[i]
+            IndexError: list index out of range
+
+        which is exactly what a live round produced. Taking the three under
+        one lock and ranking against the snapshot means a search sees the
+        corpus as it was at one instant. An asset listed a millisecond later
+        is simply found by the next search, which is what "eventually" means
+        in a market that is still being written to.
+        """
+        with self._lock:
+            doc_ids = list(self._doc_ids)
+            bm25 = self._bm25
+            vectors = list(self._vectors)
+
+        if not doc_ids:
             return []
 
-        sparse_scores = self._bm25.get_scores(query.lower().split())
-        sparse_ranking = self._rank(sparse_scores, positive_only=True)
+        sparse_ranking = self._rank(doc_ids, bm25.get_scores(query.lower().split()),
+                                    positive_only=True)
 
         query_vec = self._embed([query])[0]
-        dense_scores = [_cosine(query_vec, v) for v in self._vectors]
-        dense_ranking = self._rank(dense_scores)
+        dense_scores = [_cosine(query_vec, v) for v in vectors]
+        dense_ranking = self._rank(doc_ids, dense_scores)
 
         return rrf_fuse([sparse_ranking, dense_ranking])[:top_k]
 
-    def _rank(self, scores, positive_only: bool = False) -> list[str]:
+    def _rank(self, doc_ids, scores, positive_only: bool = False) -> list[str]:
         """Order documents by score, breaking ties on document id.
 
         The tie-break is the point. A plain `sorted` is stable, so equal scores
@@ -128,8 +168,8 @@ class HybridIndex:
         must resolve on something intrinsic to the document instead.
         """
         pairs = [
-            (self._doc_ids[i], scores[i])
-            for i in range(len(self._doc_ids))
+            (doc_ids[i], scores[i])
+            for i in range(len(doc_ids))
             if not positive_only or scores[i] > 0
         ]
         pairs.sort(key=lambda pair: (-pair[1], pair[0]))

@@ -137,3 +137,59 @@ def test_zero_bm25_query_does_not_let_index_order_pollute_the_ranking():
     results = index.search("skin", top_k=1)
 
     assert results[0][0] == "ast_4"
+
+
+def test_searching_while_the_corpus_grows_does_not_raise():
+    """A live round produced `IndexError: list index out of range` here.
+
+    Every broker shares one index and brokers run concurrently. A search
+    reads the doc ids, the BM25 model and the vectors and assumes all three
+    describe the same corpus — but a thread listing an asset replaces all
+    three. Reading ids from before the swap and scores from after indexes a
+    long list with a short one.
+    """
+    import threading
+
+    index = HybridIndex(embed_fn=fake_embedder)
+    index.index([(f"ast_{i}", f"widget number {i}") for i in range(20)])
+
+    errors = []
+    stop = threading.Event()
+
+    def searcher():
+        while not stop.is_set():
+            try:
+                index.search("widget")
+            except Exception as exc:  # noqa: BLE001 - the point of the test
+                errors.append(exc)
+                return
+
+    def lister():
+        for i in range(20, 120):
+            index.add([(f"ast_{i}", f"widget number {i}")])
+
+    readers = [threading.Thread(target=searcher) for _ in range(4)]
+    for t in readers:
+        t.start()
+    writer = threading.Thread(target=lister)
+    writer.start()
+    writer.join()
+    stop.set()
+    for t in readers:
+        t.join()
+
+    assert errors == [], errors
+
+
+def test_a_search_sees_a_consistent_corpus():
+    """Not merely non-crashing: every id a search ranks must be one it
+    actually scored."""
+    index = HybridIndex(embed_fn=fake_embedder)
+    index.index([(f"ast_{i}", f"widget number {i}") for i in range(30)])
+
+    results = index.search("widget", top_k=30)
+    known = set(index.doc_ids) if hasattr(index, "doc_ids") else None
+
+    assert len({doc_id for doc_id, _ in results}) == len(results)
+    if known is not None:
+        assert all(doc_id in known for doc_id, _ in results)

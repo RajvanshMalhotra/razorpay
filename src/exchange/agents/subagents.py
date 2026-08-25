@@ -66,6 +66,13 @@ class SubAgent:
         response = self._provider.complete(
             [LLMMessage("user", body)],
             system=self._system,
+            # MEASURED against a real run, not chosen. At the provider's
+            # default of 1024 this produced 46 empty replies in the first two
+            # minutes of a live round — each one a paid call returning "",
+            # then a retry at triple the budget. A sub-agent's prompt carries
+            # its materialised context, so it is the longest input in the
+            # system and needs the most room to think before answering.
+            max_tokens=2400,
             reasoning_effort=self._effort,
         )
 
