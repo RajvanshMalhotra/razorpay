@@ -201,6 +201,29 @@ class Accountant:
         # thread in duplicates of one event. The detection's own payload is
         # what the report is rebuilt from, which is also what lets the report
         # happen without a remote call.
+        # A drift already on the record and not yet repaired. Reconcile is
+        # run repeatedly - once a sweep, and again by anything that wants to
+        # act on a drift - and each pass legitimately still FINDS it, because
+        # it is still drifting. Logging it again on every pass is a different
+        # thing, and it costs the audit trail: a real run produced
+        #
+        #     DRIFT_DETECTED   local=PENDING remote=captured
+        #     DRIFT_DETECTED   local=PENDING remote=captured
+        #     ACTOR_FROZEN
+        #
+        # on the trade's own thread, which reads as a stutter rather than a
+        # story. The drift is still RETURNED every pass, so no caller loses
+        # anything; the EVENT is written once, because the fact it records
+        # happened once.
+        already_reported = {
+            e.payload["settlement_id"]
+            for e in events if e.type == ev.DRIFT_DETECTED
+        }
+        repaired = {
+            e.payload["settlement_id"]
+            for e in events if e.type == ev.SETTLEMENT_COMPLETED
+        }
+
         contained_by_sid = {
             e.payload["settlement_id"]: e.payload
             for e in events if e.type == ev.UNBACKED_COMPLETION_DETECTED
@@ -293,6 +316,8 @@ class Accountant:
                     razorpay_order_id=order_id,
                 )
                 drifts.append(drift)
+                if sid in already_reported and sid not in repaired:
+                    continue
                 # On the TRADE's correlation, not the reconciliation's. The
                 # drift is a chapter in that trade's story; filed under
                 # recon_* it would be discoverable only by someone who

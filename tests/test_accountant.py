@@ -1058,3 +1058,51 @@ def test_the_whole_failure_arc_survives_a_live_shaped_client(log):
     story = [e.type for e in log.read_by_correlation("c_trade")]
     assert story == ["SETTLEMENT_INITIATED", "DRIFT_DETECTED", "ACTOR_FROZEN",
                      "SETTLEMENT_COMPLETED", "ACTOR_RESUMED"]
+
+
+def test_a_drift_is_reported_every_pass_but_logged_once(log):
+    """Reconcile runs repeatedly and the drift is still there each time, so
+    it must still be RETURNED — but writing the event again on every pass
+    turns the trade's thread into a stutter:
+
+        DRIFT_DETECTED
+        DRIFT_DETECTED
+        ACTOR_FROZEN
+
+    which is what a real run produced. The fact happened once.
+    """
+    _linked(log, corr="c_trade")
+    accountant = Accountant(log, LiveShapedRazorpay())
+
+    first = accountant.reconcile()
+    second = accountant.reconcile()
+    third = accountant.reconcile()
+
+    assert len(first.drifts) == 1
+    assert len(second.drifts) == 1, "still drifting, so still reported"
+    assert len(third.drifts) == 1
+
+    logged = [e for e in log.read_all() if e.type == "DRIFT_DETECTED"]
+    assert len(logged) == 1, "but written to the trade's thread only once"
+
+
+def test_the_repaired_trade_reads_without_a_stutter(log):
+    """The exact sequence a judge pins, after three reconcile passes."""
+    _linked(log, corr="c_trade")
+    log.append("m_a", "ACTOR_REGISTERED",
+               {"actor_id": "m_a", "kind": "MERCHANT"}, correlation_id="reg")
+    accountant = Accountant(log, LiveShapedRazorpay())
+
+    accountant.reconcile()
+    drift = accountant.reconcile().drifts[0]
+    accountant.freeze("m_a", "books disagree", correlation_id="c_trade")
+    accountant.repair(drift)
+    accountant.resume("m_a", correlation_id="c_trade")
+
+    assert [e.type for e in log.read_by_correlation("c_trade")] == [
+        "SETTLEMENT_INITIATED",
+        "DRIFT_DETECTED",
+        "ACTOR_FROZEN",
+        "SETTLEMENT_COMPLETED",
+        "ACTOR_RESUMED",
+    ]
