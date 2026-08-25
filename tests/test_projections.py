@@ -1,5 +1,7 @@
 from exchange.events import (
+    ACTOR_FROZEN,
     ACTOR_REGISTERED,
+    ACTOR_RESUMED,
     ASSET_LISTED,
     CREDITS_TRANSFERRED,
     MATCH_PROPOSED,
@@ -272,6 +274,64 @@ def test_an_orphaned_completion_is_reported_by_the_accountant(tmp_path):
         assert any(v.kind == "orphaned_completion" for v in violations)
     finally:
         lg.close()
+
+
+# --- a freeze binds whatever the registration order ------------------------
+
+
+def test_a_freeze_for_an_actor_that_never_registered_still_projects():
+    """The no-op that made `_contain_unbacked` decorative.
+
+    `execute_match` requires no registration, so an actor with no
+    ACTOR_REGISTERED could trade — and could not be frozen, because the
+    projection dropped the freeze on the floor.
+    """
+    from exchange.models import ActorKind
+
+    state = fold([_ev(1, ACTOR_FROZEN, {"actor_id": "m_ghost", "reason": "unbacked"})])
+
+    assert state.actors["m_ghost"].status == ActorStatus.FROZEN
+    # The freeze is a fact the log holds; the kind is not, and is not invented.
+    assert state.actors["m_ghost"].kind == ActorKind.UNKNOWN
+
+
+def test_the_fold_does_not_raise_on_a_freeze_it_cannot_place():
+    """Non-raising on events it cannot place is a deliberate property of `fold`:
+    the log is append-only, so a fold that can raise is an audit trail that can
+    become permanently unreadable. Binding the freeze must not cost that."""
+    state = fold([
+        _ev(1, ACTOR_RESUMED, {"actor_id": "m_nobody"}),
+        _ev(2, ACTOR_FROZEN, {"actor_id": "m_ghost", "reason": "unbacked"}),
+        _ev(3, ORDER_POSTED, ORDER_PAYLOAD),
+    ])
+
+    assert "m_nobody" not in state.actors, "a resume alone conjures no actor"
+    assert state.actors["m_ghost"].status == ActorStatus.FROZEN
+    assert state.open_orders["ord_1"].qty == 500, "the rest of the log still folds"
+
+
+def test_registering_after_a_freeze_fills_in_the_kind_and_keeps_the_freeze():
+    """Only a resume lifts a freeze. If registering could, the contained party
+    would hold the fact that ends its own containment."""
+    from exchange.models import ActorKind
+
+    state = fold([
+        _ev(1, ACTOR_FROZEN, {"actor_id": "m_a", "reason": "unbacked"}),
+        _ev(2, ACTOR_REGISTERED, ACTOR_PAYLOAD),
+    ])
+
+    assert state.actors["m_a"].status == ActorStatus.FROZEN
+    assert state.actors["m_a"].kind == ActorKind.MERCHANT
+    assert state.actors["m_a"].merchant_id == "acc_1"
+
+
+def test_a_resume_lifts_a_freeze_that_preceded_any_registration():
+    state = fold([
+        _ev(1, ACTOR_FROZEN, {"actor_id": "m_ghost", "reason": "unbacked"}),
+        _ev(2, ACTOR_RESUMED, {"actor_id": "m_ghost"}),
+    ])
+
+    assert state.actors["m_ghost"].status == ActorStatus.ACTIVE
 
 
 def test_match_proposed_lands_in_state_with_its_rationale():

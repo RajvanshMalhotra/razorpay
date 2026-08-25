@@ -40,6 +40,7 @@ from exchange.models import (
     PolicyDecision,
     Settlement,
     SettlementStatus,
+    Side,
     Verdict,
 )
 from exchange.policy import GATE_ACTOR_ID, PolicyContext
@@ -189,13 +190,14 @@ class Exchange:
 
         if settlement is not None and settlement.status == SettlementStatus.COMPLETED:
             self._record_fill(match, buyer_id, seller_id, correlation_id, decision_event.event_id)
-            self._mint_earned(match, buyer_id, settlement, currency,
+            self._mint_earned(match, buyer_id, seller_id, settlement, currency,
                               correlation_id, decision_event.event_id)
 
         return decision, settlement
 
-    def _mint_earned(self, match: Match, buyer_id: str, settlement: Settlement,
-                     currency: Currency, correlation_id: str, causation_id: str) -> None:
+    def _mint_earned(self, match: Match, buyer_id: str, seller_id: str,
+                     settlement: Settlement, currency: Currency,
+                     correlation_id: str, causation_id: str) -> None:
         """Trading well earns points, at the moment the trade actually settles.
 
         On the trade's own correlation id, so "what did this deal earn" is
@@ -219,11 +221,18 @@ class Exchange:
         BASE_POINTS being paid on an unknown. That is the same refusal to
         invent a fact the record does not hold that governs the rest of this
         system.
+
+        THE ASK MUST BELONG TO THE COUNTERPARTY — see `_counterparty_ask_price`.
+        Reading an authoritative log at a row the party being paid gets to name
+        is the same defect as taking the figure from the argument, with one
+        extra hop.
         """
         if currency != Currency.INR:
             return
 
-        ask_price = self._posted_limit(match.ask_order_id)
+        ask_price = self._counterparty_ask_price(
+            match.ask_order_id, buyer_id=buyer_id, seller_id=seller_id
+        )
         if ask_price is None:
             return
 
@@ -248,15 +257,56 @@ class Exchange:
             ),
         )
 
-    def _posted_limit(self, order_id: str) -> int | None:
-        """The per-unit limit this order was posted at, read from the log."""
+    def _counterparty_ask_price(
+        self, order_id: str, buyer_id: str, seller_id: str
+    ) -> int | None:
+        """The seller's per-unit asking price for this trade, or None.
+
+        The mint basis has to be a price SOMEBODY ELSE ASKED. `match` is handed
+        to `execute_match` by the buyer, `post_order` accepts any order for any
+        actor, and `points_for_settlement` pays a proportion of
+        `ask_price * qty - amount` — so without these checks a merchant posts an
+        ASK to itself at an arbitrary limit, settles one paisa against it, and
+        mints the difference. Every invariant reports clean while it does,
+        because each of them is separately satisfied: the accountant authored
+        the mint, the settlement is unique, the balance is positive and the gate
+        did say ALLOW. The defect is not in any of those checks; it is that the
+        figure they all rest on was chosen by the party being paid.
+
+        Four conditions, and a failure of any of them mints nothing rather than
+        minting BASE_POINTS on an unestablished margin:
+
+        - the named order is on record as an ORDER_POSTED at all;
+        - it is an ASK (a bid's limit is a ceiling, not an asking price);
+        - the actor that posted it is the seller being paid on this trade;
+        - and the seller is not the buyer, so no one is ever on both sides.
+
+        MOST RECENT WINS on a repeated order_id, rather than first. Two reasons.
+        `fold` already resolves a repeat that way — `open_orders[order_id]` is
+        overwritten by the later ORDER_POSTED — so anything else would let the
+        mint basis and the book disagree about the same order. And the log is
+        append-only and persistent: `scripts/` used to hard-code `ord_ask` into
+        a database that survives runs, which silently read the mint basis off a
+        previous run's order. Raising on the ambiguity instead would make an
+        un-editable log permanently unmintable; taking the order in force is
+        both unambiguous and the answer every other reader already gives.
+        """
+        if seller_id == buyer_id:
+            return None
+        posted = None
         for event in self.log.read_all():
             if (
                 event.type == ev.ORDER_POSTED
                 and event.payload.get("order_id") == order_id
             ):
-                return event.payload["limit_price"]
-        return None
+                posted = event.payload
+        if posted is None:
+            return None
+        if posted.get("side") != str(Side.ASK):
+            return None
+        if posted.get("actor_id") != seller_id:
+            return None
+        return posted["limit_price"]
 
     def _already_decided(self, match_id: str) -> bool:
         """Has this match_id already carried a policy decision?"""
@@ -268,11 +318,19 @@ class Exchange:
     def _status_of(self, actor_id: str) -> ActorStatus:
         """This actor's status as the log records it.
 
-        An actor with no ACTOR_REGISTERED event has nothing frozen on record,
-        so it is treated as ACTIVE: absence of a registration is not a freeze,
-        and whether an unregistered actor may trade at all is a different
-        question this gate does not answer. A freeze, once appended, is what
-        `fold` projects until an ACTOR_RESUMED follows it.
+        A FREEZE BINDS REGARDLESS OF REGISTRATION ORDER. `fold` projects an
+        ACTOR_FROZEN for an actor it has never seen register as a FROZEN record
+        of kind UNKNOWN, so an unregistered-but-frozen merchant is denied here
+        like any other. That is a deliberate choice rather than a side effect:
+        `Accountant._contain_unbacked` is mandatory precisely because nothing
+        else can contain a completion the remote denies, and a containment that
+        depends on the contained party having registered first is one the
+        contained party controls.
+
+        An actor with NO freeze on record is still ACTIVE whether or not it
+        registered. Absence of a registration is not a freeze, and whether an
+        unregistered actor should be allowed to trade at all is a separate
+        admission question this gate deliberately does not answer.
         """
         actor = self.state().actors.get(actor_id)
         return actor.status if actor is not None else ActorStatus.ACTIVE

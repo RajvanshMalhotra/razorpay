@@ -434,6 +434,146 @@ def test_a_readable_valuation_is_marked_as_one(exchange):
     assert broker.value_insight("skincare AOV up 12%", "skincare", cap=50_000).parsed
 
 
+# --- the negotiated price against the merchant's own posted ceiling --------
+#
+# `_posted_bid_limit`, `_refuse_above_posted_limit` and `_log_refusal` are the
+# whole of the answer to "a long haggle can end above the number this merchant
+# published on the book". Every other close() in this suite passes
+# `agreed_price=matches[0].clearing_price`, which is the ask limit and therefore
+# always at or below the bid limit — so the refusal branch ran nowhere, and an
+# untested claim on the money path is one review away from being a false one.
+
+
+def test_a_negotiated_price_above_the_posted_bid_limit_is_refused(exchange):
+    """Refused, not clamped: settling at a price neither side agreed to would
+    leave a SETTLEMENT_INITIATED that matches neither the negotiation nor the
+    ask, with no event explaining the difference."""
+    broker = Broker("m_buyer", exchange, ScriptedProvider(["ok"]))
+    matches = broker.find_supply("biodegradable compostable mailers", 200, 2200, "c1")
+
+    decision, settlement = broker.close(matches[0], "m_seller", "c1", agreed_price=2500)
+
+    assert decision.verdict == Verdict.DENY
+    assert settlement is None
+
+
+def test_a_price_above_the_posted_limit_moves_no_money(exchange):
+    """The refusal is only worth anything if nothing downstream runs."""
+    broker = Broker("m_buyer", exchange, ScriptedProvider(["ok"]))
+    matches = broker.find_supply("biodegradable compostable mailers", 200, 2200, "c1")
+
+    broker.close(matches[0], "m_seller", "c1", agreed_price=2500)
+
+    types = [e.type for e in exchange.log.read_by_correlation("c1")]
+    assert "SETTLEMENT_INITIATED" not in types
+    assert "SETTLEMENT_COMPLETED" not in types
+    # execute_match is never reached, so the match never reaches the gate either.
+    assert "MATCH_PROPOSED" not in types
+    assert broker.graph.confidence("m_seller") == 0.0
+
+
+def test_the_refusal_is_logged_as_a_deny_naming_both_figures(exchange):
+    """In the gate's vocabulary, on the trade's own thread: a replay shows one
+    kind of record for "a money action was refused and here is why", whether the
+    bound was the exchange's cap or this merchant's own posted ceiling."""
+    broker = Broker("m_buyer", exchange, ScriptedProvider(["ok"]))
+    matches = broker.find_supply("biodegradable compostable mailers", 200, 2200, "c1")
+    bid_id = [o for o in exchange.state().open_orders.values()
+              if o.side == Side.BID][0].order_id
+
+    decision, _ = broker.close(matches[0], "m_seller", "c1", agreed_price=2500)
+
+    decided = [e for e in exchange.log.read_by_correlation("c1")
+               if e.type == "POLICY_DECIDED"]
+    assert len(decided) == 1
+    assert decided[0].payload["verdict"] == "DENY"
+    assert decided[0].payload["action_ref"] == matches[0].match_id
+    assert decided[0].actor_id == "m_buyer", "the merchant refused itself"
+    assert "2500" in decided[0].payload["reason"]
+    assert "2200" in decided[0].payload["reason"]
+    assert decided[0].payload["limits_evaluated"] == {
+        "agreed_price": 2500,
+        "bid_limit_price": 2200,
+        "bid_order_id": bid_id,
+        "qty": matches[0].qty,
+    }
+    assert decision.limits_evaluated["bid_limit_price"] == 2200
+
+
+def test_a_price_exactly_at_the_posted_limit_is_allowed(exchange):
+    """The ceiling is a ceiling, not a strict inequality — a merchant that
+    published 2200 may pay 2200."""
+    broker = Broker("m_buyer", exchange, ScriptedProvider(
+        ["ok", "BEHAVIOURAL: held firm at our limit"]))
+    # 200 units at 2200 is 440,000, inside the 500,000 trial cap a stranger gets.
+    matches = broker.find_supply("biodegradable compostable mailers", 200, 2200, "c1")
+
+    decision, settlement = broker.close(matches[0], "m_seller", "c1", agreed_price=2200)
+
+    assert decision.verdict == Verdict.ALLOW
+    assert settlement.status == SettlementStatus.COMPLETED
+    initiated = [e for e in exchange.log.read_by_correlation("c1")
+                 if e.type == "SETTLEMENT_INITIATED"][0]
+    assert initiated.payload["amount"] == 2200 * 200
+
+
+def test_a_bid_that_is_not_in_the_log_is_refused_rather_than_unbounded(exchange):
+    """An unfindable ceiling is not an absent one. Defaulting to "unbounded"
+    would make this check advisory for exactly the caller that skipped the
+    book — which is the caller it exists to bind."""
+    broker = Broker("m_buyer", exchange, ScriptedProvider(["ok"]))
+    match = Match(match_id="mch_offbook", bid_order_id="ord_never_posted",
+                  ask_order_id="ord_ask", clearing_price=1940, qty=200,
+                  score=0.9, rationale="off the book")
+
+    decision, settlement = broker.close(match, "m_seller", "c1", agreed_price=1)
+
+    assert decision.verdict == Verdict.DENY
+    assert settlement is None
+    assert "ord_never_posted" in decision.reason
+    assert "not in the log" in decision.reason
+    assert decision.limits_evaluated["bid_limit_price"] is None
+    types = [e.type for e in exchange.log.read_by_correlation("c1")]
+    assert "SETTLEMENT_INITIATED" not in types
+
+
+def test_the_ceiling_is_read_from_the_log_after_the_bid_leaves_the_book(exchange):
+    """`state().open_orders` loses a bid once it is filled; the limit it was
+    posted under still binds the trade it was posted for."""
+    broker = Broker("m_buyer", exchange, ScriptedProvider(
+        ["ok", "BEHAVIOURAL: moved fast", "ok"]))
+    matches = broker.find_supply("biodegradable compostable mailers", 200, 2200, "c1")
+    bid_id = matches[0].bid_order_id
+
+    broker.close(matches[0], "m_seller", "c1", agreed_price=1900)
+    assert bid_id not in exchange.state().open_orders, "the bid is filled and gone"
+
+    assert broker._posted_bid_limit(bid_id) == 2200
+
+
+def test_the_most_recently_posted_limit_is_the_one_that_binds(exchange):
+    """Order ids collide across runs against a persistent log. Taking the FIRST
+    match read the ceiling off whichever run got there earliest; `fold` resolves
+    a repost by overwriting the book, and this now agrees with it."""
+    broker = Broker("m_buyer", exchange, ScriptedProvider(["ok"]))
+    for limit in (5000, 2200):
+        exchange.post_order(Order(
+            order_id="ord_reused", actor_id="m_buyer", side=Side.BID,
+            asset_ref=None, asset_query={"text": "mailers"}, qty=200,
+            limit_price=limit, currency=Currency.INR,
+            expires_at="2026-12-31T00:00:00+00:00", policy_snapshot={},
+        ), correlation_id="c1")
+    match = Match(match_id="mch_reused", bid_order_id="ord_reused",
+                  ask_order_id="ord_ask", clearing_price=1940, qty=200,
+                  score=0.9, rationale="test")
+
+    decision, settlement = broker.close(match, "m_seller", "c1", agreed_price=2400)
+
+    assert broker._posted_bid_limit("ord_reused") == 2200
+    assert decision.verdict == Verdict.DENY, "the ceiling in force is the later one"
+    assert settlement is None
+
+
 def test_the_headline_and_recall_both_reach_the_scout(exchange):
     provider = ScriptedProvider(["BEHAVIOURAL: past lots in this category paid off",
                                  "BID: 900 worth a look"])

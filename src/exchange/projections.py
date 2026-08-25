@@ -74,12 +74,24 @@ def fold_from(state: ExchangeState, events: Iterable[Event]) -> ExchangeState:
         p = event.payload
 
         if event.type == ev.ACTOR_REGISTERED:
+            # A freeze already on record SURVIVES a later registration. Only an
+            # ACTOR_RESUMED lifts a freeze; if registering could, then the
+            # containment for an unbacked completion — which the accountant
+            # applies whether or not the actor ever registered — would be
+            # undone by the frozen merchant filling in its own paperwork. The
+            # party being contained must not be able to supply the fact that
+            # ends the containment.
+            existing = actors.get(p["actor_id"])
+            frozen = existing is not None and existing.status == ActorStatus.FROZEN
             actors[p["actor_id"]] = Actor(
                 actor_id=p["actor_id"],
                 kind=ActorKind(p["kind"]),
                 merchant_id=p.get("merchant_id"),
                 plan_tier=p.get("plan_tier", "standard"),
-                status=ActorStatus(p.get("status", "ACTIVE")),
+                status=(
+                    ActorStatus.FROZEN if frozen
+                    else ActorStatus(p.get("status", "ACTIVE"))
+                ),
             )
 
         elif event.type == ev.ASSET_LISTED:
@@ -210,11 +222,36 @@ def fold_from(state: ExchangeState, events: Iterable[Event]) -> ExchangeState:
                 )
 
         elif event.type == ev.ACTOR_FROZEN:
+            # A FREEZE BINDS WHATEVER THE REGISTRATION ORDER. This used to do
+            # nothing at all for an actor with no ACTOR_REGISTERED — and
+            # `execute_match` requires no registration, so exactly the actor
+            # that could never be stopped was the one that could still trade.
+            # `Accountant._contain_unbacked` is not advisory: it is the only
+            # containment there is for a completion the remote denies, which
+            # cannot be repaired by anything in this system. A containment that
+            # silently no-ops for an unknown actor is not one.
+            #
+            # So an unknown actor is CREATED here, in FROZEN state, with kind
+            # UNKNOWN. The freeze is a fact the log holds; the kind is not, and
+            # is not invented. A later ACTOR_REGISTERED fills the kind in and
+            # leaves the freeze standing (see ACTOR_REGISTERED above).
             existing = actors.get(p["actor_id"])
-            if existing is not None:
+            if existing is None:
+                actors[p["actor_id"]] = Actor(
+                    actor_id=p["actor_id"],
+                    kind=ActorKind.UNKNOWN,
+                    status=ActorStatus.FROZEN,
+                )
+            else:
                 actors[p["actor_id"]] = replace(existing, status=ActorStatus.FROZEN)
 
         elif event.type == ev.ACTOR_RESUMED:
+            # No symmetric creation here, deliberately. A freeze is a claim
+            # that has to bind something, so it creates the record it binds; a
+            # resume only lifts a freeze, and there is nothing to lift on an
+            # actor with no record. Creating an ACTIVE record for one would let
+            # a resume-before-freeze conjure an actor into existence, which is
+            # the containment being undone by ordering.
             existing = actors.get(p["actor_id"])
             if existing is not None:
                 actors[p["actor_id"]] = replace(existing, status=ActorStatus.ACTIVE)

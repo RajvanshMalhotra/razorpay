@@ -13,6 +13,13 @@ class ActorKind(StrEnum):
     HOUSE = "HOUSE"
     ACCOUNTANT = "ACCOUNTANT"
     HUMAN = "HUMAN"
+    # An actor the log knows something about without ever having seen it
+    # register. Today that is exactly one case: an ACTOR_FROZEN for an
+    # unregistered actor, which must still project a FROZEN record or the
+    # freeze is a no-op (see projections.fold). UNKNOWN says "we do not know
+    # what this is" rather than guessing MERCHANT — the freeze is a fact the
+    # log holds, the kind is not.
+    UNKNOWN = "UNKNOWN"
 
 
 class ActorStatus(StrEnum):

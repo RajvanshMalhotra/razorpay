@@ -38,6 +38,24 @@ def points_for_settlement(
     `amount` is what was actually paid for the whole lot; `ask_price * qty` is
     what the seller opened at. The difference is the margin the broker captured
     by negotiating, and that is what is rewarded.
+
+    THE CREDITED MARGIN IS BOUNDED BY THE MONEY THAT ACTUALLY MOVED. Of the
+    four inputs here, exactly one is backed by an authority outside the two
+    parties: `amount` is what Razorpay moved and confirmed captured. `ask_price`
+    and `qty` come from orders the parties wrote themselves, and two merchants
+    who agree to lie can put any number on an ask. `min(margin, amount)` is what
+    stops that being worth anything: a merchant may be credited with capturing
+    at most as much margin as it actually paid out, which is to say the ask can
+    be treated as at most twice what was paid.
+
+    What the bound means economically: a claimed margin far larger than the
+    money that changed hands is not evidence of a hard negotiation, it is
+    evidence that the ask was fantasy. Nobody lists at a million rupees and
+    sells for one paisa; the price a market will actually bear is bounded by
+    what somebody actually paid. So a one-paisa trade earns like a one-paisa
+    trade (BASE_POINTS and nothing more) no matter what ask it names, while a
+    genuine deal — anything settled above half the ask, which is every real
+    negotiation — is unaffected and earns its full margin.
     """
     if not delivered:
         return 0
@@ -47,7 +65,8 @@ def points_for_settlement(
     if margin < 0:
         return 0  # you cannot be paid for overpaying
 
-    return BASE_POINTS + (margin * EARNING_RATE_BPS) // 10_000
+    credited = min(margin, amount)
+    return BASE_POINTS + (credited * EARNING_RATE_BPS) // 10_000
 
 
 def royalty_for(clearing_price: int, contributor_count: int) -> int:

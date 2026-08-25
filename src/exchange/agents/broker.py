@@ -223,14 +223,22 @@ class Broker:
         posted for. The log keeps it either way — and, as everywhere else here,
         the authoritative figure comes from the log rather than from whoever is
         asking to spend against it.
+
+        MOST RECENT WINS on a repeated order_id, matching
+        `Exchange._counterparty_ask_price` and matching `fold`, which overwrites
+        `open_orders[order_id]` on a repost. Taking the FIRST match read a
+        ceiling off whichever run happened to use that id earliest — the log is
+        append-only and `runs/brokers.db` persists across runs — so the number
+        this merchant is actually bound by today is the last one it posted.
         """
+        limit = None
         for event in self._exchange.log.read_all():
             if (
                 event.type == ev.ORDER_POSTED
                 and event.payload.get("order_id") == bid_order_id
             ):
-                return event.payload["limit_price"]
-        return None
+                limit = event.payload["limit_price"]
+        return limit
 
     def _refuse_above_posted_limit(
         self, match: Match, agreed_price: int, correlation_id: str,

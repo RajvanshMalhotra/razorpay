@@ -57,8 +57,13 @@ def main() -> int:
         spec={"material": "compostable poly"}, currency=Currency.INR,
         origin_actor_id="m_seller",
     ))
+    # A FRESH ORDER ID PER RUN. runs/brokers.db is persistent, so a hard-coded
+    # "ord_ask" put several runs' orders under one id — and the mint basis and
+    # the buyer's price ceiling are both looked up by order id. The lookups
+    # now take the most recent, but two runs must not share an identity at all.
+    ask_id = new_id("ord")
     exchange.post_order(Order(
-        order_id="ord_ask", actor_id="m_seller", side=Side.ASK,
+        order_id=ask_id, actor_id="m_seller", side=Side.ASK,
         asset_ref="ast_mailers", asset_query=None, qty=1000, limit_price=1940,
         currency=Currency.INR, expires_at="2026-12-31T00:00:00+00:00",
         policy_snapshot={},

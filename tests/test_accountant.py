@@ -422,6 +422,86 @@ def test_freezing_an_actor_stops_it_trading(log):
     assert fold(log.read_all()).actors["m_a"].status == ActorStatus.FROZEN
 
 
+def test_freezing_an_unregistered_actor_still_stops_it_trading(log):
+    """Registration order must not decide whether a freeze binds.
+
+    `ACTOR_FROZEN` used to be a no-op in the projection for an actor with no
+    `ACTOR_REGISTERED`, and `_status_of` called an unknown actor ACTIVE — while
+    `execute_match` has never required a registration to trade. So the one
+    actor that could not be frozen was free to keep trading, and the trail
+    showed a containment that never happened.
+
+    This was filed Minor and ruled moot "while the freeze is advisory". Wave C
+    made `_contain_unbacked`'s freeze mandatory, because nothing else in this
+    system can contain a completion the remote denies. The ruling expired with
+    it.
+    """
+    from exchange.models import ActorStatus, Verdict
+    from exchange.projections import fold
+
+    exchange = _exchange_over(log)
+    # m_a is deliberately NOT registered. Nothing requires it to be.
+    Accountant(log, FakeRazorpay()).freeze("m_a", "books disagree")
+
+    decision, settlement = _trade(exchange, "mch_1", "c_trade")
+
+    assert decision.verdict == Verdict.DENY
+    assert "frozen" in decision.reason.lower()
+    assert settlement is None
+    assert not any(e.type == "SETTLEMENT_INITIATED" for e in log.read_all())
+    assert fold(log.read_all()).actors["m_a"].status == ActorStatus.FROZEN
+
+
+def test_containing_an_unbacked_completion_stops_an_unregistered_merchant(log):
+    """The containment end to end, on the actor shape that defeated it.
+
+    `_contain_unbacked` believed it had stopped the merchant, `reconcile`
+    returned, `assert_invariants` reported the violation forever — and the
+    merchant's very next money action was allowed.
+    """
+    from exchange.models import Verdict
+
+    client = _unbacked(log)          # m_a settled; m_a never registered
+    Accountant(log, client).reconcile()
+
+    exchange = _exchange_over(log)
+    decision, settlement = _trade(exchange, "mch_after", "c_after")
+
+    assert decision.verdict == Verdict.DENY
+    assert "frozen" in decision.reason.lower()
+    assert settlement is None
+
+
+def test_registering_after_a_freeze_does_not_lift_it(log):
+    """Only a resume lifts a freeze — not the frozen party's own paperwork."""
+    from exchange.models import Actor, ActorKind, ActorStatus, Verdict
+    from exchange.projections import fold
+
+    exchange = _exchange_over(log)
+    Accountant(log, FakeRazorpay()).freeze("m_a", "books disagree")
+
+    exchange.register_actor(Actor(actor_id="m_a", kind=ActorKind.MERCHANT))
+
+    state = fold(log.read_all())
+    assert state.actors["m_a"].status == ActorStatus.FROZEN
+    assert state.actors["m_a"].kind == ActorKind.MERCHANT, "the kind is filled in"
+    assert _trade(exchange, "mch_1", "c_trade")[0].verdict == Verdict.DENY
+
+
+def test_an_unregistered_actor_frozen_then_resumed_may_trade_again(log):
+    """The containment ends the same way for everyone, registered or not."""
+    from exchange.models import Verdict
+
+    exchange = _exchange_over(log)
+    accountant = Accountant(log, FakeRazorpay())
+    accountant.freeze("m_a", "books disagree")
+    assert _trade(exchange, "mch_1", "c_trade")[0].verdict == Verdict.DENY
+
+    accountant.resume("m_a")
+
+    assert _trade(exchange, "mch_2", "c_trade")[0].verdict == Verdict.ALLOW
+
+
 def test_repairing_a_drift_completes_the_settlement_from_the_remote_truth(log):
     _initiated(log, "stl_1", "order_1")
     accountant = Accountant(log, _captured())

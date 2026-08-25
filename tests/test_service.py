@@ -431,3 +431,185 @@ def test_reusing_a_decided_match_id_is_refused_before_anything_is_written(exchan
         )
 
     assert len(exchange.log.read_all()) == before
+
+
+# --- the mint basis is a price somebody else asked -------------------------
+#
+# The fifth instance of the same root cause, in code the earlier fixes added.
+# `points_for_settlement` pays a proportion of `ask_price * qty - amount`, and
+# `ask_price` was read from whatever ORDER_POSTED matched `match.ask_order_id` —
+# a field on the Match the BUYER hands to `execute_match`. Reading an
+# authoritative log at a row the constrained party names is the same defect as
+# taking the figure from the argument, with one extra hop.
+#
+# Every one of these mints millions against the pre-fix code, with the gate
+# saying ALLOW and `assert_invariants()` returning [].
+
+
+def _ask(exchange, order_id, actor_id, limit_price, qty=1, side=Side.ASK,
+         correlation_id="c1"):
+    exchange.post_order(Order(
+        order_id=order_id, actor_id=actor_id, side=side,
+        asset_ref="ast_1" if side == Side.ASK else None,
+        asset_query=None if side == Side.ASK else {"text": "mailers"},
+        qty=qty, limit_price=limit_price, currency=Currency.INR,
+        expires_at="2026-12-31T00:00:00+00:00", policy_snapshot={},
+    ), correlation_id=correlation_id)
+
+
+def _minted(exchange, actor_id="m_buyer"):
+    return sum(
+        e.payload["points"] for e in exchange.log.read_all()
+        if e.type == "POINTS_MINTED" and e.payload["actor_id"] == actor_id
+    )
+
+
+def test_a_merchant_cannot_mint_against_an_ask_it_posted_to_itself(exchange):
+    """The reproduction, verbatim: post an ASK to yourself at an absurd limit,
+    settle one paisa against it, collect five million points.
+
+    The gate says ALLOW because one paisa clears every cap; the accountant
+    authors the mint, the settlement is unique and the balance is positive, so
+    the auditor reports clean. Nothing here is wrong except the number the
+    whole calculation rests on, which the party being paid chose.
+    """
+    _ask(exchange, "ord_self_ask", "m_buyer", limit_price=100_000_000)
+    _ask(exchange, "ord_self_bid", "m_buyer", limit_price=100_000_000,
+         side=Side.BID)
+
+    decision, settlement = exchange.execute_match(
+        Match("mch_self", "ord_self_bid", "ord_self_ask", 1, 1, 1.0, "self-dealt"),
+        "m_buyer", "m_buyer", TRUSTED, correlation_id="c1",
+    )
+
+    assert decision.verdict == Verdict.ALLOW, "the exploit clears the gate"
+    assert settlement.status == SettlementStatus.COMPLETED
+    assert settlement.amount == 1, "one paisa of real money moved"
+    assert _minted(exchange) == 0, "and nothing may be minted for it"
+    assert "POINTS_MINTED" not in [e.type for e in exchange.log.read_all()]
+
+
+def test_an_ask_posted_by_anyone_but_the_seller_mints_nothing(exchange):
+    """A third party's ask is not this seller's asking price. The buyer would
+    otherwise shop the log for the highest limit_price it could find."""
+    _ask(exchange, "ord_stranger_ask", "m_stranger", limit_price=100_000_000)
+
+    exchange.execute_match(
+        Match("mch_1", "ord_bid", "ord_stranger_ask", 1, 1, 1.0, "borrowed ask"),
+        "m_buyer", "m_seller", TRUSTED, correlation_id="c1",
+    )
+
+    assert _minted(exchange) == 0
+
+
+def test_a_bid_named_as_the_ask_mints_nothing(exchange):
+    """A bid's limit_price is a ceiling, not an asking price — and a buyer's own
+    bid is posted at whatever ceiling it likes."""
+    _ask(exchange, "ord_a_bid", "m_seller", limit_price=100_000_000, side=Side.BID)
+
+    exchange.execute_match(
+        Match("mch_1", "ord_bid", "ord_a_bid", 1, 1, 1.0, "a bid as an ask"),
+        "m_buyer", "m_seller", TRUSTED, correlation_id="c1",
+    )
+
+    assert _minted(exchange) == 0
+
+
+def test_two_colluding_merchants_cannot_mint_against_a_fantasy_ask(exchange):
+    """Ownership alone does not close it: A posts the absurd ask, B settles a
+    paisa against it, B mints millions and they split it.
+
+    So the credited margin is bounded by `amount` — the money Razorpay actually
+    moved, the one figure in the formula backed by an outside authority. A trade
+    where one paisa moved earns like a trade where one paisa moved.
+    """
+    from exchange.house.points import BASE_POINTS
+
+    _ask(exchange, "ord_fantasy", "m_seller", limit_price=100_000_000)
+
+    decision, settlement = exchange.execute_match(
+        Match("mch_1", "ord_bid", "ord_fantasy", 1, 1, 1.0, "collusion"),
+        "m_buyer", "m_seller", TRUSTED, correlation_id="c1",
+    )
+
+    assert decision.verdict == Verdict.ALLOW
+    assert settlement.status == SettlementStatus.COMPLETED
+    assert _minted(exchange) == BASE_POINTS, (
+        "a completed trade is worth something on its own, and nothing more: "
+        "the claimed margin is capped at the one paisa that actually moved"
+    )
+
+
+def test_a_genuinely_well_negotiated_trade_still_earns(exchange):
+    """The bound must not touch a real deal. 1900 against a 1940 ask over 200
+    units is 380,000 paid on 388,000 asked — the margin is a fraction of the
+    money that moved, so `min(margin, amount)` never binds."""
+    from exchange.house.points import points_for_settlement
+
+    _ask(exchange, "ord_real_ask", "m_seller", limit_price=1940, qty=1000)
+
+    exchange.execute_match(
+        Match("mch_1", "ord_bid", "ord_real_ask", 1900, 200, 0.9, "negotiated"),
+        "m_buyer", "m_seller", TRUSTED, correlation_id="c1",
+    )
+
+    expected = points_for_settlement(380_000, ask_price=1940, qty=200, delivered=True)
+    assert expected > 10, "this test needs a real margin to be worth paying"
+    assert _minted(exchange) == expected
+
+
+def test_the_mint_basis_is_the_most_recent_order_under_that_id(exchange):
+    """Order ids collide across runs of a script against a persistent log, and
+    the first match was whichever run got there first. `fold` already resolves a
+    repost by overwriting the book, so the mint basis agrees with the book."""
+    from exchange.house.points import points_for_settlement
+
+    _ask(exchange, "ord_ask", "m_seller", limit_price=100_000_000, qty=1000)
+    _ask(exchange, "ord_ask", "m_seller", limit_price=1940, qty=1000)
+
+    exchange.execute_match(
+        Match("mch_1", "ord_bid", "ord_ask", 1900, 200, 0.9, "negotiated"),
+        "m_buyer", "m_seller", TRUSTED, correlation_id="c1",
+    )
+
+    assert _minted(exchange) == points_for_settlement(
+        380_000, ask_price=1940, qty=200, delivered=True
+    )
+    assert exchange.state().open_orders["ord_ask"].limit_price == 1940
+
+
+def test_the_exploit_leaves_the_auditor_with_nothing_to_report(exchange):
+    """The point of the fix, stated as the auditor sees it: the self-dealt trade
+    is a legitimate one-paisa trade that simply earns nothing. No violation is
+    invented, and none is missed."""
+    from exchange.house.accountant import Accountant
+
+    _ask(exchange, "ord_self_ask", "m_buyer", limit_price=100_000_000)
+    exchange.execute_match(
+        Match("mch_self", "ord_bid", "ord_self_ask", 1, 1, 1.0, "self-dealt"),
+        "m_buyer", "m_buyer", TRUSTED, correlation_id="c1",
+    )
+
+    assert Accountant(exchange.log, FakeRazorpay()).assert_invariants() == []
+    assert exchange.state().credit_balances.get("m_buyer", 0) == 0
+
+
+# --- a freeze binds whatever the registration order ------------------------
+
+
+def test_freezing_an_unregistered_actor_stops_its_next_money_action(exchange):
+    """`execute_match` never required a registration to trade, and the
+    projection dropped an ACTOR_FROZEN for an actor it had not seen register.
+    So the only actor that could not be contained was free to keep trading."""
+    from exchange.house.accountant import Accountant
+
+    Accountant(exchange.log, FakeRazorpay()).freeze("m_buyer", "unbacked completion")
+
+    decision, settlement = exchange.execute_match(
+        MATCH, "m_buyer", "m_seller", TRUSTED, correlation_id="c1",
+    )
+
+    assert decision.verdict == Verdict.DENY
+    assert "frozen" in decision.reason.lower()
+    assert settlement is None
+    assert SETTLEMENT_INITIATED not in [e.type for e in exchange.log.read_all()]

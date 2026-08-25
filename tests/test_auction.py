@@ -2,6 +2,7 @@ import pytest
 
 from exchange.eventlog import EventLog
 from exchange.house.auction import Bid, clear, run_auction
+from exchange.models import Currency, Order, Side
 
 
 @pytest.fixture
@@ -209,10 +210,32 @@ def test_the_purchase_is_inside_the_accountants_invariants(exchange, log):
 
 def test_buying_an_insight_does_not_itself_mint(exchange, log):
     """Points are earned by trading goods well. Minting on a points purchase
-    would pay merchants for spending points."""
+    would pay merchants for spending points — a loop that funds itself.
+
+    The `currency != INR` guard in `_mint_earned` is the only thing stopping
+    that, and this test used to pass with or without it: `_lot_match` fabricates
+    `ask_order_id=f"auction:{asset_id}:{seller_id}"`, no ORDER_POSTED existed
+    under that id, so the mint returned one step earlier for an unrelated
+    reason. Delete the guard and the test still passed.
+
+    So the ask IS on record here, posted by the seller the gate will pay, at a
+    limit that would earn a real margin. Every other reason to decline is gone;
+    the currency guard is the only one left. Delete it and this fails.
+    """
     from exchange.house.auction import settle_purchase
+    from exchange.house.points import points_for_settlement
 
     _seeded(log, "m_b", 1850)
+    exchange.post_order(Order(
+        order_id="auction:ins_1:house", actor_id="house", side=Side.ASK,
+        asset_ref="ins_1", asset_query=None, qty=1, limit_price=2000,
+        currency=Currency.CREDITS, expires_at="2026-12-31T00:00:00+00:00",
+        policy_snapshot={},
+    ), correlation_id="c1")
+    # The lot clears at 1200 against an ask of 2000: an 800-point margin, well
+    # inside the bound, so a mint would be non-zero if the guard let it through.
+    assert points_for_settlement(1200, ask_price=2000, qty=1, delivered=True) > 0
+
     settle_purchase(exchange, "ins_1", _auction(log), correlation_id="c1")
 
     types = [e.type for e in log.read_by_correlation("c1")]

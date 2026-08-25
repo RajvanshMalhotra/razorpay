@@ -49,8 +49,13 @@ def main() -> int:
         currency=Currency.INR, origin_actor_id="m_seller",
     ))
 
+    # FRESH ORDER IDS PER RUN. cfg.db_path is a persistent log, so hard-coded
+    # ids put every run's orders under the same identity — and both the mint
+    # basis (Exchange._counterparty_ask_price) and the buyer's posted ceiling
+    # (Broker._posted_bid_limit) are looked up by order id. Those lookups now
+    # take the most recent match, but two runs must not share an id at all.
     ask = Order(
-        order_id="ord_ask", actor_id="m_seller", side=Side.ASK,
+        order_id=new_id("ord"), actor_id="m_seller", side=Side.ASK,
         asset_ref="ast_mailers", asset_query=None, qty=1000, limit_price=1940,
         currency=Currency.INR, expires_at="2026-09-30T00:00:00+00:00",
         policy_snapshot={},
@@ -58,7 +63,7 @@ def main() -> int:
     exchange.post_order(ask, correlation_id=correlation_id)
 
     bid = Order(
-        order_id="ord_bid", actor_id="m_buyer", side=Side.BID, asset_ref=None,
+        order_id=new_id("ord"), actor_id="m_buyer", side=Side.BID, asset_ref=None,
         asset_query={"text": "eco friendly biodegradable mailers under 22 a unit"},
         qty=500, limit_price=2200, currency=Currency.INR,
         expires_at="2026-08-29T00:00:00+00:00", policy_snapshot={},
