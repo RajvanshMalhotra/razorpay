@@ -47,6 +47,7 @@ class Broker:
         fast_provider=None,
         subconscious: Subconscious | None = None,
         graph: RelationshipGraph | None = None,
+        mandate=None,
     ) -> None:
         self.actor_id = actor_id
         self._exchange = exchange
@@ -71,9 +72,13 @@ class Broker:
         )
 
         version = self._exchange.log.head_seq()
-        self._trader = make_trader(fast, self.tree, self.root_id, version)
-        self._scout = make_scout(fast, self.tree, self.root_id, version)
-        self._diplomat = make_diplomat(fast, self.tree, self.root_id, version)
+        # The merchant's own standing instructions, applied to all three
+        # roles. It shapes what they argue for; it changes nothing about what
+        # the gate allows — see `exchange.agents.mandate`.
+        self.mandate = mandate
+        self._trader = make_trader(fast, self.tree, self.root_id, version, mandate)
+        self._scout = make_scout(fast, self.tree, self.root_id, version, mandate)
+        self._diplomat = make_diplomat(fast, self.tree, self.root_id, version, mandate)
 
     def find_supply(
         self,

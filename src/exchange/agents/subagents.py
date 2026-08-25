@@ -13,6 +13,7 @@ from __future__ import annotations
 
 from exchange.agents.context import ContextDelta, apply_delta, render
 from exchange.agents.tree import ContextTree
+from exchange.agents.mandate import compose
 from exchange.llm.base import LLMMessage, LLMProvider
 
 TRADER_PROMPT = """You are the Trader for a merchant on a business-to-business exchange.
@@ -85,16 +86,23 @@ class SubAgent:
         self.node_id = self._tree.add(parent_id, ContextDelta(), self._state_version)
 
 
-def make_trader(provider, tree, parent_id, state_version) -> SubAgent:
-    return SubAgent("trader", TRADER_PROMPT, provider, tree, parent_id, state_version,
-                    reasoning_effort="low")
+# Each role takes the merchant's mandate, because a merchant's priorities
+# apply to all three: the Trader's haggling, what the Scout thinks an insight
+# is worth, and how readily the Diplomat trusts a stranger. `compose` returns
+# the role prompt unchanged when there is no mandate, so a merchant that says
+# nothing gets exactly the behaviour it got before this existed.
 
 
-def make_scout(provider, tree, parent_id, state_version) -> SubAgent:
-    return SubAgent("scout", SCOUT_PROMPT, provider, tree, parent_id, state_version,
-                    reasoning_effort="low")
+def make_trader(provider, tree, parent_id, state_version, mandate=None) -> SubAgent:
+    return SubAgent("trader", compose(TRADER_PROMPT, mandate), provider, tree,
+                    parent_id, state_version, reasoning_effort="low")
 
 
-def make_diplomat(provider, tree, parent_id, state_version) -> SubAgent:
-    return SubAgent("diplomat", DIPLOMAT_PROMPT, provider, tree, parent_id, state_version,
-                    reasoning_effort="low")
+def make_scout(provider, tree, parent_id, state_version, mandate=None) -> SubAgent:
+    return SubAgent("scout", compose(SCOUT_PROMPT, mandate), provider, tree,
+                    parent_id, state_version, reasoning_effort="low")
+
+
+def make_diplomat(provider, tree, parent_id, state_version, mandate=None) -> SubAgent:
+    return SubAgent("diplomat", compose(DIPLOMAT_PROMPT, mandate), provider, tree,
+                    parent_id, state_version, reasoning_effort="low")
