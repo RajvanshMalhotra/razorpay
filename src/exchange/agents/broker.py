@@ -64,7 +64,7 @@ class Broker:
             state_version=0,
         )
 
-        version = len(self._exchange.log.read_all())
+        version = self._exchange.log.head_seq()
         self._trader = make_trader(fast, self.tree, self.root_id, version)
         self._scout = make_scout(fast, self.tree, self.root_id, version)
         self._diplomat = make_diplomat(fast, self.tree, self.root_id, version)
@@ -191,7 +191,7 @@ class Broker:
         self.root_id = self.tree.add(
             self.root_id,
             ContextDelta(facts_added=(summary,)),
-            len(self._exchange.log.read_all()),
+            self._exchange.log.head_seq(),
         )
         for agent in (self._trader, self._scout, self._diplomat):
             agent.reparent(self.root_id)

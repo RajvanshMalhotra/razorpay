@@ -92,3 +92,33 @@ def test_reopening_the_log_preserves_history(tmp_path):
         assert second.append("m", "B", {}, correlation_id="c").seq == 2
     finally:
         second.close()
+
+
+def test_head_seq_is_the_highest_seq_written(tmp_path):
+    log = EventLog(str(tmp_path / "h.db"))
+    assert log.head_seq() == 0, "an empty log has no head"
+
+    log.append("m_a", "ORDER_POSTED", {"order_id": "o1"}, correlation_id="c")
+    log.append("m_a", "ORDER_POSTED", {"order_id": "o2"}, correlation_id="c")
+
+    assert log.head_seq() == log.read_all()[-1].seq
+    log.close()
+
+
+def test_head_seq_does_not_read_the_log(tmp_path):
+    """The point of it. `len(read_all())` answered the same question by
+    JSON-decoding every row, on a call that runs several times per trade."""
+    log = EventLog(str(tmp_path / "h.db"))
+    for i in range(300):
+        log.append("m_a", "NEGOTIATION_ROUND", {"r": i}, correlation_id="c")
+
+    reads = []
+    original = log._query
+    log._query = lambda sql, params: (reads.append(sql), original(sql, params))[1]
+    try:
+        assert log.head_seq() == 300
+    finally:
+        log._query = original
+
+    assert reads == [], f"head_seq read rows: {reads}"
+    log.close()
