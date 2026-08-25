@@ -86,6 +86,23 @@ class Outcome:
     ended_reason: str
 
 
+# How far from the opening ask an offer can sit and still be a real position.
+# Generous: a hard lowball at a tenth of the ask is a negotiating stance, and
+# an anchor at five times it is cheek rather than nonsense.
+PLAUSIBLE_LOW_BPS = 1_000     # 10% of the opening
+PLAUSIBLE_HIGH_BPS = 50_000   # 500% of the opening
+
+
+def _is_plausible(price: int, opening_price: int) -> bool:
+    if price <= 0 or opening_price <= 0:
+        return False
+    return (
+        opening_price * PLAUSIBLE_LOW_BPS // 10_000
+        <= price
+        <= opening_price * PLAUSIBLE_HIGH_BPS // 10_000
+    )
+
+
 def parse_offer(text: str) -> tuple[int | None, bool]:
     """Return (price, wants_to_walk). A walk beats a price if both appear."""
     if _WALK.search(text):
@@ -164,8 +181,15 @@ def _rounds(
     while True:
         if spent >= token_budget:
             if journal:
-                journal.negotiation_ended(False, None, "token budget exhausted")
-            return Outcome(False, None, tuple(offers), "token budget exhausted")
+                # Said in market terms, not plumbing terms. "token budget
+                # exhausted" is true and useless to a reader: what happened is
+                # that the two sides talked this long without converging.
+                journal.negotiation_ended(
+                    False, None,
+                    f"no agreement after {len(offers)} offers",
+                )
+            return Outcome(False, None, tuple(offers),
+                           f"no agreement after {len(offers)} offers")
 
         # The one bound nothing outside this loop can defeat. An ending, not an
         # error: a negotiation that ran out of patience is an ordinary market
@@ -173,10 +197,11 @@ def _rounds(
         # a replay of the trade shows why it stopped rather than showing an
         # opening with nothing after it.
         if calls >= max_calls:
-            reason = f"call limit reached ({max_calls} model calls)"
+            reason = f"no agreement after {len(offers)} offers"
             if journal:
                 journal.negotiation_ended(False, None, reason)
-            return Outcome(False, None, tuple(offers), reason)
+            return Outcome(False, None, tuple(offers),
+                           f"no agreement after {len(offers)} offers")
 
         if turn == "buyer":
             provider, actor, limit_line = (
@@ -210,6 +235,23 @@ def _rounds(
         spent += reported if reported > 0 else _ASSUMED_TOKENS
 
         price, walking = parse_offer(response.text)
+
+        # AN OFFER NOBODY COULD MEAN IS NOT AN OFFER. Against an ask of ~200
+        # a real run produced "PRICE: 3000000" — thirty thousand rupees a unit
+        # for something priced at two — and 23 of 341 offers were similarly
+        # outside any plausible band. Treated as a number, one of those poisons
+        # the transcript and can only be refused later by the gate, which makes
+        # a model slip look like a market event.
+        #
+        # Handled exactly as an unreadable reply is: the turn passes, nothing
+        # is recorded as an offer, and the other side answers what was
+        # actually said. The band is wide on purpose — real haggling runs from
+        # a lowball to an anchor, and this is here to catch nonsense, not to
+        # narrow anyone's judgment.
+        if price is not None and not _is_plausible(price, opening_price):
+            transcript.append(f"{actor}: {response.text}")
+            turn = "seller" if turn == "buyer" else "buyer"
+            continue
 
         if walking:
             offers.append(Offer(actor, offers[-1].price if offers else opening_price,

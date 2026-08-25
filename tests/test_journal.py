@@ -82,3 +82,22 @@ def test_negotiation_works_without_a_journal():
                         opening_price=1940, buyer_limit=2200, seller_floor=1800)
 
     assert outcome.agreed is True
+
+
+def test_a_negotiation_round_is_attributed_to_whoever_spoke(tmp_path):
+    """The journal belongs to the merchant that opened the negotiation, so
+    every round was landing under that merchant's name — the payload named
+    the real speaker but the envelope did not. Read by actor, the log showed
+    one merchant arguing with itself."""
+    from exchange.eventlog import EventLog
+
+    log = EventLog(str(tmp_path / "j.db"))
+    journal = AgentJournal(log, "m_buyer", "c1")
+
+    journal.negotiation_round("m_buyer", 2000, "PRICE: 2000 opening")
+    journal.negotiation_round("m_seller", 2200, "PRICE: 2200 counter")
+
+    rounds = [e for e in log.read_all() if e.type == "NEGOTIATION_ROUND"]
+    assert [e.actor_id for e in rounds] == ["m_buyer", "m_seller"]
+    assert [e.payload["by"] for e in rounds] == ["m_buyer", "m_seller"]
+    log.close()

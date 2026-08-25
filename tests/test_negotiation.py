@@ -108,7 +108,7 @@ def test_the_token_budget_backstops_a_runaway():
                         token_budget=200)
 
     assert outcome.agreed is False
-    assert outcome.ended_reason == "token budget exhausted"
+    assert outcome.ended_reason.startswith("no agreement after")
 
 
 def test_a_reply_without_a_price_cannot_manufacture_an_agreement():
@@ -239,7 +239,7 @@ def test_a_provider_that_reports_no_tokens_still_terminates():
                         opening_price=2000, buyer_limit=2200, seller_floor=1800)
 
     assert buyer.calls + seller.calls == MAX_MODEL_CALLS
-    assert outcome.ended_reason == f"call limit reached ({MAX_MODEL_CALLS} model calls)"
+    assert outcome.ended_reason.startswith("no agreement after")
 
 
 def test_the_cap_ends_the_negotiation_as_a_result_not_as_an_exception():
@@ -272,7 +272,7 @@ def test_the_cap_ends_the_negotiation_as_a_result_not_as_an_exception():
     # The walk-away shape: no agreement, no price, and a reason that says why.
     assert outcome.agreed is False
     assert outcome.final_price is None
-    assert "call limit reached" in outcome.ended_reason
+    assert "no agreement after" in outcome.ended_reason
     # Recorded, not merely returned.
     assert journal.entries[0][0] == "opened"
     assert journal.entries[-1] == ("ended", False, None, outcome.ended_reason)
@@ -320,7 +320,60 @@ def test_a_zero_token_call_is_charged_rather_than_treated_as_free():
                         opening_price=2000, buyer_limit=2200, seller_floor=1800,
                         token_budget=1000)
 
-    assert outcome.ended_reason == "token budget exhausted"
+    assert outcome.ended_reason.startswith("no agreement after")
     assert buyer.calls + seller.calls < MAX_MODEL_CALLS, (
         "the budget must bind before the cap here, or this proves nothing"
     )
+
+
+# --- an offer nobody could mean ----------------------------------------------
+#
+# A live run produced "PRICE: 3000000" against an ask of ~200 — thirty
+# thousand rupees a unit for something priced at two — and 23 of 341 offers
+# sat outside any plausible band. Taken as a number, one of those poisons the
+# transcript and can only be refused later by the gate, which makes a model
+# slip look like a market event.
+
+
+def test_an_absurd_offer_is_not_treated_as_a_position():
+    from exchange.agents.negotiation import _is_plausible
+
+    assert not _is_plausible(3_000_000, 2000)   # 1500x the ask
+    assert not _is_plausible(1, 2000)           # a twentieth of a percent
+    assert not _is_plausible(0, 2000)
+    assert not _is_plausible(-500, 2000)
+
+
+def test_real_haggling_is_still_allowed():
+    """The band is wide on purpose: it catches nonsense, not judgment."""
+    from exchange.agents.negotiation import _is_plausible
+
+    assert _is_plausible(1800, 2000)     # a normal counter
+    assert _is_plausible(1000, 2000)     # a hard lowball
+    assert _is_plausible(400, 2000)      # a very hard lowball
+    assert _is_plausible(8000, 2000)     # a cheeky anchor
+
+
+def test_an_absurd_offer_passes_the_turn_instead_of_becoming_an_offer():
+    """Handled exactly as an unreadable reply is: nothing is recorded as an
+    offer, and the other side answers what was actually said."""
+    replies = iter([
+        "PRICE: 3000000 we believe this is fair",
+        "PRICE: 1900 that works",
+        "PRICE: 1900 agreed",
+    ])
+
+    class Provider:
+        def complete(self, messages, **kwargs):
+            from exchange.llm.base import LLMResponse
+
+            return LLMResponse(text=next(replies, "PRICE: 1900 agreed"),
+                               input_tokens=5, output_tokens=5, model="x")
+
+    provider = Provider()
+    outcome = negotiate("m_buyer", "m_seller", provider, provider,
+                        opening_price=2000, buyer_limit=2200, seller_floor=1500)
+
+    assert all(o.price != 3_000_000 for o in outcome.offers)
+    assert outcome.agreed
+    assert outcome.final_price == 1900
