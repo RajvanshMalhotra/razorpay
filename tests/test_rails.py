@@ -2,6 +2,7 @@ import pytest
 
 from exchange.eventlog import EventLog
 from exchange.events import (
+    CAPTURE_POLL_FAILED,
     CREDITS_TRANSFERRED,
     SETTLEMENT_COMPLETED,
     SETTLEMENT_FAILED,
@@ -426,3 +427,115 @@ def test_settlement_survives_a_payment_link_failure(log):
     assert initiated.payload["payment_link_url"] is None
     assert initiated.payload["payment_link_error"] is not None
     assert "payment link service unavailable" in initiated.payload["payment_link_error"]
+
+
+# --- a rejected capture poll is a record, not a crash -----------------------
+#
+# `_await_capture`'s lookup is the ONE Razorpay call in `settle()` that runs
+# AFTER SETTLEMENT_INITIATED is in the log. A 429 there used to propagate out
+# of `execute_match` and kill the process, leaving an ALLOW with no settlement
+# outcome — the hole BUG-7 was filed to close, reopened on the other rail — and
+# losing every hour of the run behind it. Three poll attempts per settlement
+# over 300 settlements is 900 chances to hit a rate limit.
+
+
+class RefusingLookup:
+    """A Razorpay whose orders and links are created fine and cannot be READ.
+
+    Wraps `FakeRazorpay` rather than replacing it so the create side stays
+    exactly as honest as the real API — the fake is the one that has already
+    been corrected against live test mode, and a hand-rolled stub here would be
+    a second, kinder model of the same service.
+
+    BOTH lookup doors raise, because a capture is found through the link and
+    falls back to the order: leaving either open would test a path the run does
+    not take.
+    """
+
+    def __init__(self, error=None):
+        self._inner = FakeRazorpay()
+        self._error = error or RuntimeError("429 Too Many Requests")
+        self.lookups = 0
+        self.order = self._Orders(self)
+        self.payment_link = self._Links(self)
+
+    class _Orders:
+        def __init__(self, outer):
+            self._outer = outer
+
+        def create(self, data):
+            return self._outer._inner.order.create(data)
+
+        def payments(self, order_id):
+            self._outer.lookups += 1
+            raise self._outer._error
+
+    class _Links:
+        def __init__(self, outer):
+            self._outer = outer
+
+        def create(self, data):
+            return self._outer._inner.payment_link.create(data)
+
+        def fetch(self, link_id):
+            self._outer.lookups += 1
+            raise self._outer._error
+
+
+def test_a_rejected_capture_poll_leaves_the_settlement_pending(log):
+    """A FAILED POLL IS NOT A FAILED SETTLEMENT. The Razorpay order exists and
+    is payable; all that failed is our attempt to look. PENDING is a real state
+    `reconcile` already handles — FAILED would be a lie about the money."""
+    rail = RazorpayRail(log, RefusingLookup(), poll_attempts=1, poll_interval=0)
+
+    settlement = rail.settle("mch_1", "m_a", "m_b", 250_000, correlation_id="c1")
+
+    assert settlement.status == SettlementStatus.PENDING
+    assert settlement.razorpay_payment_id is None
+
+
+def test_a_rejected_capture_poll_does_not_propagate(log):
+    """The bound the run depends on: nothing raises out of `settle()`."""
+    rail = RazorpayRail(log, RefusingLookup(), poll_attempts=1, poll_interval=0)
+
+    rail.settle("mch_1", "m_a", "m_b", 250_000, correlation_id="c1")  # no raise
+
+
+def test_a_rejected_capture_poll_says_so_in_the_log(log):
+    """A settlement that stayed PENDING because nobody paid and one that stayed
+    PENDING because we could not ask are different facts, and the run's
+    post-mortem needs to tell them apart. Silence would be the swallowed error
+    this project refuses everywhere else."""
+    rail = RazorpayRail(log, RefusingLookup(), poll_attempts=1, poll_interval=0)
+
+    settlement = rail.settle("mch_1", "m_a", "m_b", 250_000, correlation_id="c1")
+
+    failures = [e for e in log.read_by_correlation("c1")
+                if e.type == CAPTURE_POLL_FAILED]
+    assert len(failures) == 1
+    assert failures[0].payload["settlement_id"] == settlement.settlement_id
+    assert "429" in failures[0].payload["reason"]
+
+
+def test_a_rejected_poll_is_not_recorded_as_a_failed_settlement(log):
+    """SETTLEMENT_FAILED would tell the accountant the exposure closed. It did
+    not — the order is still payable and the money may yet land."""
+    rail = RazorpayRail(log, RefusingLookup(), poll_attempts=1, poll_interval=0)
+
+    rail.settle("mch_1", "m_a", "m_b", 250_000, correlation_id="c1")
+
+    types = [e.type for e in log.read_by_correlation("c1")]
+    assert SETTLEMENT_INITIATED in types
+    assert SETTLEMENT_FAILED not in types
+    assert SETTLEMENT_COMPLETED not in types
+
+
+def test_a_rejected_poll_stops_polling_rather_than_retrying_into_the_limit(log):
+    """Retrying a rate limit is how a rate limit becomes a ban. One rejection
+    ends the polling for this settlement; `reconcile` picks it up later."""
+    client = RefusingLookup()
+    rail = RazorpayRail(log, client, poll_attempts=3, poll_interval=0)
+
+    rail.settle("mch_1", "m_a", "m_b", 250_000, correlation_id="c1")
+
+    assert client.lookups == 1

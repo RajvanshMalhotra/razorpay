@@ -824,3 +824,154 @@ def test_two_mints_against_one_settlement_are_a_violation(log):
     violations = Accountant(log, FakeRazorpay()).assert_invariants()
 
     assert any(v.kind == "duplicate_mint" for v in violations)
+
+
+# --- one rejected lookup is not a failed sweep -----------------------------
+#
+# `reconcile` issues a Razorpay round-trip per outstanding settlement. Over a
+# long run that is hundreds of calls against the one external service whose
+# rate limits the design lists as a known unknown, and a single 429 used to
+# raise out of the whole pass with only part of the market examined — the
+# settlements after it in the log being no more suspect than the ones before.
+
+
+class RefusingOne:
+    """A Razorpay that answers normally except for one order, which 429s.
+
+    Wraps the corrected `FakeRazorpay` so every path but the refused one keeps
+    the behaviour that was verified against live test mode.
+    """
+
+    def __init__(self, refuse_order_id, payments_by_order=None):
+        self._inner = FakeRazorpay(payments_by_order=payments_by_order or {})
+        self._refuse = refuse_order_id
+        self.asked = []
+        self.order = self._Orders(self)
+        self.payment_link = self._inner.payment_link
+
+    class _Orders:
+        def __init__(self, outer):
+            self._outer = outer
+
+        def create(self, data):
+            return self._outer._inner.order.create(data)
+
+        def payments(self, order_id):
+            self._outer.asked.append(order_id)
+            if order_id == self._outer._refuse:
+                raise RuntimeError("429 Too Many Requests")
+            return self._outer._inner.order.payments(order_id)
+
+
+def test_one_rejected_lookup_does_not_abort_the_sweep(log):
+    """The settlements after the rejected one still get checked. A pass that
+    stops at the first rate limit leaves the rest of the market unexamined and
+    the failure demo blind."""
+    _initiated(log, "stl_1", "order_1", corr="c1", match_id="mch_1")
+    _initiated(log, "stl_2", "order_2", corr="c2", match_id="mch_2")
+    _initiated(log, "stl_3", "order_3", corr="c3", match_id="mch_3")
+    client = RefusingOne("order_1", payments_by_order={
+        "order_3": {"count": 1, "items": [{"id": "pay_3", "status": "captured"}]},
+    })
+
+    result = Accountant(log, client).reconcile()
+
+    assert client.asked == ["order_1", "order_2", "order_3"]
+    assert [d.settlement_id for d in result.drifts] == ["stl_3"]
+
+
+def test_a_rejected_lookup_is_reported_as_unchecked_not_as_a_finding(log):
+    """The books may agree or disagree; this pass does not know which.
+    Inventing a drift from a rate limit would make the failure demo fire on a
+    network condition."""
+    _initiated(log, "stl_1", "order_1", corr="c1", match_id="mch_1")
+
+    result = Accountant(log, RefusingOne("order_1")).reconcile()
+
+    assert result.drifts == []
+    assert result.unbacked == []
+    assert len(result.unchecked) == 1
+    assert result.unchecked[0].settlement_id == "stl_1"
+    assert "429" in result.unchecked[0].reason
+
+
+def test_a_rejected_lookup_lands_on_the_trades_own_thread(log):
+    """Filed under the reconciliation index it would be discoverable only by
+    someone who already knew to look."""
+    _initiated(log, "stl_1", "order_1", corr="c1", match_id="mch_1")
+
+    Accountant(log, RefusingOne("order_1")).reconcile()
+
+    failures = [e for e in log.read_by_correlation("c1")
+                if e.type == "RECONCILE_CHECK_FAILED"]
+    assert len(failures) == 1
+    assert failures[0].payload["settlement_id"] == "stl_1"
+    assert failures[0].payload["local_status"] == "PENDING"
+
+
+def test_a_settlement_nobody_could_ask_about_is_checked_again_next_pass(log):
+    """Nothing is confirmed by a failed look, so the watermark must not skip it."""
+    _initiated(log, "stl_1", "order_1", corr="c1", match_id="mch_1")
+    client = RefusingOne("order_1")
+
+    Accountant(log, client).reconcile()
+    Accountant(log, client).reconcile()
+
+    assert client.asked == ["order_1", "order_1"]
+
+
+def test_a_rejected_lookup_does_not_make_the_pass_look_finished(log):
+    """`clean` answers 'do the books disagree anywhere I could see' — which is
+    not 'everything was checked'. A caller that needs both must ask for both."""
+    _initiated(log, "stl_1", "order_1", corr="c1", match_id="mch_1")
+
+    result = Accountant(log, RefusingOne("order_1")).reconcile()
+
+    assert result.clean is True
+    assert result.unchecked, "the pass was incomplete and must say so"
+
+
+# --- one decision per match, checked by the auditor too --------------------
+
+
+def test_two_policy_decisions_under_one_action_ref_are_a_violation(log):
+    """`ungated_settlement` joins settlements to decisions on the match, and a
+    join is only as sound as the uniqueness of its key. Both writers refuse a
+    second decision; this recomputes the property from a full read of the log,
+    so one that slipped past a guard is named rather than hidden."""
+    log.append(GATE_ACTOR_ID, POLICY_DECIDED,
+               {"action_ref": "mch_1", "verdict": "DENY"}, correlation_id="c1")
+    log.append(GATE_ACTOR_ID, POLICY_DECIDED,
+               {"action_ref": "mch_1", "verdict": "ALLOW"}, correlation_id="c1")
+
+    kinds = [v.kind for v in Accountant(log, None).assert_invariants()]
+
+    assert "duplicate_decision" in kinds
+
+
+def test_a_merchants_own_refusal_counts_towards_the_same_rule(log):
+    """A merchant may legitimately write a POLICY_DECIDED — `_log_refusal`
+    does, so a refusal reads in the gate's vocabulary. A check that only
+    counted the gate's own would miss exactly the half that was reachable."""
+    log.append(GATE_ACTOR_ID, POLICY_DECIDED,
+               {"action_ref": "mch_1", "verdict": "DENY"}, correlation_id="c1")
+    log.append("m_buyer", POLICY_DECIDED,
+               {"action_ref": "mch_1", "verdict": "DENY"}, correlation_id="c1")
+
+    kinds = [v.kind for v in Accountant(log, None).assert_invariants()]
+
+    assert "duplicate_decision" in kinds
+
+
+def test_a_deny_and_an_allow_on_different_matches_are_not_a_duplicate(log):
+    """A merchant capped on a full lot and retrying smaller writes two
+    decisions on one correlation. `matching.resize` gives the retry its own
+    match_id, and that is the id this rule is about."""
+    log.append(GATE_ACTOR_ID, POLICY_DECIDED,
+               {"action_ref": "mch_1", "verdict": "DENY"}, correlation_id="c1")
+    log.append(GATE_ACTOR_ID, POLICY_DECIDED,
+               {"action_ref": "mch_2", "verdict": "ALLOW"}, correlation_id="c1")
+
+    kinds = [v.kind for v in Accountant(log, None).assert_invariants()]
+
+    assert "duplicate_decision" not in kinds

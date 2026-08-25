@@ -1,11 +1,13 @@
 import pytest
 
 from exchange.agents.negotiation import (
+    MAX_MODEL_CALLS,
     Offer,
     gap_stalled,
     negotiate,
     parse_offer,
 )
+from exchange.llm.base import LLMResponse
 from exchange.llm.scripted import ScriptedProvider
 
 
@@ -167,3 +169,158 @@ def test_a_provider_failure_still_ends_the_negotiation_in_the_log():
 
     assert journal.entries[0][0] == "opened"
     assert journal.entries[-1] == ("ended", False, None, "error: RuntimeError")
+
+
+# --- the hard call cap: the one bound the provider cannot defeat ------------
+#
+# `spent` accumulates `input_tokens + output_tokens`, and `openai_compat`
+# reports 0 for both when the response carries no `usage` block — a gateway, a
+# proxy, a streaming path. With that field absent the token budget was a
+# counter that never advanced, and an unparseable reply appends no offer, so
+# `gap_stalled` could not fire either. Measured against the pre-fix source:
+# 5,000 model calls without terminating, on a paid API.
+#
+# So these tests are about money. They pin the cap that stops a market run
+# spending without a ceiling, and they must keep failing if it is ever removed.
+
+
+class ZeroUsageProvider:
+    """A provider that never converges AND reports no usage at all.
+
+    HONEST ABOUT REPORTING NOTHING: `input_tokens` and `output_tokens` are
+    literally 0, which is exactly what `openai_compat` produces from a
+    response with no `usage` block. A stub that quietly reported a token or
+    two would let the token budget end the loop and the test would pass
+    without the cap existing — the "fake kinder than the real thing" failure
+    this project has already paid for twice.
+
+    `limit` is a tripwire, not a bound under test: it exists so that a build
+    WITHOUT the cap fails the test in finite time instead of hanging forever.
+    It is set far above `MAX_MODEL_CALLS`, so a correct loop never reaches it.
+    """
+
+    def __init__(self, text: str, limit: int = 200) -> None:
+        self.text = text
+        self.limit = limit
+        self.calls = 0
+
+    def complete(self, messages, *, system=None, max_tokens=1024,
+                 reasoning_effort=None):
+        self.calls += 1
+        if self.calls > self.limit:
+            raise AssertionError(
+                f"runaway negotiation: {self.calls} model calls with no "
+                "termination — the call cap is missing or not being counted"
+            )
+        return LLMResponse(
+            text=self.text, input_tokens=0, output_tokens=0, model="zero-usage",
+        )
+
+
+def test_the_stub_really_does_report_zero_usage():
+    """Guards the two tests below. If this provider ever charged tokens they
+    would pass on the token budget rather than on the call cap, and the thing
+    under test would be untested."""
+    response = ZeroUsageProvider("no price here").complete([])
+
+    assert response.input_tokens == 0
+    assert response.output_tokens == 0
+
+
+def test_a_provider_that_reports_no_tokens_still_terminates():
+    """The audit's runaway, bounded. Unparseable replies append no offer, so
+    neither the stall check nor the agents' own reasoning can end this; with
+    zero-token responses the budget never advances either. Only a cap counted
+    on calls THIS LOOP made can stop it."""
+    buyer = ZeroUsageProvider("thinking about it")
+    seller = ZeroUsageProvider("let me consider")
+
+    outcome = negotiate("m_buyer", "m_seller", buyer, seller,
+                        opening_price=2000, buyer_limit=2200, seller_floor=1800)
+
+    assert buyer.calls + seller.calls == MAX_MODEL_CALLS
+    assert outcome.ended_reason == f"call limit reached ({MAX_MODEL_CALLS} model calls)"
+
+
+def test_the_cap_ends_the_negotiation_as_a_result_not_as_an_exception():
+    """A negotiation that ran out of patience is an ordinary market outcome and
+    goes into the log in the same shape as a walk-away. Never an exception —
+    no caller in the repo catches one — and never silence, which would leave a
+    NEGOTIATION_OPENED with nothing after it."""
+    buyer = ZeroUsageProvider("still thinking")
+    seller = ZeroUsageProvider("still considering")
+
+    class RecordingJournal:
+        def __init__(self):
+            self.entries = []
+
+        def negotiation_opened(self, counterparty_id, opening_price):
+            self.entries.append(("opened", counterparty_id, opening_price))
+
+        def negotiation_round(self, actor_id, price, message):
+            self.entries.append(("round", actor_id, price))
+
+        def negotiation_ended(self, agreed, final_price, reason):
+            self.entries.append(("ended", agreed, final_price, reason))
+
+    journal = RecordingJournal()
+
+    outcome = negotiate("m_buyer", "m_seller", buyer, seller,
+                        opening_price=2000, buyer_limit=2200, seller_floor=1800,
+                        journal=journal)
+
+    # The walk-away shape: no agreement, no price, and a reason that says why.
+    assert outcome.agreed is False
+    assert outcome.final_price is None
+    assert "call limit reached" in outcome.ended_reason
+    # Recorded, not merely returned.
+    assert journal.entries[0][0] == "opened"
+    assert journal.entries[-1] == ("ended", False, None, outcome.ended_reason)
+
+
+def test_the_cap_is_counted_on_calls_not_on_a_figure_the_provider_supplies():
+    """The whole point of the fix. The previous bound was the provider's own
+    token report; this one is a count of calls this loop made, which nothing
+    outside the loop contributes to."""
+    buyer = ZeroUsageProvider("no price")
+    seller = ZeroUsageProvider("no price either")
+
+    negotiate("m_buyer", "m_seller", buyer, seller,
+              opening_price=2000, buyer_limit=2200, seller_floor=1800,
+              max_calls=4)
+
+    assert buyer.calls + seller.calls == 4
+
+
+def test_a_healthy_negotiation_is_untouched_by_the_cap():
+    """The cap is a backstop, not a design parameter. A normal haggle ends on
+    agreement in a handful of calls and never sees it — if this starts failing,
+    the fault is upstream in the prompt or the model tier."""
+    buyer = ScriptedProvider(["PRICE: 1900 — that is my offer."])
+    seller = ScriptedProvider(["PRICE: 1900 — agreed."])
+
+    outcome = negotiate("m_buyer", "m_seller", buyer, seller,
+                        opening_price=2000, buyer_limit=2200, seller_floor=1800)
+
+    assert outcome.agreed is True
+    assert outcome.final_price == 1900
+    assert outcome.ended_reason == "agreed"
+    assert len(buyer.calls) + len(seller.calls) < MAX_MODEL_CALLS
+
+
+def test_a_zero_token_call_is_charged_rather_than_treated_as_free():
+    """A call that reports no cost still costs money, and 'free' is the one
+    thing it certainly was not. With every response reporting zero usage, a
+    small budget must still be exhausted — otherwise the budget is decorative
+    whenever the provider omits `usage`."""
+    buyer = ZeroUsageProvider("no price")
+    seller = ZeroUsageProvider("no price either")
+
+    outcome = negotiate("m_buyer", "m_seller", buyer, seller,
+                        opening_price=2000, buyer_limit=2200, seller_floor=1800,
+                        token_budget=1000)
+
+    assert outcome.ended_reason == "token budget exhausted"
+    assert buyer.calls + seller.calls < MAX_MODEL_CALLS, (
+        "the budget must bind before the cap here, or this proves nothing"
+    )

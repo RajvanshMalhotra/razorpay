@@ -22,11 +22,21 @@ GATE_ACTOR_ID = "gate"
 
 @dataclass(frozen=True)
 class PolicyLimits:
+    """The caps. Configuration of the exchange, never an argument of a trade.
+
+    `rolling_window_seconds` is the window `rolling_window_cap` is a cap OVER.
+    It lives here, beside the figure it qualifies, because a cap without its
+    period is not a cap — it was read as "for life" for exactly as long as the
+    field was missing, and a lifetime cap on a persistent log is a cap that
+    runs out and never comes back.
+    """
+
     per_txn_cap: int
     rolling_window_cap: int
     human_approval_threshold: int
     unknown_counterparty_cap: int
     confidence_floor: float = 0.3
+    rolling_window_seconds: int = 3600
 
 
 @dataclass(frozen=True)
@@ -52,11 +62,20 @@ class PolicyContext:
 
 
 # Rupee amounts in paise.
+#
+# ONE HOUR for the rolling window, and the arithmetic that picks it: a typical
+# trade is ~388,000 paise (1,940 x 200) and a merchant makes roughly ten of
+# them in a 1-2 hour run, so ~3.9 lakh paise an hour against a ceiling of 10
+# lakh — comfortable headroom in a healthy run, and a broker that starts
+# looping still hits the cap within the hour. It is also short enough that a
+# tuning re-run started straight after the last one inherits at most one hour
+# of history, which then decays, rather than inheriting everything forever.
 DEFAULT_INR_LIMITS = PolicyLimits(
     per_txn_cap=2_000_000,            # Rs 20,000
     rolling_window_cap=10_000_000,    # Rs 1,00,000
     human_approval_threshold=1_500_000,  # Rs 15,000
     unknown_counterparty_cap=500_000,    # Rs 5,000 — the trial-size bound
+    rolling_window_seconds=3600,
 )
 
 # Points. Deliberately looser: this rail cannot cause real harm.
@@ -65,7 +84,19 @@ DEFAULT_CREDIT_LIMITS = PolicyLimits(
     rolling_window_cap=200_000,
     human_approval_threshold=1_000_000_000,  # effectively never
     unknown_counterparty_cap=50_000,
+    rolling_window_seconds=3600,
 )
+
+
+def _window_phrase(seconds: int) -> str:
+    """The window as a reader of the audit trail would say it."""
+    if seconds % 86_400 == 0:
+        return f"{seconds // 86_400}d"
+    if seconds % 3_600 == 0:
+        return f"{seconds // 3_600}h"
+    if seconds % 60 == 0:
+        return f"{seconds // 60}m"
+    return f"{seconds}s"
 
 
 def evaluate(
@@ -87,6 +118,7 @@ def evaluate(
         "currency": str(currency),
         "per_txn_cap": limits.per_txn_cap,
         "rolling_window_cap": limits.rolling_window_cap,
+        "rolling_window_seconds": limits.rolling_window_seconds,
         "rolling_spend": ctx.rolling_spend,
         "human_approval_threshold": limits.human_approval_threshold,
         "unknown_counterparty_cap": limits.unknown_counterparty_cap,
@@ -131,10 +163,18 @@ def evaluate(
         )
 
     if ctx.rolling_spend + amount > limits.rolling_window_cap:
+        # The window is named in the reason, not just weighed in the decision.
+        # A merchant reading "would breach rolling window cap 10000000 (spent
+        # 9800000)" with no period attached cannot tell a bound that will lift
+        # from a bound that never will, and for as long as the cap was
+        # cumulative the honest reading was the second one.
         return decide(
             Verdict.DENY,
-            f"Amount {amount} would breach rolling window cap "
-            f"{limits.rolling_window_cap} (spent {ctx.rolling_spend})",
+            f"Amount {amount} would breach the rolling window cap "
+            f"{limits.rolling_window_cap} over the last "
+            f"{_window_phrase(limits.rolling_window_seconds)} "
+            f"(spent {ctx.rolling_spend} in that window; it frees up as the "
+            "oldest of those settlements ages out)",
         )
 
     if (

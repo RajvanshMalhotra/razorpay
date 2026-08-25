@@ -51,12 +51,25 @@ class ExchangeState:
     # about the same order.
     posted_orders: dict[str, Order] = field(default_factory=dict)
 
-    # Cumulative committed spend: actor_id -> currency -> minor units. Counted
-    # at SETTLEMENT_INITIATED, against the actor that initiated it — money is
-    # committed the moment the exposure is opened, and a PENDING settlement is
-    # exactly what a cap is meant to bound. Cumulative, not windowed; see
-    # `Exchange._spend_to_date` for why that is safe and what is still owed.
-    spend_to_date: dict[str, dict[str, int]] = field(default_factory=dict)
+    # Committed spend, WITH THE TIME IT WAS COMMITTED:
+    # actor_id -> currency -> ((ts, minor units), ...), oldest first.
+    #
+    # Counted at SETTLEMENT_INITIATED, against the actor that initiated it —
+    # money is committed the moment the exposure is opened, and a PENDING
+    # settlement is exactly what a cap is meant to bound.
+    #
+    # A RUNNING TOTAL CANNOT BE WINDOWED, which is why this is a ledger rather
+    # than the scalar it used to be. The spec always called for a rolling
+    # window; the scalar made the cap cumulative-for-life, so on one persistent
+    # log re-run for tuning a merchant got ~25 typical trades EVER and every
+    # trade after that returned a correct DENY that read like a gate bug.
+    #
+    # `ts` is the EVENT's timestamp, stamped by `EventLog.append`. Nothing a
+    # caller passes reaches it: the party the cap constrains supplies neither
+    # the amount (it comes off the settlement the rail wrote) nor the clock.
+    spend_ledger: dict[str, dict[str, tuple[tuple[str, int], ...]]] = field(
+        default_factory=dict
+    )
 
     # Every action_ref that has already carried a POLICY_DECIDED. This backs a
     # CORRECTNESS check, not a convenience one: `assert_invariants` joins
@@ -65,6 +78,26 @@ class ExchangeState:
     decided_action_refs: frozenset[str] = field(default_factory=frozenset)
 
     event_offset: int = 0
+
+    @property
+    def spend_to_date(self) -> dict[str, dict[str, int]]:
+        """Lifetime committed spend per actor per currency, summed from the ledger.
+
+        A DERIVED VIEW, not a second source of truth — it is computed from
+        `spend_ledger` on every read, so it cannot drift from it, and it is not
+        a dataclass field so it plays no part in the equality the accountant's
+        `projection_drift` check rests on.
+
+        Reporting only. THE GATE DOES NOT READ THIS: a lifetime figure is not
+        the bound the spec asks for. See `Exchange._spend_to_date`.
+        """
+        return {
+            actor: {
+                currency: sum(amount for _, amount in entries)
+                for currency, entries in by_currency.items()
+            }
+            for actor, by_currency in self.spend_ledger.items()
+        }
 
 
 def fold(events: Iterable[Event]) -> ExchangeState:
@@ -98,8 +131,11 @@ def fold_from(state: ExchangeState, events: Iterable[Event]) -> ExchangeState:
     settlements: dict[str, Settlement] = dict(state.settlements)
     matches: dict[str, Match] = dict(state.matches)
     posted_orders: dict[str, Order] = dict(state.posted_orders)
-    spend: dict[str, dict[str, int]] = {
-        actor: dict(by_currency) for actor, by_currency in state.spend_to_date.items()
+    # Shallow: the per-currency values are immutable tuples, so only the two
+    # dict levels are copied. Extending one costs a tuple concatenation, and
+    # only on a settlement — the same shape the running total had.
+    spend: dict[str, dict[str, tuple[tuple[str, int], ...]]] = {
+        actor: dict(by_currency) for actor, by_currency in state.spend_ledger.items()
     }
     decided: set[str] = set(state.decided_action_refs)
     offset = state.event_offset
@@ -219,12 +255,13 @@ def fold_from(state: ExchangeState, events: Iterable[Event]) -> ExchangeState:
             # Exposure is committed here, so this is where the cap's usage
             # figure accrues — against the actor that INITIATED it (the event's
             # actor, which both rails set to the payer), on the currency the
-            # payload names. Read only from the payload and the envelope: no
-            # key beyond the ones this branch already requires, so the fold
-            # gains no new way to raise.
+            # payload names, AT THE TIME THE ENVELOPE RECORDS. Read only from
+            # the payload and the envelope: no key beyond the ones this branch
+            # already requires, so the fold gains no new way to raise.
             spend.setdefault(event.actor_id, {})
             spend[event.actor_id][p["currency"]] = (
-                spend[event.actor_id].get(p["currency"], 0) + p["amount"]
+                spend[event.actor_id].get(p["currency"], ())
+                + ((event.ts, p["amount"]),)
             )
 
         elif event.type == ev.SETTLEMENT_COMPLETED:
@@ -326,7 +363,7 @@ def fold_from(state: ExchangeState, events: Iterable[Event]) -> ExchangeState:
         settlements=settlements,
         matches=matches,
         posted_orders=posted_orders,
-        spend_to_date=spend,
+        spend_ledger=spend,
         decided_action_refs=frozenset(decided),
         event_offset=offset,
     )

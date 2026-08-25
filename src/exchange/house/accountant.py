@@ -553,9 +553,36 @@ class Accountant:
                     f"{e.actor_id} wrote its own ALLOW for "
                     f"{e.payload.get('action_ref')}; only the gate may permit",
                 ))
-        decided = {
-            e.payload["action_ref"] for e in events if e.type == ev.POLICY_DECIDED
-        }
+        # ONE DECISION PER action_ref, checked here rather than only guarded at
+        # the two places that write one. `ungated_settlement` above joins
+        # settlements to decisions on the match, and every join is only as sound
+        # as the uniqueness of its key: two POLICY_DECIDED under one action_ref
+        # make "was this match allowed?" a question with two answers, and the
+        # auditor would silently take whichever it met first.
+        #
+        # Both writers refuse a second decision — `Exchange.execute_match` for
+        # the gate, `Broker._log_refusal` for a merchant's own refusal — so this
+        # should never fire. That is the point of having it: those guards read
+        # `decided_action_refs` from a projection, and this recomputes the same
+        # property from a full read of the log, so a decision that slipped past
+        # a guard is NAMED by the audit rather than hidden by it. The same
+        # backstop shape as `duplicate_mint`, and named to match it.
+        #
+        # WHOEVER WROTE THEM. A merchant may legitimately write a
+        # POLICY_DECIDED, so a check that only counted the gate's own would
+        # miss exactly the half that was reachable.
+        decided: set[str] = set()
+        for e in events:
+            if e.type != ev.POLICY_DECIDED:
+                continue
+            ref = e.payload.get("action_ref")
+            if ref in decided:
+                violations.append(Violation(
+                    "duplicate_decision",
+                    f"match {ref} carries more than one POLICY_DECIDED; the "
+                    "settlement-to-decision join is only sound while it is unique",
+                ))
+            decided.add(ref)
         for e in events:
             if e.type != ev.SETTLEMENT_INITIATED:
                 continue

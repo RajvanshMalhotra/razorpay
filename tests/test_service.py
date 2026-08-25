@@ -1,3 +1,5 @@
+from datetime import datetime, timedelta, timezone
+
 import pytest
 
 from exchange.eventlog import EventLog
@@ -736,3 +738,341 @@ def test_the_rail_ignores_a_balance_the_caller_asserts_about_itself(exchange):
             "m_liar", "m_seller", generous, correlation_id="c1",
             currency=Currency.CREDITS,
         )
+
+
+# --- the retrieval index is a projection, so a run can resume ---------------
+#
+# The index used to be a plain list on the instance. A second `Exchange` over
+# the same database found the ask in `state().assets`, found it in
+# `open_orders`, and then intersected it with an empty index and returned
+# nothing — SILENTLY. A resumed run read as "the market had no supply", which
+# is the worst way for a bug to present, because it looks like an economics
+# result. The market run these back is hours long and WILL be interrupted.
+
+
+class CountingEmbedder:
+    """`fake_embedder` with a tally of how many texts it was asked to embed.
+
+    The count is the assertion, not the clock. `list_asset` used to hand
+    `HybridIndex.index()` the whole accumulated catalogue on every listing,
+    which re-embeds everything: 90 listings produced 4,095 embedded texts where
+    linear is 90. A timing assertion would be flaky and would not say what went
+    wrong; a count of embedded texts is exactly the quantity that was quadratic.
+    """
+
+    def __init__(self):
+        self.texts_embedded = 0
+        self.calls = 0
+
+    def __call__(self, texts):
+        self.calls += 1
+        self.texts_embedded += len(texts)
+        return fake_embedder(texts)
+
+
+def _seed_supply(ex, asset_id="ast_mailers", order_id="ord_ask"):
+    ex.register_actor(Actor(actor_id="m_seller", kind=ActorKind.MERCHANT))
+    ex.list_asset(Asset(asset_id=asset_id, kind=AssetKind.GOODS,
+                        title="biodegradable mailers compostable poly", spec={},
+                        currency=Currency.INR, origin_actor_id="m_seller"))
+    ex.post_order(Order(order_id=order_id, actor_id="m_seller", side=Side.ASK,
+                        asset_ref=asset_id, asset_query=None, qty=1000,
+                        limit_price=1940, currency=Currency.INR,
+                        expires_at="2026-12-31T00:00:00+00:00", policy_snapshot={}),
+                  correlation_id="c_seed")
+
+
+def _hunt(ex, text="biodegradable compostable mailers"):
+    from exchange.matching import find_candidates
+
+    bid = Order(order_id="ord_bid", actor_id="m_buyer", side=Side.BID,
+                asset_ref=None, asset_query={"text": text}, qty=200,
+                limit_price=2200, currency=Currency.INR,
+                expires_at="2026-12-31T00:00:00+00:00", policy_snapshot={})
+    state = ex.state()
+    asks = [o for o in state.open_orders.values() if o.side == Side.ASK]
+    return find_candidates(bid, asks, state.assets, ex.index)
+
+
+def test_a_fresh_exchange_matches_asks_listed_by_a_previous_one(tmp_path):
+    """The resumed run. Same database, new process, new index — the ask that
+    was listed an hour ago must still be findable, or an interrupted run comes
+    back to an empty-looking market."""
+    db = str(tmp_path / "resume.db")
+
+    first = EventLog(db)
+    ex1 = Exchange(first, HybridIndex(embed_fn=fake_embedder),
+                   RazorpayRail(first, FakeRazorpay()), CreditRail(first))
+    _seed_supply(ex1)
+    assert [m.ask_order_id for m in _hunt(ex1)] == ["ord_ask"]
+    first.close()
+
+    second = EventLog(db)
+    ex2 = Exchange(second, HybridIndex(embed_fn=fake_embedder),
+                   RazorpayRail(second, FakeRazorpay()), CreditRail(second))
+    try:
+        assert [m.ask_order_id for m in _hunt(ex2)] == ["ord_ask"], (
+            "a second Exchange over the same database found no supply for an "
+            "ask that is in the book"
+        )
+    finally:
+        second.close()
+
+
+def test_a_fresh_exchange_rebuilds_the_index_from_the_log(tmp_path):
+    """The mechanism behind the test above, asserted directly: the index is
+    folded out of `state().assets`, not remembered by the process that listed."""
+    db = str(tmp_path / "resume2.db")
+
+    first = EventLog(db)
+    ex1 = Exchange(first, HybridIndex(embed_fn=fake_embedder),
+                   RazorpayRail(first, FakeRazorpay()), CreditRail(first))
+    _seed_supply(ex1)
+    ex1.list_asset(Asset(asset_id="ast_boxes", kind=AssetKind.GOODS,
+                         title="corrugated kraft boxes recyclable", spec={},
+                         currency=Currency.INR, origin_actor_id="m_seller"))
+    first.close()
+
+    second = EventLog(db)
+    ex2 = Exchange(second, HybridIndex(embed_fn=fake_embedder),
+                   RazorpayRail(second, FakeRazorpay()), CreditRail(second))
+    try:
+        assert ex2.index.size == 2
+    finally:
+        second.close()
+
+
+def test_indexing_cost_is_linear_in_listings_not_quadratic(tmp_path):
+    """90 listings embedded 4,095 texts where linear is 90 — n(n+1)/2. With
+    real weights rather than a stub that is what 30 merchants seeding their
+    inventories pays at startup, and it is genuinely quadratic if the runner
+    lists during rounds. Asserted as a COUNT, never a timing."""
+    log = EventLog(str(tmp_path / "linear.db"))
+    embedder = CountingEmbedder()
+    ex = Exchange(log, HybridIndex(embed_fn=embedder),
+                  RazorpayRail(log, FakeRazorpay()), CreditRail(log))
+    try:
+        listings = 30
+        for i in range(listings):
+            ex.list_asset(Asset(
+                asset_id=f"ast_{i}", kind=AssetKind.GOODS,
+                title=f"biodegradable mailers batch {i}", spec={},
+                currency=Currency.INR, origin_actor_id="m_seller",
+            ))
+
+        assert ex.index.size == listings
+        assert embedder.texts_embedded == listings, (
+            f"{listings} listings embedded {embedder.texts_embedded} texts; "
+            f"linear is {listings}, quadratic is {listings * (listings + 1) // 2}"
+        )
+    finally:
+        log.close()
+
+
+def test_relisting_an_asset_does_not_duplicate_it_in_the_index(tmp_path):
+    """The index is folded from `state().assets`, which is keyed by asset_id,
+    so a runner that re-lists its inventory on resume is idempotent rather than
+    doubling the corpus every run."""
+    log = EventLog(str(tmp_path / "relist.db"))
+    embedder = CountingEmbedder()
+    ex = Exchange(log, HybridIndex(embed_fn=embedder),
+                  RazorpayRail(log, FakeRazorpay()), CreditRail(log))
+    try:
+        asset = Asset(asset_id="ast_mailers", kind=AssetKind.GOODS,
+                      title="biodegradable mailers compostable poly", spec={},
+                      currency=Currency.INR, origin_actor_id="m_seller")
+        ex.list_asset(asset)
+        ex.list_asset(asset)
+
+        assert ex.index.size == 1
+        assert embedder.texts_embedded == 1
+    finally:
+        log.close()
+
+
+# --- a rejected capture poll must not kill the run -------------------------
+
+
+def test_an_allow_still_resolves_when_the_capture_poll_is_rejected(tmp_path):
+    """The shape that killed the run: SETTLEMENT_INITIATED is already written
+    when the poll fires, so a 429 there used to propagate out of
+    `execute_match` and leave an ALLOW with no outcome and a dead process."""
+    from tests.test_rails import RefusingLookup
+
+    log = EventLog(str(tmp_path / "poll.db"))
+    ex = Exchange(log, HybridIndex(embed_fn=fake_embedder),
+                  RazorpayRail(log, RefusingLookup(), poll_attempts=1,
+                               poll_interval=0),
+                  CreditRail(log))
+    try:
+        decision, settlement = ex.execute_match(
+            MATCH, "m_buyer", "m_seller", TRUSTED, correlation_id="c1")
+
+        assert decision.verdict == Verdict.ALLOW
+        assert settlement is not None, "the ALLOW resolved to nothing"
+        assert settlement.status == SettlementStatus.PENDING
+        types = [e.type for e in log.read_by_correlation("c1")]
+        assert "CAPTURE_POLL_FAILED" in types
+    finally:
+        log.close()
+
+
+# --- the rolling spend cap is a WINDOW, and the gate derives it ------------
+#
+# `_spend_to_date` used to sum every settlement ever initiated. `runs/*.db`
+# survives every tuning re-run, so a lifetime cap of 10,00,000 paise is about
+# twenty-five typical trades EVER: it binds partway through the third run and
+# every trade after it is a correct DENY that reads like a broken gate.
+
+
+def _append_at(log, ts, actor_id, type, payload, correlation_id):
+    """Append an event stamped at a chosen time, straight through SQLite.
+
+    The window can only be tested by a log that HOLDS an old event, and the
+    log is append-only by database trigger, so an existing row cannot be
+    re-dated. INSERT is permitted — only UPDATE and DELETE raise — so this
+    writes the row a previous run would have written, with that run's
+    timestamp. Nothing here weakens the append-only guarantee; it is the same
+    operation `EventLog.append` performs, with the clock supplied.
+    """
+    import json
+
+    log._conn.execute(
+        "INSERT INTO events (event_id, ts, actor_id, type, payload, "
+        "causation_id, correlation_id) VALUES (?, ?, ?, ?, ?, ?, ?)",
+        (f"evt_backdated_{ts}", ts, actor_id, type, json.dumps(payload),
+         None, correlation_id),
+    )
+    log._conn.commit()
+
+
+def _windowed_exchange(tmp_path, window_seconds, cap=250_000):
+    log = EventLog(str(tmp_path / "window.db"))
+    fake = FakeRazorpay()
+    limits = PolicyLimits(
+        per_txn_cap=200_000,
+        rolling_window_cap=cap,
+        human_approval_threshold=1_000_000_000,
+        unknown_counterparty_cap=1_000_000_000,
+        rolling_window_seconds=window_seconds,
+    )
+    ex = Exchange(log, HybridIndex(embed_fn=fake_embedder),
+                  RazorpayRail(log, fake, poll_attempts=1, poll_interval=0),
+                  CreditRail(log), inr_limits=limits)
+    return log, ex
+
+
+def test_spend_older_than_the_window_no_longer_binds(tmp_path):
+    """Two trades that would breach a cumulative cap do not breach a windowed
+    one when the first has aged out. Written straight to the log with an old
+    timestamp, because that is the only thing that distinguishes the two
+    designs."""
+    log, ex = _windowed_exchange(tmp_path, window_seconds=3600)
+    try:
+        two_hours_ago = (
+            datetime.now(timezone.utc) - timedelta(hours=2)
+        ).isoformat()
+        _append_at(log, two_hours_ago, "m_buyer", SETTLEMENT_INITIATED, {
+            "settlement_id": "stl_old", "match_id": "mch_old", "currency": "INR",
+            "amount": 150_000, "razorpay_order_id": "order_old",
+        }, correlation_id="c_old")
+        # Sanity: the lifetime figure still sees it. Only the window does not.
+        assert ex.state().spend_to_date["m_buyer"]["INR"] == 150_000
+
+        decision, settlement = ex.execute_match(
+            Match("mch_new", "ord_bid", "ord_ask", 300, 500, 0.9, "test"),
+            "m_buyer", "m_seller", TRUSTED, correlation_id="c_new")
+
+        assert decision.verdict == Verdict.ALLOW, decision.reason
+        assert settlement is not None
+        assert decision.limits_evaluated["rolling_spend"] == 0
+    finally:
+        log.close()
+
+
+def test_spend_inside_the_window_still_binds(tmp_path):
+    """The other half. Windowing must not become 'no cap at all' — a merchant
+    that spends the cap within the hour is still refused."""
+    log, ex = _windowed_exchange(tmp_path, window_seconds=3600)
+    try:
+        first, _ = ex.execute_match(
+            Match("mch_1", "ord_bid", "ord_ask", 300, 500, 0.9, "test"),
+            "m_buyer", "m_seller", TRUSTED, correlation_id="c1")
+        assert first.verdict == Verdict.ALLOW
+
+        second, settlement = ex.execute_match(
+            Match("mch_2", "ord_bid", "ord_ask", 300, 500, 0.9, "test"),
+            "m_buyer", "m_seller", TRUSTED, correlation_id="c2")
+
+        assert second.verdict == Verdict.DENY
+        assert settlement is None
+        assert second.limits_evaluated["rolling_spend"] == 150_000
+    finally:
+        log.close()
+
+
+def test_the_deny_names_the_window_it_is_measured_over(tmp_path):
+    """A merchant reading a cap with no period attached cannot tell a bound
+    that will lift from one that never will."""
+    log, ex = _windowed_exchange(tmp_path, window_seconds=3600)
+    try:
+        ex.execute_match(
+            Match("mch_1", "ord_bid", "ord_ask", 300, 500, 0.9, "test"),
+            "m_buyer", "m_seller", TRUSTED, correlation_id="c1")
+        decision, _ = ex.execute_match(
+            Match("mch_2", "ord_bid", "ord_ask", 300, 500, 0.9, "test"),
+            "m_buyer", "m_seller", TRUSTED, correlation_id="c2")
+
+        assert "1h" in decision.reason
+        assert decision.limits_evaluated["rolling_window_seconds"] == 3600
+    finally:
+        log.close()
+
+
+def test_the_window_is_configuration_not_something_the_caller_can_widen(tmp_path):
+    """A cap the actor supplies its own usage figure for is not a cap, and the
+    same is true of the period that figure is measured over. `execute_match`
+    takes no window; it reads the exchange's own limits."""
+    import inspect
+
+    signature = inspect.signature(Exchange.execute_match)
+    assert "window" not in " ".join(signature.parameters)
+    assert "limits" not in signature.parameters
+
+    log, ex = _windowed_exchange(tmp_path, window_seconds=3600)
+    try:
+        ex.execute_match(
+            Match("mch_1", "ord_bid", "ord_ask", 300, 500, 0.9, "test"),
+            "m_buyer", "m_seller", TRUSTED, correlation_id="c1")
+        # A context claiming no spend at all changes nothing: the figure is
+        # re-derived from the log either way.
+        liar = PolicyContext(actor_status=ActorStatus.ACTIVE, rolling_spend=0,
+                             counterparty_confidence=0.9)
+        decision, _ = ex.execute_match(
+            Match("mch_2", "ord_bid", "ord_ask", 300, 500, 0.9, "test"),
+            "m_buyer", "m_seller", liar, correlation_id="c2")
+
+        assert decision.verdict == Verdict.DENY
+        assert decision.limits_evaluated["rolling_spend"] == 150_000
+    finally:
+        log.close()
+
+
+def test_an_unreadable_timestamp_counts_against_the_cap(tmp_path):
+    """Wrong in the direction of refusing, which is the only direction a cap
+    may be wrong in. A timestamp nobody can parse is not evidence of headroom."""
+    log, ex = _windowed_exchange(tmp_path, window_seconds=1)
+    try:
+        _append_at(log, "not-a-timestamp", "m_buyer", SETTLEMENT_INITIATED, {
+            "settlement_id": "stl_odd", "match_id": "mch_odd", "currency": "INR",
+            "amount": 150_000, "razorpay_order_id": "order_odd",
+        }, correlation_id="c_odd")
+
+        decision, _ = ex.execute_match(
+            Match("mch_new", "ord_bid", "ord_ask", 300, 500, 0.9, "test"),
+            "m_buyer", "m_seller", TRUSTED, correlation_id="c_new")
+
+        assert decision.verdict == Verdict.DENY
+        assert decision.limits_evaluated["rolling_spend"] == 150_000
+    finally:
+        log.close()

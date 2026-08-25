@@ -24,6 +24,7 @@ other half of the economy and the settlement is the moment it is established.
 from __future__ import annotations
 
 from dataclasses import asdict, replace
+from datetime import datetime, timedelta, timezone
 
 from exchange import events as ev
 from exchange import policy
@@ -231,8 +232,12 @@ class Exchange:
         )
 
         # Derived from the log, never taken from the caller. A cap the actor
-        # supplies its own usage figure for is not a cap.
-        spent = self._spend_to_date(buyer_id, currency)
+        # supplies its own usage figure for is not a cap — and the window it is
+        # measured over comes from this exchange's configured limits, not from
+        # anything the caller sent.
+        spent = self._spend_to_date(
+            buyer_id, currency, limits.rolling_window_seconds
+        )
 
         # Same reasoning, same authority: a status the actor asserts about
         # itself is not a status. The accountant freezes a merchant by
@@ -432,28 +437,45 @@ class Exchange:
         actor = self.state().actors.get(actor_id)
         return actor.status if actor is not None else ActorStatus.ACTIVE
 
-    def _spend_to_date(self, actor_id: str, currency: Currency) -> int:
-        """Total this actor has already committed on this rail, read from the log.
+    def _spend_to_date(
+        self, actor_id: str, currency: Currency, window_seconds: int
+    ) -> int:
+        """What this actor has committed on this rail INSIDE THE WINDOW.
 
-        NOTE: this is a *cumulative* spend, not a time-windowed one. The spec
-        calls for a rolling window; summing every settlement ever initiated is
-        strictly tighter than any window over the same log, so the cap can only
-        bind sooner, never later — safe, but not the same thing. The time bound
-        is a later refinement; until it lands the cap is cumulative per actor
-        per currency.
+        A ROLLING WINDOW, which is what the spec always asked for and what this
+        was not. Summing every settlement ever initiated is strictly tighter
+        than any window over the same log, so it looked like the safe
+        simplification — but "tighter" and "correct" part company on a
+        persistent log. `runs/brokers.db` survives every tuning re-run, so a
+        lifetime cap of 10,00,000 paise gave each merchant about twenty-five
+        typical trades EVER: it binds partway through the third run and every
+        trade after it is a well-reasoned DENY that reads exactly like a broken
+        gate. A cap that can only ever be spent, never recovered, does not
+        bound a rate — it sets an expiry date on the exchange.
 
         Counted at SETTLEMENT_INITIATED rather than at completion: money is
         committed the moment a Razorpay order exists, and a settlement sitting
         PENDING is exactly the exposure a cap is meant to bound.
 
-        Folded incrementally rather than summed by scanning: a cumulative total
-        per actor per currency is the shape that folds, and the running total
-        the projection carries is the same sum over the same events. Still
-        derived, still by the gate, still from the log — a cap the actor
-        supplies its own usage figure for is not a cap, and no argument to
-        `execute_match` reaches this number.
+        BOTH HALVES ARE STILL THE GATE'S OWN. The amounts come from
+        SETTLEMENT_INITIATED events the rail wrote; the timestamps are the ones
+        `EventLog.append` stamped on those events; and `now` is read here. The
+        constrained party supplies none of the three, and no argument to
+        `execute_match` reaches this number — the window itself is
+        configuration on the exchange (`PolicyLimits`), set once at wiring
+        time, for the same reason the caps are.
+
+        Summed at read time rather than folded into a running total, because a
+        running total is the one shape a window cannot be recovered from: the
+        scalar this replaced had thrown away exactly the fact the window needs.
+        The cost is the number of settlements this actor has on this rail, not
+        the size of the log.
         """
-        return self.state().spend_to_date.get(actor_id, {}).get(str(currency), 0)
+        cutoff = datetime.now(timezone.utc) - timedelta(seconds=window_seconds)
+        entries = self.state().spend_ledger.get(actor_id, {}).get(str(currency), ())
+        return sum(
+            amount for ts, amount in entries if _parse_ts(ts) >= cutoff
+        )
 
     def _record_fill(self, match: Match, buyer_id: str, seller_id: str,
                      correlation_id: str, causation_id: str) -> None:
@@ -504,6 +526,27 @@ class Exchange:
 def _serialize(record) -> dict:
     """Dataclass to JSON-safe dict. StrEnum members serialize as their value."""
     return {k: (str(v) if hasattr(v, "value") else v) for k, v in asdict(record).items()}
+
+
+def _parse_ts(ts: str) -> datetime:
+    """An event timestamp as a comparable instant.
+
+    `EventLog.append` writes `datetime.now(timezone.utc).isoformat()`, so every
+    row this reads is tz-aware ISO-8601. A row that is not — a hand-written
+    event, a log from another tool — is treated as INSIDE the window rather
+    than as an error, so its amount still counts against the cap. An
+    unreadable timestamp is not evidence that a merchant has room, and the
+    alternative reading (too old to count) would let an unparseable ts buy
+    headroom. Wrong in the direction of refusing, which is the only direction
+    a cap may be wrong in.
+    """
+    try:
+        parsed = datetime.fromisoformat(ts)
+    except (TypeError, ValueError):
+        return datetime.max.replace(tzinfo=timezone.utc)
+    if parsed.tzinfo is None:
+        return parsed.replace(tzinfo=timezone.utc)
+    return parsed
 
 
 def _spec_text(asset: Asset) -> str:
