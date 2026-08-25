@@ -20,6 +20,7 @@ from exchange import events as ev
 from exchange.eventlog import EventLog
 from exchange.ids import new_id
 from exchange.models import Currency, Settlement, SettlementStatus
+from exchange.rails.capture import find_captured_payment
 
 
 class RazorpayRail:
@@ -129,7 +130,7 @@ class RazorpayRail:
         # reconcile alike — must ask about.
         payment_link_url = None
         payment_link_error = None
-        payable_order_id = order["id"]
+        payment_link_id = None
         try:
             link = self._client.payment_link.create({
                 "amount": amount,
@@ -139,9 +140,7 @@ class RazorpayRail:
                 "reference_id": settlement_id,
             })
             payment_link_url = link.get("short_url")
-            # Fall back to our own order if the link reports none: a missing id
-            # here means an unpayable settlement, not a settlement to abandon.
-            payable_order_id = link.get("order_id") or order["id"]
+            payment_link_id = link.get("id")
         except Exception as exc:  # noqa: BLE001 - the order still stands without a link
             payment_link_error = f"{type(exc).__name__}: {exc}"
 
@@ -153,8 +152,8 @@ class RazorpayRail:
                 "match_id": match_id,
                 "currency": str(Currency.INR),
                 "amount": amount,
-                "razorpay_order_id": payable_order_id,
-                "receipt_order_id": order["id"],
+                "razorpay_order_id": order["id"],
+                "payment_link_id": payment_link_id,
                 "payment_link_url": payment_link_url,
                 "payment_link_error": payment_link_error,
             },
@@ -163,7 +162,8 @@ class RazorpayRail:
         )
 
         payment_id = self._await_capture(
-            payable_order_id,
+            order["id"],
+            payment_link_id=payment_link_id,
             settlement_id=settlement_id,
             actor_id=from_actor_id,
             correlation_id=correlation_id,
@@ -176,7 +176,7 @@ class RazorpayRail:
                 currency=Currency.INR,
                 amount=amount,
                 status=SettlementStatus.PENDING,
-                razorpay_order_id=payable_order_id,
+                razorpay_order_id=order["id"],
             )
 
         self._log.append(
@@ -193,13 +193,14 @@ class RazorpayRail:
             currency=Currency.INR,
             amount=amount,
             status=SettlementStatus.COMPLETED,
-            razorpay_order_id=payable_order_id,
+            razorpay_order_id=order["id"],
             razorpay_payment_id=payment_id,
         )
 
     def _await_capture(
         self,
         razorpay_order_id: str,
+        payment_link_id: str | None,
         settlement_id: str,
         actor_id: str,
         correlation_id: str,
@@ -227,7 +228,11 @@ class RazorpayRail:
         """
         for attempt in range(self._poll_attempts):
             try:
-                payments = self._client.order.payments(razorpay_order_id)
+                found = find_captured_payment(
+                    self._client,
+                    payment_link_id=payment_link_id,
+                    razorpay_order_id=razorpay_order_id,
+                )
             except Exception as exc:  # noqa: BLE001 - a failed look, not a failed payment
                 self._log.append(
                     actor_id,
@@ -242,9 +247,8 @@ class RazorpayRail:
                     causation_id=causation_id,
                 )
                 return None
-            for item in payments.get("items", []):
-                if item.get("status") == "captured":
-                    return item["id"]
+            if found:
+                return found
             if attempt < self._poll_attempts - 1:
                 time.sleep(self._poll_interval)
         return None

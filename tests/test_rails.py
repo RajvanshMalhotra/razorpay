@@ -22,28 +22,31 @@ def log(tmp_path):
 
 
 def link_order_for(receipt_order_id: str) -> str:
-    """The order a payment link mints for a given receipt order.
+    """The order a paid link mints, named after the settlement it belongs to.
 
-    Real payment links create their own order and a payment against the link
-    lands THERE, never on the order we created ourselves. Tests declare
-    payments per settlement in the readable way (`{"order_1": ...}`) and this
-    is where that settlement's money actually shows up.
+    Real payment links create their own order WHEN SOMEONE PAYS, and the
+    payment lands there — never on the order we created ourselves.
     """
     return f"{receipt_order_id}_plink"
 
 
 class FakeRazorpay:
-    """Stands in for razorpay.Client. `payments_by_order` drives the outcome.
+    """Stands in for razorpay.Client, and models the two-phase link.
 
-    `payments_by_order` is keyed by the RECEIPT order id — the one
-    `order.create` returns — because that is what a test can predict. But the
-    fake only ever SERVES those payments under the link's order, because that
-    is the only place a real payment can be: asking about the receipt order
-    returns `{"count": 0, "items": []}` forever, exactly as live test mode did.
+    `payments_by_order` is keyed by the RECEIPT order id — what `order.create`
+    returns — because that is what a test can predict. It means "this
+    settlement got paid". Where that payment becomes VISIBLE is the part that
+    matters, and it mirrors live test mode exactly:
 
-    That asymmetry is the point. The old fake omitted `order_id` from the link
-    entirely, so the rail polled an unpayable order and every test still
-    passed. A stub easier than the real thing tests the stub.
+        payment_link.create(...)   -> id, short_url.  No order_id, no payments.
+        payment_link.fetch(id)     -> order_id and payments, once paid.
+        order.payments(our_order)  -> count 0, forever.
+
+    Two wrong fixes came from a fake that was kinder than this. The first
+    version omitted `order_id` from the link entirely, so the rail polled an
+    unpayable order and the suite stayed green. The second returned `order_id`
+    at CREATE time, which the real API does not, so the suite went green on a
+    fix that could not work. A stub easier than the real thing tests the stub.
     """
 
     def __init__(self, payments_by_order=None, fail_on_create=False,
@@ -56,8 +59,14 @@ class FakeRazorpay:
         self.last_receipt_order_id = None
         self.link_order_id = None
         self.polled = []
+        self.links_fetched = []
+        self._link_receipts = {}
         self.order = self._Orders(self)
         self.payment_link = self._PaymentLinks(self)
+
+    def _paid_for(self, receipt_order_id):
+        """What this settlement was paid, if anything."""
+        return self._payments.get(receipt_order_id)
 
     class _Orders:
         def __init__(self, outer):
@@ -72,12 +81,10 @@ class FakeRazorpay:
             return {"id": order_id, "amount": data["amount"], "status": "created"}
 
         def payments(self, order_id):
-            # Served under the declared id AND its link form. Tests that drive
-            # the rail get the link's order (where a real payment lands); tests
-            # that write a settlement straight into the log and reconcile it
-            # ask about the id they wrote. `polled` records what was actually
-            # asked, which is what pins the rail's behaviour.
             self._outer.polled.append(order_id)
+            # Only the LINK's order ever holds a payment. A settlement written
+            # straight into a log by a test that never made a link is asked
+            # about directly, which is what reconcile does for those.
             for receipt, payments in self._outer._payments.items():
                 if order_id in (receipt, link_order_for(receipt)):
                     return payments
@@ -90,13 +97,31 @@ class FakeRazorpay:
         def create(self, data):
             if self._outer._fail_link:
                 raise RuntimeError("payment link service unavailable")
-            self._outer.link_order_id = link_order_for(
-                self._outer.last_receipt_order_id
-            )
+            receipt = self._outer.last_receipt_order_id
+            link_id = f"plink_for_{receipt}"
+            self._outer._link_receipts[link_id] = receipt
+            self._outer.link_order_id = link_order_for(receipt)
+            # Exactly what live test mode returns at create: no order, no
+            # payments. Both appear only once the link has been paid.
+            return {"id": link_id, "short_url": self._outer._link_url}
+
+        def fetch(self, link_id):
+            self._outer.links_fetched.append(link_id)
+            receipt = self._outer._link_receipts.get(link_id)
+            paid = self._outer._paid_for(receipt) if receipt else None
+            if not paid:
+                return {"id": link_id, "status": "created",
+                        "short_url": self._outer._link_url}
             return {
-                "id": "plink_fake",
+                "id": link_id,
+                "status": "paid",
                 "short_url": self._outer._link_url,
-                "order_id": self._outer.link_order_id,
+                "order_id": link_order_for(receipt),
+                "payments": [
+                    {"payment_id": i["id"], "status": i["status"],
+                     "amount": i.get("amount")}
+                    for i in paid.get("items", [])
+                ],
             }
 
 
@@ -255,8 +280,7 @@ def test_razorpay_settlement_completes_when_a_payment_is_captured(log):
     settlement = rail.settle("mch_1", "m_buyer", "m_seller", 970000, correlation_id="c1")
 
     assert settlement.status == SettlementStatus.COMPLETED
-    # The PAYABLE order, which is the link's — not the receipt order we made.
-    assert settlement.razorpay_order_id == link_order_for("order_1")
+    assert settlement.razorpay_order_id == "order_1"
     assert settlement.razorpay_payment_id == "pay_abc"
 
 
@@ -270,30 +294,45 @@ def test_razorpay_settlement_completes_when_a_payment_is_captured(log):
 # would ever have engaged.
 
 
-def test_the_settlement_records_the_orders_that_can_actually_be_paid(log):
+def test_the_settlement_records_the_link_that_can_actually_be_paid(log):
+    """The link id is the only handle on the money.
+
+    The order recorded here CANNOT receive a payment — the payable order does
+    not exist until someone pays the link, and Razorpay mints it then. So the
+    link id is what a later reader needs, and it has to be in the log.
+    """
     fake = FakeRazorpay()
     rail = RazorpayRail(log, fake)
 
-    settlement = rail.settle("mch_1", "m_buyer", "m_seller", 970000, correlation_id="c1")
+    rail.settle("mch_1", "m_buyer", "m_seller", 970000, correlation_id="c1")
 
     initiated = log.read_by_correlation("c1")[0]
-    assert initiated.payload["razorpay_order_id"] == fake.link_order_id
-    assert settlement.razorpay_order_id == fake.link_order_id
-    # The receipt order is kept, because it is the one carrying our own
-    # settlement id and both counterparties. It just cannot be paid.
-    assert initiated.payload["receipt_order_id"] == "order_1"
-    assert initiated.payload["receipt_order_id"] != initiated.payload["razorpay_order_id"]
+    assert initiated.payload["payment_link_id"] == "plink_for_order_1"
+    assert initiated.payload["payment_link_url"]
 
 
-def test_the_capture_poll_asks_about_the_link_order(log):
-    """The whole defect in one assertion: it polled the unpayable order."""
+def test_the_capture_is_looked_for_through_the_link(log):
+    """The whole defect in one assertion: it only ever asked the order."""
     fake = FakeRazorpay()
     RazorpayRail(log, fake).settle(
         "mch_1", "m_buyer", "m_seller", 970000, correlation_id="c1",
     )
 
-    assert fake.polled == [fake.link_order_id]
-    assert "order_1" not in fake.polled
+    assert fake.links_fetched == ["plink_for_order_1"]
+
+
+def test_a_paid_link_completes_the_settlement(log):
+    """End to end through the two-phase link, as live test mode behaves."""
+    fake = FakeRazorpay(payments_by_order={
+        "order_1": {"count": 1, "items": [{"id": "pay_real", "status": "captured"}]}
+    })
+
+    settlement = RazorpayRail(log, fake).settle(
+        "mch_1", "m_buyer", "m_seller", 970000, correlation_id="c1",
+    )
+
+    assert settlement.status == SettlementStatus.COMPLETED
+    assert settlement.razorpay_payment_id == "pay_real"
 
 
 def test_a_settlement_falls_back_to_its_own_order_when_no_link_is_made(log):
@@ -308,6 +347,7 @@ def test_a_settlement_falls_back_to_its_own_order_when_no_link_is_made(log):
     assert settlement.razorpay_order_id == "order_1"
     initiated = log.read_by_correlation("c1")[0]
     assert initiated.payload["payment_link_error"]
+    assert initiated.payload["payment_link_id"] is None
 
 
 def test_razorpay_settlement_sends_the_amount_in_paise(log):

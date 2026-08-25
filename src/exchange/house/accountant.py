@@ -17,6 +17,7 @@ from exchange import events as ev
 from exchange.eventlog import EventLog
 from exchange.house.points import OPENING_GRANT_CAP
 from exchange.policy import GATE_ACTOR_ID
+from exchange.rails.capture import find_captured_payment
 
 ACCOUNTANT_ACTOR_ID = "accountant"
 
@@ -240,8 +241,18 @@ class Accountant:
                 continue
 
             checked += 1
+            # Through the LINK, not the order. A payment link mints its own
+            # order when someone pays it, so the order recorded at settlement
+            # time can never receive the money — asking it returns count 0
+            # forever. Shared with the rail so the two cannot drift apart on
+            # where a capture lives.
+            link_id = event.payload.get("payment_link_id")
             try:
-                payments = self._client.order.payments(order_id)
+                captured_payment = find_captured_payment(
+                    self._client,
+                    payment_link_id=link_id,
+                    razorpay_order_id=order_id,
+                )
             except Exception as exc:  # noqa: BLE001 - one rejected call is not a failed sweep
                 # A LOOKUP THAT FAILED IS NOT A FINDING. One 429 used to raise
                 # out of the whole sweep with a partial pass recorded and the
@@ -266,11 +277,7 @@ class Accountant:
                 )
                 continue
 
-            remote = "none"
-            for item in payments.get("items", []):
-                if item.get("status") == "captured":
-                    remote = "captured"
-                    break
+            remote = "captured" if captured_payment else "none"
 
             if local == "COMPLETED" and remote == "captured":
                 # Both sides agree and neither can change. Remember it so no

@@ -98,8 +98,24 @@ class AlwaysCaptured:
                     "items": [{"id": f"pay_{order_id}", "status": "captured"}]}
 
     class _Links:
+        """Two-phase, like the real one: bare at create, paid at fetch.
+
+        Capture is discovered THROUGH the link, because the order a payment
+        lands on is minted by the link when someone pays it and does not
+        exist at settlement time.
+        """
+
+        def __init__(self) -> None:
+            self._n = 0
+
         def create(self, data):
-            return {"id": "plink_fake", "short_url": "https://rzp.io/rzp/FAKE"}
+            self._n += 1
+            return {"id": f"plink_{self._n}", "short_url": "https://rzp.io/rzp/FAKE"}
+
+        def fetch(self, link_id):
+            return {"id": link_id, "status": "paid",
+                    "payments": [{"payment_id": f"pay_{link_id}",
+                                  "status": "captured"}]}
 
 
 def _pad(log: CountingLog, n: int) -> None:
