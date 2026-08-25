@@ -289,3 +289,75 @@ def test_a_refusal_that_a_smaller_size_cannot_answer_is_not_retried(market):
     assert _is_a_size_refusal(
         "Amount 900000 exceeds unknown counterparty cap 500000 at confidence 0.00"
     )
+
+
+# --- resumption after a killed process ---------------------------------------
+#
+# A real run was interrupted twice. On resume, 15 turns that had posted a bid
+# and nothing else were counted as finished and never ran again — so 18 of 32
+# merchants traded and the privacy floor could not clear.
+
+
+def test_a_turn_that_only_started_is_not_treated_as_finished(market):
+    """The exact shape a killed process leaves behind: one ORDER_POSTED on
+    the turn's thread and no outcome."""
+    from scripts.market.run import _already_traded
+
+    corr = turn_correlation("m_buyer", BUYER.needs[0].text, 1)
+    market.log.append("m_buyer", "ORDER_POSTED",
+                      {"order_id": "ord_half_done", "actor_id": "m_buyer"},
+                      correlation_id=corr)
+
+    assert not _already_traded(market.log, "m_buyer", BUYER.needs[0].text, 1)
+
+
+def test_an_abandoned_turn_runs_again_on_resume(market):
+    provider = ScriptedProvider(["PRICE: 2000"])
+    corr = turn_correlation("m_buyer", BUYER.needs[0].text, 1)
+    market.log.append("m_buyer", "ORDER_POSTED",
+                      {"order_id": "ord_half_done", "actor_id": "m_buyer"},
+                      correlation_id=corr)
+
+    report = run_round(market, {"m_buyer": _broker(market, provider)},
+                       (BUYER,), round_no=1, budget=Budget())
+
+    assert len(report.turns) == 1, "the abandoned turn was retried"
+
+
+def test_a_finished_turn_records_that_it_ended(market):
+    provider = ScriptedProvider(["PRICE: 2000"])
+
+    report = run_round(market, {"m_buyer": _broker(market, provider)},
+                       (BUYER,), round_no=1, budget=Budget())
+
+    ended = [e for e in market.log.read_by_correlation(report.turns[0].correlation_id)
+             if e.type == "TURN_ENDED"]
+    assert len(ended) == 1
+    assert ended[0].payload["outcome"] == report.turns[0].outcome
+
+
+def test_a_turn_that_errored_still_counts_as_finished(market):
+    """It has been paid for and is not improved by running it again."""
+    from scripts.market.run import _already_traded
+
+    run_round(market, {"m_buyer": _broker(market, ExplodingProvider())},
+              (BUYER,), round_no=1, budget=Budget())
+
+    assert _already_traded(market.log, "m_buyer", BUYER.needs[0].text, 1)
+
+
+def test_a_turn_that_found_no_supply_counts_as_finished(market):
+    """It leaves only an ORDER_POSTED, same as an abandoned turn — which is
+    exactly why the outcome has to be recorded rather than inferred."""
+    from scripts.market.run import _already_traded
+
+    provider = ScriptedProvider(["PRICE: 2000"])
+    nothing = Merchant(
+        actor_id="m_buyer", name="Buyer", category="demand", persona="p",
+        sells=(), needs=(Need(1, "unobtainium ingots aerospace grade", 10, 500),),
+    )
+
+    run_round(market, {"m_buyer": _broker(market, provider)}, (nothing,),
+              round_no=1, budget=Budget())
+
+    assert _already_traded(market.log, "m_buyer", nothing.needs[0].text, 1)

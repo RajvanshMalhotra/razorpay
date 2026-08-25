@@ -20,6 +20,7 @@ import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, field
 
+from exchange import events as ev
 from exchange.agents.journal import AgentJournal
 from exchange.agents.negotiation import negotiate
 from exchange.matching import resize
@@ -104,14 +105,20 @@ class RoundReport:
 
 
 def _already_traded(log, actor_id: str, need_text: str, round_no: int) -> bool:
-    """Has this merchant already taken this turn?
+    """Has this merchant already FINISHED this turn?
 
-    Resumption after an interrupted run must not re-trade a round. The marker
-    is the correlation id, which is derived from the turn rather than random,
-    so the log itself answers the question.
+    Finished, not started. The first version asked whether the turn's thread
+    held any event at all, and a killed process leaves turns holding exactly
+    one — the bid they posted before dying. On resume all fifteen of those
+    were counted as done and never ran, so 18 of 32 merchants traded and the
+    privacy floor could not clear.
+
+    ORDER_POSTED cannot answer this on its own: it is also all a turn leaves
+    behind when it searched and found no supply, which IS finished. So the
+    runner records its own outcome and resumption reads that.
     """
     marker = turn_correlation(actor_id, need_text, round_no)
-    return bool(log.read_by_correlation(marker))
+    return any(e.type == ev.TURN_ENDED for e in log.read_by_correlation(marker))
 
 
 def turn_correlation(actor_id: str, need_text: str, round_no: int) -> str:
@@ -178,7 +185,7 @@ def _affordable_qty(decision, unit_price: int) -> int | None:
     return min(ceilings) // unit_price
 
 
-def run_turn(exchange, broker, merchant, need, round_no, budget) -> TurnResult:
+def _attempt_turn(exchange, broker, merchant, need, round_no, budget) -> TurnResult:
     """One merchant, one need, start to finish. Never raises."""
     correlation_id = turn_correlation(merchant.actor_id, need.text, round_no)
 
@@ -334,3 +341,29 @@ def run_round(exchange, brokers, merchants, round_no, budget,
             report.turns.append(future.result())
 
     return report
+
+
+def run_turn(exchange, broker, merchant, need, round_no, budget) -> TurnResult:
+    """Take the turn, and RECORD THAT IT ENDED, whatever the outcome.
+
+    The marker is written for every outcome including failure, because the
+    question resumption asks is "did this turn finish?", not "did it work?".
+    A turn that errored has been paid for and is not improved by running it
+    again; a turn that found no supply is genuinely complete. Only a turn
+    that never reached here — because the process died — should run again.
+    """
+    result = _attempt_turn(exchange, broker, merchant, need, round_no, budget)
+    exchange.log.append(
+        merchant.actor_id,
+        ev.TURN_ENDED,
+        {
+            "round": round_no,
+            "need": need.text,
+            "outcome": result.outcome,
+            "detail": result.detail,
+            "amount": result.amount,
+        },
+        correlation_id=result.correlation_id or turn_correlation(
+            merchant.actor_id, need.text, round_no),
+    )
+    return result

@@ -39,6 +39,10 @@ LESSON_CONSOLIDATED = "LESSON_CONSOLIDATED"
 NEGOTIATION_OPENED = "NEGOTIATION_OPENED"
 NEGOTIATION_ROUND = "NEGOTIATION_ROUND"
 NEGOTIATION_ENDED = "NEGOTIATION_ENDED"
+# The market runner's own marker that a merchant's turn reached an
+# outcome. Resumption needs to tell "finished, found nothing" from
+# "started, then the process died", and ORDER_POSTED means both.
+TURN_ENDED = "TURN_ENDED"
 COUNTERPARTY_CHOSEN = "COUNTERPARTY_CHOSEN"
 INSIGHT_MINTED = "INSIGHT_MINTED"
 PRIVACY_REFUSED = "PRIVACY_REFUSED"
