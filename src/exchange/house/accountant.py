@@ -752,11 +752,24 @@ class Accountant:
         )
         order_id = initiated.payload["razorpay_order_id"]
 
-        payment_id = None
-        for item in self._client.order.payments(order_id).get("items", []):
-            if item.get("status") == "captured":
-                payment_id = item["id"]
-                break
+        # THE SAME LOOKUP `reconcile` USES, and it has to be, because the two
+        # answer the same question about the same settlement moments apart.
+        # This asked `order.payments(receipt_order)` directly while reconcile
+        # had already moved to the shared lookup — the twin left behind. In
+        # production that meant reconcile found the drift through the link and
+        # repair then refused it, killing the failure demo at the repair step:
+        #
+        #     reconcile found drift: 1
+        #     repair: FAILED -> no captured payment on order_receipt
+        #
+        # Green in tests only because the fake also answers for the receipt id.
+        # Both of this project's standing lessons in one defect: a fix applied
+        # to one of two twins, and a stub kinder than the real API.
+        payment_id = find_captured_payment(
+            self._client,
+            payment_link_id=initiated.payload.get("payment_link_id"),
+            razorpay_order_id=order_id,
+        )
 
         # No captured payment means the remote does not agree money moved,
         # whatever reconcile() saw a moment ago. Refuse rather than write a

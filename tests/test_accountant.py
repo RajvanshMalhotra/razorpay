@@ -975,3 +975,86 @@ def test_a_deny_and_an_allow_on_different_matches_are_not_a_duplicate(log):
     kinds = [v.kind for v in Accountant(log, None).assert_invariants()]
 
     assert "duplicate_decision" not in kinds
+
+
+# --- against a client that behaves like live test mode -----------------------
+#
+# FakeRazorpay answers for the receipt order id as a convenience, which is what
+# let `repair` keep polling an order that in production returns count 0
+# forever. This client does not extend that courtesy: like the real API, the
+# receipt order NEVER holds a payment and the capture is visible only through
+# the link.
+
+
+class LiveShapedRazorpay:
+    """Receipt order always empty; the link holds the capture. As probed."""
+
+    def __init__(self, payment_id="pay_real"):
+        self._payment_id = payment_id
+        self.orders_asked = []
+        self.links_fetched = []
+        outer = self
+
+        class _Orders:
+            @staticmethod
+            def payments(order_id):
+                outer.orders_asked.append(order_id)
+                return {"count": 0, "items": []}
+
+        class _Links:
+            @staticmethod
+            def fetch(link_id):
+                outer.links_fetched.append(link_id)
+                return {"id": link_id, "status": "paid",
+                        "order_id": "order_minted_by_link",
+                        "payments": [{"payment_id": outer._payment_id,
+                                      "status": "captured"}]}
+
+        self.order = _Orders()
+        self.payment_link = _Links()
+
+
+def _linked(log, sid="stl_1", corr="c", link="plink_1"):
+    log.append("m_a", SETTLEMENT_INITIATED,
+               {"settlement_id": sid, "match_id": "mch", "currency": "INR",
+                "amount": 970_000, "razorpay_order_id": "order_receipt",
+                "payment_link_id": link},
+               correlation_id=corr)
+
+
+def test_repair_finds_the_capture_through_the_link(log):
+    """`reconcile` and `repair` must answer the same question the same way.
+
+    `reconcile` moved to the shared lookup and `repair` was left behind, so in
+    production reconcile found the drift and repair then refused it — the
+    failure demo dying at the repair step, on the one path the project is
+    graded on.
+    """
+    _linked(log)
+    client = LiveShapedRazorpay()
+    accountant = Accountant(log, client)
+
+    drift = accountant.reconcile().drifts[0]
+    accountant.repair(drift)
+
+    completed = [e for e in log.read_all() if e.type == SETTLEMENT_COMPLETED]
+    assert len(completed) == 1
+    assert completed[0].payload["razorpay_payment_id"] == "pay_real"
+    assert client.links_fetched, "the capture is only visible through the link"
+
+
+def test_the_whole_failure_arc_survives_a_live_shaped_client(log):
+    """The demo, end to end, against a client that does not flatter us."""
+    log.append("m_a", "ACTOR_REGISTERED",
+               {"actor_id": "m_a", "kind": "MERCHANT"}, correlation_id="reg")
+    _linked(log, corr="c_trade")
+    accountant = Accountant(log, LiveShapedRazorpay())
+
+    drift = accountant.reconcile().drifts[0]
+    accountant.freeze("m_a", "books disagree", correlation_id="c_trade")
+    accountant.repair(drift)
+    accountant.resume("m_a", correlation_id="c_trade")
+
+    story = [e.type for e in log.read_by_correlation("c_trade")]
+    assert story == ["SETTLEMENT_INITIATED", "DRIFT_DETECTED", "ACTOR_FROZEN",
+                     "SETTLEMENT_COMPLETED", "ACTOR_RESUMED"]
