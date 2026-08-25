@@ -8,6 +8,7 @@ from __future__ import annotations
 import json
 import os
 import sqlite3
+import threading
 from datetime import datetime, timezone
 from typing import Any
 
@@ -52,7 +53,18 @@ class EventLog:
         parent = os.path.dirname(db_path)
         if parent:
             os.makedirs(parent, exist_ok=True)
-        self._conn = sqlite3.connect(db_path)
+        # THREAD-SAFE BY LOCK, not by hope. The market runner runs merchants
+        # concurrently because their turns are independent and almost entirely
+        # spent waiting on a model, and a run that takes 90 seconds per turn
+        # serially takes 90 seconds for all of them in parallel.
+        #
+        # SQLite allows one writer. `check_same_thread=False` lets threads
+        # share the connection and `_lock` makes each append atomic, which is
+        # all the append-only log needs: there is no read-modify-write to
+        # interleave, and `seq` is assigned by the database inside the lock so
+        # the order the log records is the order the writes actually happened.
+        self._conn = sqlite3.connect(db_path, check_same_thread=False)
+        self._lock = threading.Lock()
         self._conn.row_factory = sqlite3.Row
         self._conn.executescript(_SCHEMA)
         self._conn.commit()
@@ -67,15 +79,18 @@ class EventLog:
     ) -> Event:
         event_id = new_id("evt")
         ts = _utc_now()
-        cursor = self._conn.execute(
-            "INSERT INTO events (event_id, ts, actor_id, type, payload, "
-            "causation_id, correlation_id) VALUES (?, ?, ?, ?, ?, ?, ?)",
-            (event_id, ts, actor_id, type, json.dumps(payload), causation_id, correlation_id),
-        )
-        self._conn.commit()
+        with self._lock:
+            cursor = self._conn.execute(
+                "INSERT INTO events (event_id, ts, actor_id, type, payload, "
+                "causation_id, correlation_id) VALUES (?, ?, ?, ?, ?, ?, ?)",
+                (event_id, ts, actor_id, type, json.dumps(payload),
+                 causation_id, correlation_id),
+            )
+            self._conn.commit()
+            seq = cursor.lastrowid
         return Event(
             event_id=event_id,
-            seq=cursor.lastrowid,
+            seq=seq,
             ts=ts,
             actor_id=actor_id,
             type=type,
@@ -109,14 +124,19 @@ class EventLog:
         and read by — `read_since` takes one — so a version and an offset are
         the same kind of thing and cannot drift apart.
         """
-        row = self._conn.execute("SELECT MAX(seq) FROM events").fetchone()
+        with self._lock:
+            row = self._conn.execute("SELECT MAX(seq) FROM events").fetchone()
         return row[0] or 0
 
     def close(self) -> None:
         self._conn.close()
 
     def _query(self, sql: str, params: tuple) -> list[Event]:
-        rows = self._conn.execute(sql, params).fetchall()
+        # Reads take the lock too: they share one connection with the writers,
+        # and a cursor stepped from two threads at once is a segfault waiting
+        # for a busy afternoon.
+        with self._lock:
+            rows = self._conn.execute(sql, params).fetchall()
         return [
             Event(
                 event_id=r["event_id"],

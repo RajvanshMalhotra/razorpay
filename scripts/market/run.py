@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import logging
 import time
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, field
 
 from exchange.agents.journal import AgentJournal
@@ -29,6 +30,13 @@ _log = logging.getLogger(__name__)
 # at relative to the ask. Both are starting points the agent reasons from,
 # never multipliers applied to its judgment.
 OPENING_DISCOUNT_BPS = 1200   # open 12% under the ask
+
+# How many merchants act at once. Not "as many as possible": every worker is
+# an open connection to a paid API with its own rate limit, and a runaway
+# fan-out turns one slow round into a wall of 429s. Eight is comfortably
+# inside DeepSeek's concurrency and turns a 90-second turn into a 90-second
+# round of eight.
+DEFAULT_CONCURRENCY = 8
 
 
 @dataclass
@@ -186,11 +194,21 @@ def run_turn(exchange, broker, merchant, need, round_no, budget) -> TurnResult:
                               correlation_id=correlation_id)
 
         match = broker.choose(matches, correlation_id=correlation_id)
-        seller_id = exchange.state().open_orders[match.ask_order_id].actor_id
+        posted = exchange.state().posted_orders.get(match.ask_order_id)
+        seller_id = posted.actor_id if posted else "unknown"
 
-        # The Diplomat's read on this counterparty, before any price is
-        # discussed. Its output is advice in the log, never a veto.
-        broker.assess(seller_id, correlation_id=correlation_id)
+        # `assess` is NOT called here, and dropping it was worth 24 seconds a
+        # turn. `choose` is already a Diplomat call, and it is already given
+        # each candidate's recalled history — so calling `assess` immediately
+        # afterwards asks the same agent about the same counterparty a second
+        # time, and its answer lands in the log after the choice it was
+        # supposed to inform.
+        #
+        # It stays on `Broker` for the single-counterparty case, where there
+        # is no shortlist to choose from and the Diplomat's read is the only
+        # judgment on offer.
+        if len(matches) == 1:
+            broker.assess(seller_id, correlation_id=correlation_id)
 
         opening = match.clearing_price - (
             match.clearing_price * OPENING_DISCOUNT_BPS // 10_000
@@ -266,31 +284,53 @@ def run_turn(exchange, broker, merchant, need, round_no, budget) -> TurnResult:
                           correlation_id=correlation_id)
 
 
-def run_round(exchange, brokers, merchants, round_no, budget) -> RoundReport:
-    """Every merchant with a need this round, in roster order."""
+def run_round(exchange, brokers, merchants, round_no, budget,
+              concurrency: int = DEFAULT_CONCURRENCY) -> RoundReport:
+    """Every merchant with a need this round.
+
+    CONCURRENTLY, because a turn is almost entirely spent waiting on a model.
+    Measured on one real turn: 196 seconds, of which 195 were API latency and
+    1.3 were Razorpay. Run serially, 55 turns is an hour and a half of a
+    machine doing nothing. The turns are independent — different merchants,
+    different needs — so the only shared thing is the log, which takes a lock.
+
+    Order is no longer roster order, and that is fine: the market has no
+    turn order to respect, each turn threads its own correlation id, and the
+    log records the order things actually happened rather than the order a
+    loop happened to visit merchants.
+    """
     report = RoundReport(round_no=round_no)
 
+    pending = []
     for merchant in merchants:
         for need in merchant.needs:
             if need.round_no != round_no:
                 continue
-
-            spent = budget.exhausted()
-            if spent:
-                report.stopped_early = spent
-                return report
-
             if _already_traded(exchange.log, merchant.actor_id,
                                need.text, round_no):
                 continue
-
             broker = brokers.get(merchant.actor_id)
             if broker is None:
                 continue
-
+            spent = budget.exhausted()
+            if spent:
+                report.stopped_early = spent
+                break
             budget.spend_turn()
-            report.turns.append(
-                run_turn(exchange, broker, merchant, need, round_no, budget)
-            )
+            pending.append((broker, merchant, need))
+        if report.stopped_early:
+            break
+
+    if not pending:
+        return report
+
+    with ThreadPoolExecutor(max_workers=max(1, concurrency)) as pool:
+        futures = [
+            pool.submit(run_turn, exchange, broker, merchant, need,
+                        round_no, budget)
+            for broker, merchant, need in pending
+        ]
+        for future in as_completed(futures):
+            report.turns.append(future.result())
 
     return report
