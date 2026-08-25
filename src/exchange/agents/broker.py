@@ -50,10 +50,16 @@ class Broker:
     ) -> None:
         self.actor_id = actor_id
         self._exchange = exchange
-        # `provider` is not kept: the Subconscious takes it directly and the
-        # three sub-agents take `fast`. A stored copy nothing reads is a field
+        # `provider` — the STRONG tier — is still not kept: the Subconscious
+        # takes it directly, and a stored copy nothing reads is a field
         # someone later reaches for without noticing which tier it is.
-        fast = fast_provider or provider
+        #
+        # `fast_tier` IS kept, and named for its tier rather than its role,
+        # because the market runner needs it: a negotiation is two sub-agents
+        # talking, and it belongs on the same tier they run on. Calling it
+        # `provider` would invite exactly the confusion the note above warns
+        # about — the negotiator would silently get the expensive model.
+        fast = self.fast_tier = fast_provider or provider
         self.subconscious = subconscious or Subconscious(provider)
         self.graph = graph or RelationshipGraph()
 
