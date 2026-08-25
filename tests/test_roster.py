@@ -145,3 +145,49 @@ def test_nobody_sells_what_they_are_asking_to_buy():
             assert not own_matches, (
                 f"{merchant.actor_id} both sells and needs {need.text!r}"
             )
+
+
+# --- every merchant briefs its own agent -------------------------------------
+
+def test_every_merchant_has_a_style():
+    """`persona` existed from the start and nothing read it, so all 32
+    brokers ran identical prompts and the roster's variety was decorative."""
+    assert all(m.style for m in MERCHANTS)
+
+
+def test_styles_are_real_keywords():
+    """A typo would silently become prose and quietly stop steering."""
+    from exchange.agents.mandate import KEYWORDS
+
+    for merchant in MERCHANTS:
+        for word in merchant.style.split(","):
+            key = word.strip().lower().replace(" ", "_").replace("-", "_")
+            assert key in KEYWORDS, f"{merchant.actor_id}: {key!r}"
+
+
+def test_the_mandate_carries_both_the_style_and_the_merchants_words():
+    from exchange.agents.mandate import Mandate
+
+    merchant = next(m for m in MERCHANTS if m.actor_id == "m_nilgiri_cold")
+    mandate = Mandate.from_input(merchant.mandate_input())
+
+    assert "aggressive" in mandate.keywords
+    assert "price_first" in mandate.keywords
+    assert "Cheapest in the market" in mandate.note
+
+
+def test_the_cluster_does_not_brief_its_agents_identically():
+    """Nine merchants in one category briefing the same way reads as one
+    buyer with nine names, and gives the Diplomat nothing to distinguish."""
+    cluster = [m for m in MERCHANTS if m.category == "beverage"]
+
+    assert len({m.style for m in cluster}) >= len(cluster) // 2
+
+
+def test_no_merchant_mandate_survives_sanitising_as_an_instruction():
+    """The roster is our own input, but it goes through the same door a
+    merchant's does — so it must pass the same check."""
+    from exchange.agents.mandate import Mandate
+
+    for merchant in MERCHANTS:
+        assert not Mandate.from_input(merchant.mandate_input()).rejected

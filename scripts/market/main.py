@@ -31,6 +31,7 @@ import razorpay
 from dotenv import load_dotenv
 
 from exchange.agents.broker import Broker
+from exchange.agents.mandate import Mandate
 from exchange.config import Config
 from exchange.eventlog import EventLog
 from exchange.house.agent import HouseAgent
@@ -205,6 +206,22 @@ class _DryRunRazorpay:
         self.payment_link = _Links()
 
 
+def _brokers(exchange, strong, fast):
+    """One broker per merchant, each carrying its own merchant's brief.
+
+    Without a mandate every broker gets an identical prompt, so 32 merchants
+    negotiate identically and the roster's variety exists only in a field
+    nothing reads — which is exactly what `persona` was before this.
+    """
+    return {
+        m.actor_id: Broker(
+            m.actor_id, exchange, strong, fast_provider=fast,
+            mandate=Mandate.from_input(m.mandate_input()),
+        )
+        for m in MERCHANTS
+    }
+
+
 def _client(dry_run: bool):
     if dry_run:
         return _DryRunRazorpay()
@@ -255,10 +272,7 @@ def main(argv=None) -> int:
             print(f"seed: {seed(exchange, MERCHANTS)}")
 
         if args.rounds:
-            brokers = {
-                m.actor_id: Broker(m.actor_id, exchange, strong, fast_provider=fast)
-                for m in MERCHANTS
-            }
+            brokers = _brokers(exchange, strong, fast)
             budget = Budget(max_turns=args.budget_turns,
                             max_seconds=args.budget_seconds)
             for round_no in range(1, args.rounds + 1):
@@ -280,10 +294,7 @@ def main(argv=None) -> int:
                 print(f"  UNPAYABLE {unpayable.settlement_id}: {unpayable.reason}")
 
         if args.house:
-            brokers = {
-                m.actor_id: Broker(m.actor_id, exchange, strong, fast_provider=fast)
-                for m in MERCHANTS
-            }
+            brokers = _brokers(exchange, strong, fast)
             house = HouseAgent(log, strong)
             print(f"house: {run_house_cycle(exchange, house, brokers, 'house_cycle')}")
 

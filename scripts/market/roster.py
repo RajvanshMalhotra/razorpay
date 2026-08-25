@@ -58,6 +58,14 @@ class Merchant:
     persona: str
     sells: tuple[Listing, ...]
     needs: tuple[Need, ...]
+    # Shorthand from `exchange.agents.mandate.KEYWORDS`. The persona is this
+    # merchant's own words; the keywords are the same intent in a form the
+    # roles already share a vocabulary for. Both reach the agent.
+    style: str = ""
+
+    def mandate_input(self) -> str:
+        """What this merchant would have typed into the box."""
+        return ", ".join(part for part in (self.style, self.persona) if part)
 
 
 def demand_by_round(input_text: str) -> dict[int, int]:
@@ -83,7 +91,7 @@ def demand_by_round(input_text: str) -> dict[int, int]:
 
 _SUPPLIERS = (
     Merchant(
-        actor_id="m_kaapi_roasters",
+        actor_id="m_kaapi_roasters", style="persistent, quality_first",
         name="Kaapi Roasters",
         category="coffee_supply",
         persona="Holds price firmly and points to consistency; will not discount below 5%.",
@@ -99,7 +107,7 @@ _SUPPLIERS = (
         ),
     ),
     Merchant(
-        actor_id="m_western_ghats",
+        actor_id="m_western_ghats", style="patient, fair",
         name="Western Ghats Coffee Co",
         category="coffee_supply",
         persona="Opens high, concedes steadily, and always asks for a longer commitment.",
@@ -113,7 +121,7 @@ _SUPPLIERS = (
         ),
     ),
     Merchant(
-        actor_id="m_nilgiri_cold",
+        actor_id="m_nilgiri_cold", style="aggressive, price_first",
         name="Nilgiri Cold Extracts",
         category="coffee_supply",
         persona="Cheapest in the market and knows it; slow on delivery and evasive about dates.",
@@ -126,7 +134,7 @@ _SUPPLIERS = (
         ),
     ),
     Merchant(
-        actor_id="m_third_wave_supply",
+        actor_id="m_third_wave_supply", style="delivery_first, loyal",
         name="Third Wave Supply",
         category="coffee_supply",
         persona="Sells on reliability rather than price and documents every delivery window.",
@@ -149,6 +157,16 @@ _SUPPLIERS = (
 # fixed string.
 
 def _cluster() -> tuple[Merchant, ...]:
+    # Style shorthand per merchant, so nine merchants in one category still
+    # brief their agents differently — otherwise the cluster reads as one
+    # buyer with nine names.
+    styles = [
+        "aggressive, walk_early", "decisive, delivery_first",
+        "fair, decisive", "aggressive, price_first",
+        "delivery_first, patient", "persistent, fair",
+        "price_first, walk_early", "patient, price_first",
+        "cautious, explorer",
+    ]
     specs = [
         ("m_bl_thirdwave", "Third Wave Bengaluru", "Walks away rather than overpay; treats the first ask as an opening.",
          "cold brew concentrate for a twelve store rollout, unsweetened"),
@@ -196,6 +214,7 @@ def _cluster() -> tuple[Merchant, ...]:
             name=name,
             category="beverage",
             persona=persona,
+            style=styles[index % len(styles)],
             sells=(
                 Listing(f"ast_syrup_{actor_id[5:]}",
                         f"flavour syrup bottles house blend {index}",
@@ -214,7 +233,7 @@ def _cluster() -> tuple[Merchant, ...]:
 
 _PACKAGING = (
     Merchant(
-        actor_id="m_greenwrap", name="GreenWrap Packaging", category="packaging",
+        actor_id="m_greenwrap", style="fair, decisive", name="GreenWrap Packaging", category="packaging",
         persona="Quotes once and means it; explains cost rather than defending it.",
         sells=(
             Listing("ast_mailers_green", "biodegradable mailers compostable poly 10x13",
@@ -225,7 +244,7 @@ _PACKAGING = (
         needs=(Need(1, "recycled kraft paper reels", 600, 5200),),
     ),
     Merchant(
-        actor_id="m_packmate", name="PackMate Industries", category="packaging",
+        actor_id="m_packmate", style="aggressive, decisive, price_first", name="PackMate Industries", category="packaging",
         persona="Aggressive on price, vague on lead times, quick to close.",
         sells=(
             Listing("ast_mailers_pack", "biodegradable mailers for subscription boxes",
@@ -236,7 +255,7 @@ _PACKAGING = (
         needs=(Need(2, "recycled kraft paper reels", 900, 5400),),
     ),
     Merchant(
-        actor_id="m_bottleworks", name="BottleWorks", category="packaging",
+        actor_id="m_bottleworks", style="patient, quality_first", name="BottleWorks", category="packaging",
         persona="Methodical, asks clarifying questions before quoting anything.",
         sells=(
             Listing("ast_pet_bottle", "food grade PET bottles one litre",
@@ -245,7 +264,7 @@ _PACKAGING = (
         needs=(Need(3, "shrink wrap film for pallet loads", 400, 950),),
     ),
     Merchant(
-        actor_id="m_reelco", name="ReelCo Paper", category="packaging",
+        actor_id="m_reelco", style="fair, persistent", name="ReelCo Paper", category="packaging",
         persona="Long-winded but honest; volunteers when it cannot deliver.",
         sells=(
             Listing("ast_kraft_reel", "recycled kraft paper reels 120gsm",
@@ -254,7 +273,7 @@ _PACKAGING = (
         needs=(Need(4, "corrugated cartons double wall", 200, 4000),),
     ),
     Merchant(
-        actor_id="m_labelhouse", name="LabelHouse", category="packaging",
+        actor_id="m_labelhouse", style="decisive, explorer", name="LabelHouse", category="packaging",
         persona="Small operator, eager for a first order, discounts to win one.",
         sells=(
             Listing("ast_labels", "waterproof product labels roll fed",
@@ -263,7 +282,7 @@ _PACKAGING = (
         needs=(Need(2, "recycled kraft paper reels", 300, 5300),),
     ),
     Merchant(
-        actor_id="m_cratehub", name="CrateHub Logistics", category="packaging",
+        actor_id="m_cratehub", style="patient, price_first", name="CrateHub Logistics", category="packaging",
         persona="Talks in totals rather than unit prices; hard to pin down early.",
         sells=(
             Listing("ast_crates", "returnable plastic crates stackable",
@@ -275,21 +294,21 @@ _PACKAGING = (
 
 _TEXTILES = (
     Merchant(
-        actor_id="m_loomline", name="LoomLine Textiles", category="textiles",
+        actor_id="m_loomline", style="patient, persistent, quality_first", name="LoomLine Textiles", category="textiles",
         persona="Formal and slow; will not move price without a volume increase.",
         sells=(Listing("ast_cotton_twill", "organic cotton twill fabric rolls",
                        {"gsm": 240}, 28000, 3000),),
         needs=(Need(1, "reactive dye pigments industrial", 200, 9000),),
     ),
     Merchant(
-        actor_id="m_dyeworks", name="DyeWorks Chemicals", category="textiles",
+        actor_id="m_dyeworks", style="fair, quality_first", name="DyeWorks Chemicals", category="textiles",
         persona="Technical, precise, and unmoved by urgency.",
         sells=(Listing("ast_dye", "reactive dye pigments industrial grade",
                        {"fastness": "high"}, 8600, 2500),),
         needs=(Need(2, "organic cotton twill fabric rolls", 150, 30000),),
     ),
     Merchant(
-        actor_id="m_stitchright", name="StitchRight Apparel", category="textiles",
+        actor_id="m_stitchright", style="decisive, price_first", name="StitchRight Apparel", category="textiles",
         persona="Impatient; accepts a fair price quickly to save time.",
         sells=(Listing("ast_tshirt_blank", "blank cotton tshirts combed ringspun",
                        {"gsm": 180}, 18000, 5000),),
@@ -297,14 +316,14 @@ _TEXTILES = (
                Need(4, "waterproof product labels roll fed", 12000, 650)),
     ),
     Merchant(
-        actor_id="m_weavehouse", name="WeaveHouse", category="textiles",
+        actor_id="m_weavehouse", style="loyal, patient", name="WeaveHouse", category="textiles",
         persona="Relationship-first; references past dealings constantly.",
         sells=(Listing("ast_linen", "linen blend fabric rolls natural",
                        {"blend": "55/45"}, 34000, 1800),),
         needs=(Need(3, "reactive dye pigments industrial", 180, 9200),),
     ),
     Merchant(
-        actor_id="m_threadbare", name="ThreadBare Studio", category="textiles",
+        actor_id="m_threadbare", style="explorer, decisive", name="ThreadBare Studio", category="textiles",
         persona="New and unproven; over-promises slightly and knows it.",
         sells=(Listing("ast_thread", "polyester thread cones industrial",
                        {"tex": 40}, 900, 20000),),
@@ -314,21 +333,21 @@ _TEXTILES = (
 
 _ELECTRONICS = (
     Merchant(
-        actor_id="m_cablecraft", name="CableCraft", category="electronics_accessories",
+        actor_id="m_cablecraft", style="decisive, price_first", name="CableCraft", category="electronics_accessories",
         persona="Direct and transactional; no small talk, fast decisions.",
         sells=(Listing("ast_usbc", "braided USB C cables one metre",
                        {"rating": "60W"}, 14000, 8000),),
         needs=(Need(2, "injection moulded ABS enclosures", 1500, 5500),),
     ),
     Merchant(
-        actor_id="m_mouldtech", name="MouldTech", category="electronics_accessories",
+        actor_id="m_mouldtech", style="fair, quality_first", name="MouldTech", category="electronics_accessories",
         persona="Engineering-minded; explains constraints rather than refusing.",
         sells=(Listing("ast_abs", "injection moulded ABS enclosures small",
                        {"finish": "matte"}, 5200, 12000),),
         needs=(Need(3, "braided USB C cables one metre", 600, 15000),),
     ),
     Merchant(
-        actor_id="m_powerbank", name="PowerBank Assemblers", category="electronics_accessories",
+        actor_id="m_powerbank", style="aggressive, loyal", name="PowerBank Assemblers", category="electronics_accessories",
         persona="Bargains hard on the first order and loyally afterwards.",
         sells=(Listing("ast_cells", "lithium cells 18650 grade A",
                        {"mah": 2600}, 21000, 9000),),
@@ -336,7 +355,7 @@ _ELECTRONICS = (
                Need(4, "braided USB C cables one metre", 900, 14500)),
     ),
     Merchant(
-        actor_id="m_screenguard", name="ScreenGuard Co", category="electronics_accessories",
+        actor_id="m_screenguard", style="cautious, delivery_first", name="ScreenGuard Co", category="electronics_accessories",
         persona="Cautious with unknown sellers; insists on a trial quantity first.",
         sells=(Listing("ast_tempered", "tempered glass screen protectors bulk",
                        {"hardness": "9H"}, 3400, 30000),),
@@ -346,21 +365,21 @@ _ELECTRONICS = (
 
 _DRY_GOODS = (
     Merchant(
-        actor_id="m_spicebazaar", name="Spice Bazaar Wholesale", category="dry_goods",
+        actor_id="m_spicebazaar", style="patient, fair", name="Spice Bazaar Wholesale", category="dry_goods",
         persona="Warm and talkative; concedes to people who engage rather than push.",
         sells=(Listing("ast_cardamom", "green cardamom whole pods bulk",
                        {"grade": "8mm"}, 180000, 400),),
         needs=(Need(2, "jute sacks hessian lined", 2000, 4200),),
     ),
     Merchant(
-        actor_id="m_jutemill", name="JuteMill Exports", category="dry_goods",
+        actor_id="m_jutemill", style="decisive, walk_early", name="JuteMill Exports", category="dry_goods",
         persona="Terse. Quotes a number and waits.",
         sells=(Listing("ast_jute", "jute sacks hessian lined",
                        {"litres": 50}, 4000, 15000),),
         needs=(Need(3, "polyester thread cones industrial", 800, 950),),
     ),
     Merchant(
-        actor_id="m_millstone", name="Millstone Foods", category="dry_goods",
+        actor_id="m_millstone", style="cautious, delivery_first", name="Millstone Foods", category="dry_goods",
         persona="Risk-averse; asks about delivery guarantees before price.",
         sells=(Listing("ast_flour", "stoneground wheat flour sacks",
                        {"kg": 25}, 92000, 1200),),
@@ -368,7 +387,7 @@ _DRY_GOODS = (
                Need(4, "green cardamom whole pods bulk", 60, 190000)),
     ),
     Merchant(
-        actor_id="m_saltworks", name="SaltWorks Trading", category="dry_goods",
+        actor_id="m_saltworks", style="aggressive, walk_early", name="SaltWorks Trading", category="dry_goods",
         persona="Opportunistic; revisits agreed terms if the market moves.",
         sells=(Listing("ast_salt", "iodised salt bulk edible",
                        {"kg": 50}, 38000, 5000),),
