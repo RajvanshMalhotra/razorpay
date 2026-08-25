@@ -102,16 +102,46 @@ class RazorpayRail:
                 status=SettlementStatus.FAILED,
             )
 
+        # THE PAYABLE ORDER IS THE LINK'S, NOT THE ONE ABOVE.
+        #
+        # `payment_link.create` mints an order of its own, and a payment made
+        # against the link lands there. Proved against live test mode: paying a
+        # link left our own order on `{"count": 0, "items": []}` forever while
+        # the capture sat under the link's order.
+        #
+        #     our order    order_TTxxla9S5HPqMw -> 0 payments, permanently
+        #     the capture  pay_TU3FFa0irsSlhq   -> order_TU36coXRQ7wsMY
+        #
+        # `_await_capture` polls `order.payments(...)`, so pointed at our order
+        # it could never see a payment, and EVERY INR settlement would stay
+        # PENDING no matter who paid. Nothing downstream would engage: no
+        # ORDER_FILLED, no POINTS_MINTED, confidence pinned at zero, and the
+        # house agent mining an empty set.
+        #
+        # No fake client could have caught this — a stub returns whatever the
+        # test tells it to. It took paying a real link to find, which is why
+        # the ids above stay in this comment.
+        #
+        # The order above is kept as the settlement's own receipt (it carries
+        # `receipt=settlement_id` and the counterparties in `notes`, which the
+        # link's order does not). `razorpay_order_id` records the PAYABLE one,
+        # because that is the id every reader — this poll and the accountant's
+        # reconcile alike — must ask about.
         payment_link_url = None
         payment_link_error = None
+        payable_order_id = order["id"]
         try:
             link = self._client.payment_link.create({
                 "amount": amount,
                 "currency": "INR",
                 "description": f"Exchange settlement {settlement_id}",
                 "notes": {"match_id": match_id, "settlement_id": settlement_id},
+                "reference_id": settlement_id,
             })
             payment_link_url = link.get("short_url")
+            # Fall back to our own order if the link reports none: a missing id
+            # here means an unpayable settlement, not a settlement to abandon.
+            payable_order_id = link.get("order_id") or order["id"]
         except Exception as exc:  # noqa: BLE001 - the order still stands without a link
             payment_link_error = f"{type(exc).__name__}: {exc}"
 
@@ -123,7 +153,8 @@ class RazorpayRail:
                 "match_id": match_id,
                 "currency": str(Currency.INR),
                 "amount": amount,
-                "razorpay_order_id": order["id"],
+                "razorpay_order_id": payable_order_id,
+                "receipt_order_id": order["id"],
                 "payment_link_url": payment_link_url,
                 "payment_link_error": payment_link_error,
             },
@@ -132,7 +163,7 @@ class RazorpayRail:
         )
 
         payment_id = self._await_capture(
-            order["id"],
+            payable_order_id,
             settlement_id=settlement_id,
             actor_id=from_actor_id,
             correlation_id=correlation_id,
@@ -145,7 +176,7 @@ class RazorpayRail:
                 currency=Currency.INR,
                 amount=amount,
                 status=SettlementStatus.PENDING,
-                razorpay_order_id=order["id"],
+                razorpay_order_id=payable_order_id,
             )
 
         self._log.append(
@@ -162,7 +193,7 @@ class RazorpayRail:
             currency=Currency.INR,
             amount=amount,
             status=SettlementStatus.COMPLETED,
-            razorpay_order_id=order["id"],
+            razorpay_order_id=payable_order_id,
             razorpay_payment_id=payment_id,
         )
 
