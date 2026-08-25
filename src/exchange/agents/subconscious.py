@@ -55,7 +55,8 @@ class Subconscious:
         response = self._provider.complete(
             [LLMMessage("user", render(episode))],
             system=CONSOLIDATE_PROMPT,
-            max_tokens=200,
+            max_tokens=900,
+            reasoning_effort="low",
         )
         text = response.text.strip()
 

@@ -78,7 +78,12 @@ class HouseAgent:
                 f"totalling {total} paise. Write the headline.",
             )],
             system=HEADLINE_PROMPT,
-            max_tokens=120,
+            # 120 was not a tight budget, it was an empty one: this model
+            # spent all of it reasoning and returned "". The headline is what
+            # appears on screen, so it gets room to think (~529 tokens) and
+            # then room to answer.
+            max_tokens=800,
+            reasoning_effort="low",
         )
         headline = response.text.strip()
 

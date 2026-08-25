@@ -190,7 +190,18 @@ def _rounds(
         response = provider.complete(
             [LLMMessage("user", "\n".join(transcript) + f"\n\n{limit_line}\nYour reply:")],
             system=NEGOTIATOR_PROMPT,
-            max_tokens=256,
+            # MEASURED, not guessed. deepseek-v4-pro spends its budget on
+            # reasoning BEFORE emitting a character: at max_tokens=256 with
+            # the default effort it returned 256 reasoning tokens and an
+            # EMPTY string, on every single call. At 800 with effort="low"
+            # it spends ~320 reasoning tokens and answers properly.
+            #
+            # effort="none" also answers, and answers WORSE — it walked away
+            # from a deal at 31000 when its own ceiling was 31000. Reasoning
+            # is what makes the negotiation a negotiation, so the budget is
+            # sized to afford it rather than switched off to save it.
+            max_tokens=800,
+            reasoning_effort="low",
         )
         # Counted before anything can `continue` past it, and counted whatever
         # the reply turns out to be: an unparseable answer is a paid call.

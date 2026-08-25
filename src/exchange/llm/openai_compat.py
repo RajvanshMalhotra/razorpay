@@ -79,9 +79,40 @@ class OpenAICompatProvider:
                 )
             else:
                 raise
+        choice = completion.choices[0]
+
+        # AN EMPTY REPLY IS A BUDGET FAILURE, NOT AN ANSWER — and on this
+        # family of models it is the default failure. deepseek-v4-pro spends
+        # its token budget reasoning before it emits a character, so a budget
+        # that only covers the answer returns `""` with finish_reason
+        # "length" and full usage billed. Measured: max_tokens=800 with the
+        # default effort produced 800 reasoning tokens and no text, every
+        # time, on the real negotiation prompt.
+        #
+        # Retried once with room to finish rather than returned blank,
+        # because downstream an empty string is not an error — it is an
+        # unparseable offer, an absent bid, a headline of "". Every one of
+        # those is a silent corruption of a paid run, and each is far more
+        # expensive than the retry.
+        text = choice.message.content or ""
+        if not text.strip() and choice.finish_reason == "length":
+            _log.warning(
+                "%r returned no text within %d tokens (finish_reason=length); "
+                "retrying once with %d",
+                self._model, max_tokens, max_tokens * 3,
+            )
+            completion = self._client.chat.completions.create(
+                model=self._model,
+                messages=payload,
+                max_tokens=max_tokens * 3,
+                **extra,
+            )
+            choice = completion.choices[0]
+            text = choice.message.content or ""
+
         usage = completion.usage
         return LLMResponse(
-            text=completion.choices[0].message.content or "",
+            text=text,
             input_tokens=getattr(usage, "prompt_tokens", 0) if usage else 0,
             output_tokens=getattr(usage, "completion_tokens", 0) if usage else 0,
             model=self._model,
