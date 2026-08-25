@@ -8,6 +8,7 @@ from exchange.events import (
     ORDER_EXPIRED,
     ORDER_FILLED,
     ORDER_POSTED,
+    POLICY_DECIDED,
     SETTLEMENT_COMPLETED,
     SETTLEMENT_FAILED,
     SETTLEMENT_INITIATED,
@@ -396,3 +397,151 @@ def test_fold_from_with_no_new_events_is_unchanged():
     base = fold([_ev(1, ACTOR_REGISTERED, ACTOR_PAYLOAD)])
 
     assert fold_from(base, []) == base
+
+
+# --- what the gate reads, folded rather than scanned ------------------------
+#
+# Each of these replaced a full-log scan inside `Exchange`. The projection has
+# to hold the same answer the scan gave, and hold it incrementally.
+
+
+def test_a_posted_order_stays_readable_after_it_leaves_the_book():
+    """The mint basis is read at settlement, which is exactly when the ask has
+    just been filled out of the book."""
+    state = fold([
+        _ev(1, ORDER_POSTED, ORDER_PAYLOAD),
+        _ev(2, ORDER_FILLED, {"order_id": "ord_1", "qty": 500}),
+    ])
+
+    assert "ord_1" not in state.open_orders
+    assert state.posted_orders["ord_1"].limit_price == 1100000
+    assert state.posted_orders["ord_1"].actor_id == "m_a"
+
+
+def test_an_expired_order_is_still_on_record_as_posted():
+    state = fold([
+        _ev(1, ORDER_POSTED, ORDER_PAYLOAD),
+        _ev(2, ORDER_EXPIRED, {"order_id": "ord_1"}),
+    ])
+
+    assert "ord_1" not in state.open_orders
+    assert "ord_1" in state.posted_orders
+
+
+def test_a_repeated_order_id_resolves_to_the_most_recent_posting():
+    """The book and the mint basis must not disagree about the same order."""
+    later = dict(ORDER_PAYLOAD, limit_price=2200000)
+    state = fold([_ev(1, ORDER_POSTED, ORDER_PAYLOAD), _ev(2, ORDER_POSTED, later)])
+
+    assert state.posted_orders["ord_1"].limit_price == 2200000
+    assert state.open_orders["ord_1"].limit_price == 2200000
+
+
+def test_a_partial_fill_does_not_rewrite_what_was_asked():
+    state = fold([
+        _ev(1, ORDER_POSTED, ORDER_PAYLOAD),
+        _ev(2, ORDER_FILLED, {"order_id": "ord_1", "qty": 200}),
+    ])
+
+    assert state.open_orders["ord_1"].qty == 300
+    assert state.posted_orders["ord_1"].qty == 500
+
+
+def test_spend_accrues_per_actor_and_per_currency_at_initiation():
+    state = fold([
+        _ev(1, SETTLEMENT_INITIATED, {
+            "settlement_id": "stl_1", "match_id": "mch_1",
+            "currency": "INR", "amount": 150_000,
+        }, actor_id="m_a"),
+        _ev(2, SETTLEMENT_INITIATED, {
+            "settlement_id": "stl_2", "match_id": "mch_2",
+            "currency": "INR", "amount": 20_000,
+        }, actor_id="m_a"),
+        _ev(3, SETTLEMENT_INITIATED, {
+            "settlement_id": "stl_3", "match_id": "mch_3",
+            "currency": "CREDITS", "amount": 900,
+        }, actor_id="m_a"),
+        _ev(4, SETTLEMENT_INITIATED, {
+            "settlement_id": "stl_4", "match_id": "mch_4",
+            "currency": "INR", "amount": 77,
+        }, actor_id="m_b"),
+    ])
+
+    assert state.spend_to_date["m_a"]["INR"] == 170_000
+    assert state.spend_to_date["m_a"]["CREDITS"] == 900
+    assert state.spend_to_date["m_b"]["INR"] == 77
+
+
+def test_a_settlement_that_later_fails_still_counts_as_committed():
+    """Exposure is committed when it is opened. A cap that un-counts a failed
+    settlement is a cap that loosens on bad news."""
+    state = fold([
+        _ev(1, SETTLEMENT_INITIATED, {
+            "settlement_id": "stl_1", "match_id": "mch_1",
+            "currency": "INR", "amount": 150_000,
+        }, actor_id="m_a"),
+        _ev(2, SETTLEMENT_FAILED, {
+            "settlement_id": "stl_1", "match_id": "mch_1",
+            "currency": "INR", "amount": 150_000, "reason": "no capture",
+        }, actor_id="m_a"),
+    ])
+
+    assert state.spend_to_date["m_a"]["INR"] == 150_000
+
+
+def test_an_actor_with_no_settlements_has_no_spend_recorded():
+    state = fold([_ev(1, ACTOR_REGISTERED, ACTOR_PAYLOAD)])
+
+    assert state.spend_to_date == {}
+
+
+def test_a_decided_action_ref_is_remembered():
+    state = fold([
+        _ev(1, POLICY_DECIDED, {"action_ref": "mch_1", "verdict": "DENY"},
+            actor_id="policy_gate"),
+    ])
+
+    assert "mch_1" in state.decided_action_refs
+    assert "mch_2" not in state.decided_action_refs
+
+
+def test_a_denied_decision_still_counts_as_decided():
+    """`_already_decided` refuses a second trip whatever the first verdict was:
+    the invariant join on match_id is only sound while the id is unique."""
+    state = fold([
+        _ev(1, POLICY_DECIDED, {"action_ref": "mch_1", "verdict": "DENY"}),
+        _ev(2, POLICY_DECIDED, {"action_ref": "mch_2", "verdict": "ALLOW"}),
+    ])
+
+    assert state.decided_action_refs == frozenset({"mch_1", "mch_2"})
+
+
+def test_the_fold_does_not_raise_on_a_decision_it_cannot_place():
+    """An append-only log cannot be mended, so a malformed row must not make
+    every future read of exchange state raise."""
+    state = fold([
+        _ev(1, POLICY_DECIDED, {"verdict": "ALLOW"}),  # no action_ref
+        _ev(2, ORDER_POSTED, ORDER_PAYLOAD),
+    ])
+
+    assert state.decided_action_refs == frozenset()
+    assert "ord_1" in state.open_orders  # the fold carried on
+
+
+def test_fold_from_equals_a_full_fold_over_the_gate_fields():
+    """The check the accountant makes, made here over the new fields too."""
+    events = [
+        _ev(1, ACTOR_REGISTERED, ACTOR_PAYLOAD),
+        _ev(2, ORDER_POSTED, ORDER_PAYLOAD),
+        _ev(3, POLICY_DECIDED, {"action_ref": "mch_1", "verdict": "ALLOW"}),
+        _ev(4, SETTLEMENT_INITIATED, {
+            "settlement_id": "stl_1", "match_id": "mch_1",
+            "currency": "INR", "amount": 150_000,
+        }, actor_id="m_a"),
+        _ev(5, ORDER_FILLED, {"order_id": "ord_1", "qty": 500}),
+        _ev(6, SETTLEMENT_COMPLETED, {"settlement_id": "stl_1"}),
+    ]
+
+    for split in range(len(events) + 1):
+        incremental = fold_from(fold(events[:split]), events[split:])
+        assert incremental == fold(events), f"disagreed when split at {split}"

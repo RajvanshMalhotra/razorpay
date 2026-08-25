@@ -102,6 +102,13 @@ class Accountant:
         # the only thing standing between a fast cache and a second source of
         # truth, so the cache is only safe BECAUSE this exists.
         self._exchange = exchange
+        # (offset, settlement ids minted against so far). The accountant's OWN
+        # index, extended from its OWN reads of the log — see
+        # `_minted_settlement_ids`. Never the Exchange's projection: the mint
+        # rule is the accountant's authority, and the accountant is the backstop
+        # for that projection, so borrowing it would leave the backstop resting
+        # on the thing it exists to check.
+        self._minted_index: tuple[int, set[str]] = (0, set())
 
     def reconcile(self) -> Reconciliation:
         """Compare local settlement records against Razorpay's own state.
@@ -301,11 +308,40 @@ class Accountant:
         )
 
     def _already_minted(self, settlement_id: str) -> bool:
-        return any(
-            e.type == ev.POINTS_MINTED
-            and e.payload.get("source_settlement_id") == settlement_id
-            for e in self._log.read_all()
-        )
+        return settlement_id in self._minted_settlement_ids()
+
+    def _minted_settlement_ids(self) -> set[str]:
+        """Every settlement already minted against, extended from the log.
+
+        This used to re-read the whole log on every mint, which put a full scan
+        inside every settled INR trade — the last one left after the gate
+        stopped scanning. It is now read forward from the last seq this
+        accountant has seen, so the cost is the number of NEW events.
+
+        THE AUTHORITY DOES NOT MOVE. The set is derived by the accountant, from
+        the log, and from nothing a caller says: `mint` is handed a settlement
+        id and asks this about it — it is never told whether that settlement
+        was minted. `read_since` also picks up POINTS_MINTED written by another
+        accountant over the same database, so a second instance cannot mint
+        against a settlement this one already paid.
+
+        The precondition is the same single-writer-connection one `state()`
+        documents, and the backstop is the same shape too: `assert_invariants`
+        recomputes `duplicate_mint` from a full read of the log, so a mint that
+        slipped past this index is named by the audit rather than hidden by it.
+        """
+        offset, ids = self._minted_index
+        new_events = self._log.read_since(offset)
+        if new_events:
+            for e in new_events:
+                offset = max(offset, e.seq)
+                if e.type != ev.POINTS_MINTED:
+                    continue
+                sid = e.payload.get("source_settlement_id")
+                if sid is not None:
+                    ids.add(sid)
+            self._minted_index = (offset, ids)
+        return ids
 
     def assert_invariants(self) -> list[Violation]:
         """Everything that must be true of the log, checked against the log."""

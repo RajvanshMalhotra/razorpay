@@ -76,6 +76,20 @@ class Exchange:
         self._credit_limits = credit_limits or policy.DEFAULT_CREDIT_LIMITS
         self._indexed: list[tuple[str, str]] = []
 
+        # The credits rail folded the entire log for one balance, once per
+        # payout, and the privacy floor guarantees at least 25 payouts a lot.
+        # Bind it to the same incremental projection everything else here reads
+        # — same numbers, folded once and extended, rather than rebuilt.
+        #
+        # A FUNCTION, not a figure, and bound at wiring time rather than passed
+        # per settle: the rail asks about the actor it has identified as the
+        # payer and gets an answer derived from the log. Nothing a caller of
+        # `execute_match` says can reach it. The rail keeps working without
+        # this — its default is a full fold — so the dependency runs one way.
+        bind = getattr(credit_rail, "bind_balance_source", None)
+        if bind is not None:
+            bind(lambda actor_id: self.state().credit_balances.get(actor_id, 0))
+
     def register_actor(self, actor: Actor) -> None:
         self.log.append(
             actor.actor_id,
@@ -293,27 +307,40 @@ class Exchange:
         """
         if seller_id == buyer_id:
             return None
-        posted = None
-        for event in self.log.read_all():
-            if (
-                event.type == ev.ORDER_POSTED
-                and event.payload.get("order_id") == order_id
-            ):
-                posted = event.payload
+        # `posted_orders`, not `open_orders`: this is read at the moment the
+        # trade settles, and the ask has just left the book. The projection
+        # keeps every ORDER_POSTED as posted and resolves a repeated id to the
+        # most recent one, which is the same answer the scan this replaced
+        # gave and the same one the book gives. Derived from the log; the only
+        # thing the caller contributes is the order_id it named in the match,
+        # and the three checks below are exactly what stop that from being
+        # enough to choose one's own mint basis.
+        posted = self.state().posted_orders.get(order_id)
         if posted is None:
             return None
-        if posted.get("side") != str(Side.ASK):
+        if posted.side != Side.ASK:
             return None
-        if posted.get("actor_id") != seller_id:
+        if posted.actor_id != seller_id:
             return None
-        return posted["limit_price"]
+        return posted.limit_price
 
     def _already_decided(self, match_id: str) -> bool:
-        """Has this match_id already carried a policy decision?"""
-        return any(
-            e.type == ev.POLICY_DECIDED and e.payload.get("action_ref") == match_id
-            for e in self.log.read_all()
-        )
+        """Has this match_id already carried a policy decision?
+
+        A CORRECTNESS GUARD, not a fast path. It is read from the projection
+        rather than by scanning the log because scanning cost a full pass per
+        trade, but the property it defends is unchanged and must stay
+        unchanged: every POLICY_DECIDED ever written is in
+        `decided_action_refs`, nothing removes from that set, and `state()`
+        catches up to the tail of the log on every call — including events
+        appended by another `Exchange` over the same database. So a match_id
+        that reached the gate still raises on its second arrival, whoever
+        wrote the first decision.
+
+        The precondition is `state()`'s own (single writer connection), and the
+        accountant's `projection_drift` check is what proves it held.
+        """
+        return match_id in self.state().decided_action_refs
 
     def _status_of(self, actor_id: str) -> ActorStatus:
         """This actor's status as the log records it.
@@ -348,15 +375,15 @@ class Exchange:
         Counted at SETTLEMENT_INITIATED rather than at completion: money is
         committed the moment a Razorpay order exists, and a settlement sitting
         PENDING is exactly the exposure a cap is meant to bound.
+
+        Folded incrementally rather than summed by scanning: a cumulative total
+        per actor per currency is the shape that folds, and the running total
+        the projection carries is the same sum over the same events. Still
+        derived, still by the gate, still from the log — a cap the actor
+        supplies its own usage figure for is not a cap, and no argument to
+        `execute_match` reaches this number.
         """
-        target = str(currency)
-        return sum(
-            e.payload["amount"]
-            for e in self.log.read_all()
-            if e.type == ev.SETTLEMENT_INITIATED
-            and e.actor_id == actor_id
-            and e.payload.get("currency") == target
-        )
+        return self.state().spend_to_date.get(actor_id, {}).get(str(currency), 0)
 
     def _record_fill(self, match: Match, buyer_id: str, seller_id: str,
                      correlation_id: str, causation_id: str) -> None:

@@ -292,6 +292,45 @@ def test_a_matching_projection_is_not_a_violation(log):
     assert not any(v.kind == "projection_drift" for v in violations)
 
 
+def test_a_real_exchange_that_has_traded_reports_no_projection_drift(log):
+    """The check that makes the cache safe, run against the real thing.
+
+    The gate, the rails and the minter all read the cached projection now
+    instead of re-scanning the log, so the fields they read have to agree with
+    a full fold after real trades — not just the fields the projection carried
+    when the check was written.
+    """
+    from exchange.models import ActorStatus, Currency, Match
+    from exchange.policy import PolicyContext
+    from exchange.projections import fold
+    from exchange.rails.credits import CreditRail
+    from exchange.rails.inr import RazorpayRail
+    from exchange.service import Exchange
+
+    fake = FakeRazorpay(payments_by_order={
+        "order_1": {"count": 1, "items": [{"id": "pay_1", "status": "captured"}]},
+        "order_2": {"count": 1, "items": [{"id": "pay_2", "status": "captured"}]},
+    })
+    exchange = Exchange(log, index=None, inr_rail=RazorpayRail(log, fake),
+                        credit_rail=CreditRail(log))
+    log.append("genesis", CREDITS_TRANSFERRED,
+               {"from_actor_id": "genesis", "to_actor_id": "m_a", "amount": 40_000},
+               correlation_id="seed")
+    _trade(exchange, "mch_1", "c1")
+    _trade(exchange, "mch_2", "c2")
+    exchange.execute_match(
+        Match("mch_3", "ord_bid", "ord_ask", 40, 100, 0.9, "credits"),
+        "m_a", "m_b",
+        PolicyContext(actor_status=ActorStatus.ACTIVE, rolling_spend=0,
+                      counterparty_confidence=0.9),
+        correlation_id="c3", currency=Currency.CREDITS,
+    )
+
+    assert exchange.state() == fold(log.read_all())
+    violations = Accountant(log, fake, exchange=exchange).assert_invariants()
+    assert not any(v.kind == "projection_drift" for v in violations)
+
+
 def test_a_clean_log_has_no_violations(log):
     log.append("m_a", MATCH_PROPOSED,
                {"match_id": "mch_1", "clearing_price": 1940, "qty": 200},
@@ -673,6 +712,43 @@ def test_a_settlement_earns_points_only_once(log):
 
     with pytest.raises(ValueError, match="already been minted"):
         accountant.mint("m_a", 510, "stl_1", correlation_id="c")
+
+
+def test_a_settlement_minted_by_another_accountant_is_not_minted_again(log):
+    """The mint-once index reads forward from the log, not from this object's
+    memory of what it wrote. Two accountants over one database is the case that
+    tells the difference — and `Exchange` builds its own by default, so it is
+    not a hypothetical one."""
+    first = Accountant(log, FakeRazorpay())
+    second = Accountant(log, FakeRazorpay())
+    second.mint("m_b", 100, "stl_1", correlation_id="c")  # warms second's view
+    first.mint("m_a", 510, "stl_2", correlation_id="c")
+
+    with pytest.raises(ValueError, match="already been minted"):
+        second.mint("m_a", 510, "stl_2", correlation_id="c")
+
+
+def test_a_warm_accountant_still_refuses_a_settlement_minted_before_it_existed(log):
+    log.append("accountant", "POINTS_MINTED",
+               {"actor_id": "m_a", "points": 510,
+                "source_settlement_id": "stl_1", "reason": "earned"},
+               correlation_id="c")
+    accountant = Accountant(log, FakeRazorpay())
+    accountant.mint("m_a", 20, "stl_2", correlation_id="c")
+
+    with pytest.raises(ValueError, match="already been minted"):
+        accountant.mint("m_a", 510, "stl_1", correlation_id="c")
+
+
+def test_opening_grants_do_not_collide_with_each_other(log):
+    """A grant has no source settlement, so nothing about it may be treated as
+    'already minted against' — every grant would be refused after the first."""
+    accountant = Accountant(log, FakeRazorpay())
+    accountant.mint("m_a", 100, None, correlation_id="c", reason="opening")
+    accountant.mint("m_b", 100, None, correlation_id="c", reason="opening")
+
+    minted = [e for e in log.read_all() if e.type == "POINTS_MINTED"]
+    assert len(minted) == 2
 
 
 def test_an_opening_grant_above_the_cap_is_refused(log):

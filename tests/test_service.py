@@ -660,3 +660,79 @@ def test_the_free_points_loop_mints_nothing(exchange):
 
     assert fold(exchange.log.read_all()).credit_balances.get("m_buyer", 0) == 0
     assert Accountant(exchange.log, FakeRazorpay()).assert_invariants() == []
+
+
+# --- the rail's balance, now that the exchange supplies the lookup ----------
+#
+# `Exchange` binds the credits rail to its cached projection so a payout stops
+# folding the whole log. The rail is still the lock, the figure is still
+# derived from the log, and — these tests exist for this — the figure is still
+# CURRENT. A cached balance that lagged one trade behind would be a ledger that
+# lets the same points be spent twice.
+
+
+def test_the_gate_allows_and_the_rail_still_refuses_what_cannot_be_funded(exchange):
+    """Defence in depth. The gate bounds an exposure against a policy; the rail
+    refuses a transfer the ledger cannot fund. Two different questions, and the
+    gate saying ALLOW is not an answer to the second."""
+    from exchange.rails.base import InsufficientCredits
+
+    with pytest.raises(InsufficientCredits):
+        exchange.execute_match(
+            Match("mch_broke", "ord_bid", "ord_ask", 40, 100, 0.9, "test"),
+            "m_pauper", "m_seller", TRUSTED, correlation_id="c1",
+            currency=Currency.CREDITS,
+        )
+
+    types = [e.type for e in exchange.log.read_by_correlation("c1")]
+    assert POLICY_DECIDED in types
+    assert "SETTLEMENT_FAILED" in types
+    assert CREDITS_TRANSFERRED not in types
+    allow = [e for e in exchange.log.read_all() if e.type == POLICY_DECIDED]
+    assert allow[0].payload["verdict"] == "ALLOW", "the gate did permit it"
+
+
+def test_the_balance_the_rail_sees_includes_the_trade_that_just_settled(exchange):
+    """A stale balance is a double spend. The buyer can fund one payout and not
+    two; the second must be refused on the strength of the first."""
+    from exchange.projections import fold
+    from exchange.rails.base import InsufficientCredits
+
+    exchange.log.append("genesis", CREDITS_TRANSFERRED,
+                        {"from_actor_id": "genesis", "to_actor_id": "m_buyer",
+                         "amount": 4000},
+                        correlation_id="seed")
+
+    _decision, settlement = exchange.execute_match(
+        Match("mch_c1", "ord_bid", "ord_ask", 40, 100, 0.9, "test"),
+        "m_buyer", "m_seller", TRUSTED, correlation_id="c1",
+        currency=Currency.CREDITS,
+    )
+    assert settlement.status == SettlementStatus.COMPLETED
+
+    with pytest.raises(InsufficientCredits):
+        exchange.execute_match(
+            Match("mch_c2", "ord_bid", "ord_ask", 40, 100, 0.9, "test"),
+            "m_buyer", "m_seller", TRUSTED, correlation_id="c2",
+            currency=Currency.CREDITS,
+        )
+
+    assert fold(exchange.log.read_all()).credit_balances["m_buyer"] == 0
+
+
+def test_the_rail_ignores_a_balance_the_caller_asserts_about_itself(exchange):
+    """There is no argument to `execute_match` that reaches the rail's balance
+    check, and this is the test that says so. `PolicyContext` is the caller's
+    own account of itself; the ledger is not."""
+    from dataclasses import replace as dc_replace
+
+    from exchange.rails.base import InsufficientCredits
+
+    generous = dc_replace(TRUSTED, rolling_spend=-1_000_000)
+
+    with pytest.raises(InsufficientCredits):
+        exchange.execute_match(
+            Match("mch_liar", "ord_bid", "ord_ask", 40, 100, 0.9, "test"),
+            "m_liar", "m_seller", generous, correlation_id="c1",
+            currency=Currency.CREDITS,
+        )

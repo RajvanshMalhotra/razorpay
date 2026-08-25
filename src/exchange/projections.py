@@ -34,6 +34,36 @@ class ExchangeState:
     credit_balances: dict[str, int] = field(default_factory=dict)
     settlements: dict[str, Settlement] = field(default_factory=dict)
     matches: dict[str, Match] = field(default_factory=dict)
+
+    # --- fields the gate reads, so the gate never re-scans the log ----------
+    #
+    # Everything below is DERIVED HERE, from the log, and from nothing else.
+    # Each replaced a full-log scan inside `Exchange`, and each had to keep the
+    # property that made the scan trustworthy: the checker computes the figure
+    # itself rather than being handed one. A projection is still a derivation —
+    # what changed is how often it is recomputed, not who computes it.
+
+    # Every order ever posted, as posted, keyed by order_id. NOT the book:
+    # `open_orders` loses an order when it fills or expires, and the mint basis
+    # has to be readable exactly then (`Exchange._counterparty_ask_price`).
+    # Most recent ORDER_POSTED for an id wins, the same resolution `open_orders`
+    # gives a repeated id, so the book and the mint basis can never disagree
+    # about the same order.
+    posted_orders: dict[str, Order] = field(default_factory=dict)
+
+    # Cumulative committed spend: actor_id -> currency -> minor units. Counted
+    # at SETTLEMENT_INITIATED, against the actor that initiated it — money is
+    # committed the moment the exposure is opened, and a PENDING settlement is
+    # exactly what a cap is meant to bound. Cumulative, not windowed; see
+    # `Exchange._spend_to_date` for why that is safe and what is still owed.
+    spend_to_date: dict[str, dict[str, int]] = field(default_factory=dict)
+
+    # Every action_ref that has already carried a POLICY_DECIDED. This backs a
+    # CORRECTNESS check, not a convenience one: `assert_invariants` joins
+    # settlements to decisions on match_id, and that join is only sound while a
+    # match_id reaches the gate at most once.
+    decided_action_refs: frozenset[str] = field(default_factory=frozenset)
+
     event_offset: int = 0
 
 
@@ -67,6 +97,11 @@ def fold_from(state: ExchangeState, events: Iterable[Event]) -> ExchangeState:
     balances: dict[str, int] = defaultdict(int, state.credit_balances)
     settlements: dict[str, Settlement] = dict(state.settlements)
     matches: dict[str, Match] = dict(state.matches)
+    posted_orders: dict[str, Order] = dict(state.posted_orders)
+    spend: dict[str, dict[str, int]] = {
+        actor: dict(by_currency) for actor, by_currency in state.spend_to_date.items()
+    }
+    decided: set[str] = set(state.decided_action_refs)
     offset = state.event_offset
 
     for event in events:
@@ -105,7 +140,7 @@ def fold_from(state: ExchangeState, events: Iterable[Event]) -> ExchangeState:
             )
 
         elif event.type == ev.ORDER_POSTED:
-            open_orders[p["order_id"]] = Order(
+            order = Order(
                 order_id=p["order_id"],
                 actor_id=p["actor_id"],
                 side=Side(p["side"]),
@@ -117,6 +152,11 @@ def fold_from(state: ExchangeState, events: Iterable[Event]) -> ExchangeState:
                 expires_at=p["expires_at"],
                 policy_snapshot=p.get("policy_snapshot", {}),
             )
+            open_orders[p["order_id"]] = order
+            # The book loses this record on a fill or an expiry; this one keeps
+            # it. Nothing removes from `posted_orders` — what was asked stays
+            # readable for as long as the log does.
+            posted_orders[p["order_id"]] = order
 
         elif event.type == ev.ORDER_EXPIRED:
             open_orders.pop(p["order_id"], None)
@@ -143,6 +183,18 @@ def fold_from(state: ExchangeState, events: Iterable[Event]) -> ExchangeState:
                 rationale=p["rationale"],
             )
 
+        elif event.type == ev.POLICY_DECIDED:
+            # Membership only — the verdict is deliberately NOT projected here.
+            # `Exchange._already_decided` refuses a second trip through the gate
+            # whatever the first verdict was, and a projection that carried the
+            # verdict would invite a caller to branch on it and re-run the ones
+            # that were denied. `action_ref` is read defensively because a fold
+            # that raises on a malformed row makes an append-only log
+            # permanently unreadable.
+            action_ref = p.get("action_ref")
+            if action_ref is not None:
+                decided.add(action_ref)
+
         elif event.type == ev.CREDITS_TRANSFERRED:
             balances[p["from_actor_id"]] -= p["amount"]
             balances[p["to_actor_id"]] += p["amount"]
@@ -163,6 +215,16 @@ def fold_from(state: ExchangeState, events: Iterable[Event]) -> ExchangeState:
                 amount=p["amount"],
                 status=SettlementStatus.PENDING,
                 razorpay_order_id=p.get("razorpay_order_id"),
+            )
+            # Exposure is committed here, so this is where the cap's usage
+            # figure accrues — against the actor that INITIATED it (the event's
+            # actor, which both rails set to the payer), on the currency the
+            # payload names. Read only from the payload and the envelope: no
+            # key beyond the ones this branch already requires, so the fold
+            # gains no new way to raise.
+            spend.setdefault(event.actor_id, {})
+            spend[event.actor_id][p["currency"]] = (
+                spend[event.actor_id].get(p["currency"], 0) + p["amount"]
             )
 
         elif event.type == ev.SETTLEMENT_COMPLETED:
@@ -263,5 +325,8 @@ def fold_from(state: ExchangeState, events: Iterable[Event]) -> ExchangeState:
         credit_balances=dict(balances),
         settlements=settlements,
         matches=matches,
+        posted_orders=posted_orders,
+        spend_to_date=spend,
+        decided_action_refs=frozenset(decided),
         event_offset=offset,
     )

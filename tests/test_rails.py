@@ -133,6 +133,75 @@ def test_credit_settlement_events_carry_the_correlation_id(log):
     assert len(log.read_by_correlation("c1")) == 3  # initiated, transferred, completed
 
 
+# --- where the rail gets the balance it checks ------------------------------
+#
+# The rail is the lock on the points ledger. Folding the whole log for one
+# balance is linear in the log and the auction pays at least 25 contributors a
+# lot, so `Exchange` binds a faster derivation of the same figure. What must
+# NOT change is who supplies it: a checker handed the number it checks is not a
+# checker.
+
+
+def test_the_rail_folds_the_log_itself_when_nothing_is_bound(log):
+    """The default has to stay a full fold: the rail is usable on its own."""
+    log.append("house", CREDITS_TRANSFERRED,
+               {"from_actor_id": "house", "to_actor_id": "m_a", "amount": 5000},
+               correlation_id="seed")
+
+    assert CreditRail(log)._balance_of("m_a") == 5000
+    assert CreditRail(log)._balance_of("nobody") == 0
+
+
+def test_settle_takes_no_balance_argument(log):
+    """Structural, and deliberately so. A per-call balance is the defect this
+    system keeps rediscovering: the constrained party naming its own figure.
+    The lookup is bound once at wiring time and asked about the payer."""
+    import inspect
+
+    params = set(inspect.signature(CreditRail.settle).parameters)
+
+    assert "balance" not in params
+    assert not any("balance" in p for p in params)
+
+
+def test_a_bound_lookup_is_asked_about_the_payer_and_nobody_else(log):
+    asked = []
+
+    def lookup(actor_id):
+        asked.append(actor_id)
+        return 5000
+
+    rail = CreditRail(log, balance_of=lookup)
+    rail.settle("mch_1", "m_a", "m_b", 1200, correlation_id="c1")
+
+    assert asked == ["m_a"], "the rail asks about the actor it is charging"
+
+
+def test_a_bound_lookup_still_refuses_a_short_balance_and_logs_first(log):
+    """The whole failure path has to survive the optimisation: refused, and
+    recorded before it raises."""
+    rail = CreditRail(log, balance_of=lambda actor_id: 100)
+
+    with pytest.raises(InsufficientCredits):
+        rail.settle("mch_1", "m_a", "m_b", 1200, correlation_id="c1")
+
+    events = log.read_by_correlation("c1")
+    assert [e.type for e in events] == [SETTLEMENT_FAILED]
+    assert "100" in events[0].payload["reason"]
+
+
+def test_binding_a_balance_source_replaces_the_full_fold(log):
+    log.append("house", CREDITS_TRANSFERRED,
+               {"from_actor_id": "house", "to_actor_id": "m_a", "amount": 5000},
+               correlation_id="seed")
+    rail = CreditRail(log)
+
+    rail.bind_balance_source(lambda actor_id: 0)
+
+    with pytest.raises(InsufficientCredits):
+        rail.settle("mch_1", "m_a", "m_b", 1200, correlation_id="c1")
+
+
 # --- INR rail ---------------------------------------------------------------
 
 def test_razorpay_settlement_completes_when_a_payment_is_captured(log):
