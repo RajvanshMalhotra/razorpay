@@ -574,6 +574,205 @@ def test_the_most_recently_posted_limit_is_the_one_that_binds(exchange):
     assert settlement is None
 
 
+# --- whose bid is it, though ----------------------------------------------
+#
+# The eight tests above are good tests and every one of them passes a
+# `bid_order_id` equal to the broker's own posted bid, so not one of them asks
+# whose order the row belongs to. `_posted_bid_limit` did not ask either: it
+# read `limit_price` off whatever ORDER_POSTED the id landed on, which is the
+# project's recurring defect — a value the checker must be authoritative about,
+# supplied by the party it constrains — reached through the check written to
+# prevent it.
+
+
+def _post_bid(exchange, order_id, actor_id, limit_price, qty=50):
+    exchange.post_order(Order(
+        order_id=order_id, actor_id=actor_id, side=Side.BID,
+        asset_ref=None, asset_query={"text": "mailers"}, qty=qty,
+        limit_price=limit_price, currency=Currency.INR,
+        expires_at="2026-12-31T00:00:00+00:00", policy_snapshot={},
+    ), correlation_id="c1")
+
+
+def test_the_audit_exploit_is_refused(exchange):
+    """The audit's scenario verbatim.
+
+    The buyer publishes a BID at 2000 — 50 units, a ceiling of 100,000 paise —
+    and then hands the gate a Match whose `bid_order_id` names the SELLER's ASK
+    at 9000. The ceiling read back was 9000, the verdict was ALLOW, 250,000
+    paise settled against a published maximum of 100,000, and
+    `assert_invariants()` returned [].
+    """
+    broker = Broker("m_buyer", exchange, ScriptedProvider(["ok"]))
+    _post_bid(exchange, "ord_own_bid", "m_buyer", limit_price=2000)
+    exchange.post_order(Order(
+        order_id="ord_seller_ask", actor_id="m_seller", side=Side.ASK,
+        asset_ref="ast_mailers", asset_query=None, qty=1000, limit_price=9000,
+        currency=Currency.INR, expires_at="2026-12-31T00:00:00+00:00",
+        policy_snapshot={},
+    ), correlation_id="c1")
+    exploit = Match(match_id="mch_exploit", bid_order_id="ord_seller_ask",
+                    ask_order_id="ord_seller_ask", clearing_price=5000, qty=50,
+                    score=0.9, rationale="the seller's own ask, named as our bid")
+
+    decision, settlement = broker.close(exploit, "m_seller", "c1", agreed_price=5000)
+
+    assert decision.verdict == Verdict.DENY
+    assert settlement is None
+    types = [e.type for e in exchange.log.read_by_correlation("c1")]
+    assert "SETTLEMENT_INITIATED" not in types
+    assert "MATCH_PROPOSED" not in types
+
+
+def test_another_actors_bid_is_not_this_buyers_ceiling(exchange):
+    """A ceiling somebody else published binds somebody else."""
+    exchange.register_actor(Actor(actor_id="m_rival", kind=ActorKind.MERCHANT))
+    _post_bid(exchange, "ord_rival_bid", "m_rival", limit_price=9000)
+    broker = Broker("m_buyer", exchange, ScriptedProvider(["ok"]))
+    match = Match(match_id="mch_borrowed", bid_order_id="ord_rival_bid",
+                  ask_order_id="ord_ask", clearing_price=5000, qty=50,
+                  score=0.9, rationale="a ceiling we never published")
+
+    decision, settlement = broker.close(match, "m_seller", "c1", agreed_price=5000)
+
+    assert decision.verdict == Verdict.DENY
+    assert settlement is None
+    assert "m_rival" in decision.reason
+    assert decision.limits_evaluated["bid_limit_price"] is None
+    assert broker._posted_bid_limit("ord_rival_bid") is None
+
+
+def test_an_order_that_is_not_a_bid_cannot_supply_a_ceiling(exchange):
+    """An ask's limit is a floor. Reading it as a spending ceiling inverts it."""
+    broker = Broker("m_buyer", exchange, ScriptedProvider(["ok"]))
+    match = Match(match_id="mch_askasbid", bid_order_id="ord_ask",
+                  ask_order_id="ord_ask", clearing_price=1900, qty=50,
+                  score=0.9, rationale="an ask named as the bid")
+
+    decision, settlement = broker.close(match, "m_seller", "c1", agreed_price=1900)
+
+    assert decision.verdict == Verdict.DENY
+    assert settlement is None
+    assert "not a BID" in decision.reason
+    assert broker._posted_bid_limit("ord_ask") is None
+
+
+def test_the_merchants_own_bid_is_still_accepted_as_its_ceiling(exchange):
+    """The checks refuse other people's rows, not this merchant's own."""
+    broker = Broker("m_buyer", exchange, ScriptedProvider(["ok"]))
+    _post_bid(exchange, "ord_own_bid", "m_buyer", limit_price=2000)
+
+    assert broker._posted_bid_limit("ord_own_bid") == 2000
+
+
+def test_reading_the_ceiling_does_not_scan_the_whole_log(exchange):
+    """The last full-log scan on the money path, and the one every test in
+    test_projection_cost.py missed: it runs inside `Broker.close`, ahead of
+    `execute_match`, and that harness calls `execute_match` directly."""
+    broker = Broker("m_buyer", exchange, ScriptedProvider(["ok"]))
+    _post_bid(exchange, "ord_own_bid", "m_buyer", limit_price=2000)
+    exchange.state()  # the one-off warm fold
+
+    reads = []
+    original = exchange.log.read_all
+    exchange.log.read_all = lambda: (reads.append(1), original())[1]
+    try:
+        assert broker._posted_bid_limit("ord_own_bid") == 2000
+    finally:
+        exchange.log.read_all = original
+
+    assert reads == [], "the ceiling comes from the projection, not from a scan"
+
+
+# --- one decision per match_id, from the merchant's side too ----------------
+
+
+def test_a_merchant_cannot_write_a_second_refusal_for_one_match(exchange):
+    """`execute_match` refuses a second trip through the gate because
+    `assert_invariants` joins settlements to decisions on match_id. A merchant
+    writing unlimited POLICY_DECIDED under one action_ref manufactures that
+    ambiguity from the other side."""
+    broker = Broker("m_buyer", exchange, ScriptedProvider(["ok"]))
+    matches = broker.find_supply("biodegradable compostable mailers", 200, 2200, "c1")
+
+    broker.close(matches[0], "m_seller", "c1", agreed_price=2500)
+    with pytest.raises(ValueError, match="fresh match_id"):
+        broker.close(matches[0], "m_seller", "c1", agreed_price=2500)
+
+    decided = [e for e in exchange.log.read_by_correlation("c1")
+               if e.type == "POLICY_DECIDED"]
+    assert len(decided) == 1
+
+
+def test_a_corrected_retry_is_a_new_match_and_is_decided_on_its_own_terms(exchange):
+    """The refusal spends the match_id; `matching.resize` is how a retry gets
+    a fresh one, exactly as it does for a gate DENY."""
+    broker = Broker("m_buyer", exchange, ScriptedProvider(
+        ["ok", "BEHAVIOURAL: held firm"]))
+    matches = broker.find_supply("biodegradable compostable mailers", 200, 2200, "c1")
+    broker.close(matches[0], "m_seller", "c1", agreed_price=2500)
+
+    decision, settlement = broker.close(
+        resize(matches[0], 200), "m_seller", "c1", agreed_price=2200)
+
+    assert decision.verdict == Verdict.ALLOW
+    assert settlement is not None
+
+
+# --- a shortlist entry that left the book ----------------------------------
+
+
+def test_choosing_survives_a_candidate_leaving_the_book_mid_turn(exchange):
+    """The shortlist comes from a snapshot; `choose` used to index the LIVE
+    book. With 30 merchants on one log another fill or expiry between the two
+    calls is routine, and it was an unrecorded KeyError that killed the turn."""
+    exchange.register_actor(Actor(actor_id="m_rival", kind=ActorKind.MERCHANT))
+    exchange.post_order(Order(
+        order_id="ord_rival", actor_id="m_rival", side=Side.ASK,
+        asset_ref="ast_mailers", asset_query=None, qty=1000, limit_price=1800,
+        currency=Currency.INR, expires_at="2026-12-31T00:00:00+00:00",
+        policy_snapshot={},
+    ), correlation_id="c1")
+    broker = Broker("m_buyer", exchange,
+                    ScriptedProvider(["trader ok", "I pick 1"]))
+    matches = broker.find_supply("biodegradable compostable mailers", 200, 2200, "c1")
+    assert len(matches) >= 2
+
+    # Another merchant fills the top candidate out of the book mid-turn.
+    exchange.log.append("m_rival", "ORDER_FILLED",
+                        {"order_id": matches[0].ask_order_id, "qty": 1000},
+                        correlation_id="c_other")
+    assert matches[0].ask_order_id not in exchange.state().open_orders
+
+    chosen = broker.choose(matches, "c1")
+
+    assert chosen in matches
+
+
+def test_a_candidate_that_left_the_book_is_named_as_such_to_the_diplomat(exchange):
+    """Named rather than silently dropped: whether to pursue an ask that has
+    just gone is a judgment, and the agent cannot make it unseen."""
+    exchange.register_actor(Actor(actor_id="m_rival", kind=ActorKind.MERCHANT))
+    exchange.post_order(Order(
+        order_id="ord_rival", actor_id="m_rival", side=Side.ASK,
+        asset_ref="ast_mailers", asset_query=None, qty=1000, limit_price=1800,
+        currency=Currency.INR, expires_at="2026-12-31T00:00:00+00:00",
+        policy_snapshot={},
+    ), correlation_id="c1")
+    provider = ScriptedProvider(["trader ok", "I pick 2"])
+    broker = Broker("m_buyer", exchange, provider)
+    matches = broker.find_supply("biodegradable compostable mailers", 200, 2200, "c1")
+    exchange.log.append("m_rival", "ORDER_EXPIRED",
+                        {"order_id": matches[0].ask_order_id},
+                        correlation_id="c_other")
+
+    broker.choose(matches, "c1")
+
+    sent = provider.calls[-1]["messages"][0].content
+    assert "NO LONGER IN THE BOOK" in sent
+    assert "unknown" not in sent, "posted_orders still knows whose ask it was"
+
+
 def test_the_headline_and_recall_both_reach_the_scout(exchange):
     provider = ScriptedProvider(["BEHAVIOURAL: past lots in this category paid off",
                                  "BID: 900 worth a look"])

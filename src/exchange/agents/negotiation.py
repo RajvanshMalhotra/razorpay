@@ -1,15 +1,40 @@
-"""Two brokers haggling, and four reasons it can stop.
+"""Two brokers haggling, and five reasons it can stop.
 
 A hard round cap makes brokers look like scripts and yields no signal — a
-counter tells you that it stopped, never why. Instead:
+counter tells you that it stopped, never why. So the interesting endings come
+first and the counter is only ever a floor:
 
   reasoning  the agent decides the gap is not worth another round
   progress   the gap between the sides has stopped moving
-  backstop   the token budget is exhausted; should never fire
+  budget     the token budget is exhausted; should never fire
+  backstop   the call cap is reached; fires only when everything above failed
   (the wall clock bounds the whole market run, not a single negotiation)
 
 Progress is measured on the GAP between the two sides, not on each offer.
 Oscillation — 1900, 2000, 1900 — moves every offer a lot and closes nothing.
+
+WHY A CALL CAP EXISTS AT ALL, given that the design argued against one. Every
+bound above it is a bound the PROVIDER gets to supply or defeat:
+
+- `spent` accumulates `input_tokens + output_tokens`, and `openai_compat`
+  reports 0 for both when the response carries no `usage` block. A provider
+  that omits usage — a gateway, a proxy, a streaming path — makes the token
+  budget a counter that never advances. Measured against the merged source:
+  5,000 model calls without termination.
+- An unparseable reply appends no offer, so `gap_stalled` cannot fire on that
+  path either, and the agent's own reasoning cannot end a conversation it never
+  managed to join. 67 calls for one degenerate negotiation with usage present.
+
+A bound that the party it constrains supplies is the defect this project keeps
+rediscovering; here the constrained party is the paid API. So the call cap is
+counted HERE, on calls this loop actually made, from a figure nothing outside
+this function contributes to. It is a floor under the token budget rather than
+a replacement for it: the budget still ends a wordy negotiation sooner, and the
+cap ends a silent one at all.
+
+A zero-token response is charged `_ASSUMED_TOKENS` rather than nothing, for the
+same reason: a call that reports no cost still costs money, and "free" is the
+one thing it certainly was not.
 """
 from __future__ import annotations
 
@@ -20,6 +45,19 @@ from exchange.llm.base import LLMMessage, LLMProvider
 
 _PRICE = re.compile(r"PRICE:\s*(\d+)", re.IGNORECASE)
 _WALK = re.compile(r"\bWALK\b", re.IGNORECASE)
+
+# Twelve model calls: six turns each. A healthy negotiation in this suite ends
+# in two to six calls, the audit's worst degenerate case ran to 67, and the
+# whole 30-merchant run budgets 700-900 calls — so twelve is comfortably above
+# any negotiation worth having and far below one that can eat the run's budget
+# on its own. It is a backstop, not a design parameter: if it starts firing in
+# healthy runs the fault is upstream, in the prompt or the model tier.
+MAX_MODEL_CALLS = 12
+
+# What a call is charged when the provider reports no usage. Roughly a
+# negotiation turn under the 256-token reply cap; the exact figure matters less
+# than that it is not zero.
+_ASSUMED_TOKENS = 500
 
 NEGOTIATOR_PROMPT = """You are negotiating a single business-to-business trade.
 
@@ -82,6 +120,7 @@ def negotiate(
     seller_floor: int,
     token_budget: int = 8000,
     journal=None,
+    max_calls: int = MAX_MODEL_CALLS,
 ) -> Outcome:
     offers: list[Offer] = []
     spent = 0
@@ -97,7 +136,7 @@ def negotiate(
         return _rounds(
             buyer_id, seller_id, buyer_provider, seller_provider,
             opening_price, buyer_limit, seller_floor, token_budget, journal,
-            offers, spent, transcript,
+            offers, spent, transcript, max_calls,
         )
     except Exception as exc:
         if journal:
@@ -118,13 +157,26 @@ def _rounds(
     offers: list[Offer],
     spent: int,
     transcript: list[str],
+    max_calls: int = MAX_MODEL_CALLS,
 ) -> Outcome:
     turn = "buyer"
+    calls = 0
     while True:
         if spent >= token_budget:
             if journal:
                 journal.negotiation_ended(False, None, "token budget exhausted")
             return Outcome(False, None, tuple(offers), "token budget exhausted")
+
+        # The one bound nothing outside this loop can defeat. An ending, not an
+        # error: a negotiation that ran out of patience is an ordinary market
+        # outcome and it goes into the log in the same shape as a walk-away, so
+        # a replay of the trade shows why it stopped rather than showing an
+        # opening with nothing after it.
+        if calls >= max_calls:
+            reason = f"call limit reached ({max_calls} model calls)"
+            if journal:
+                journal.negotiation_ended(False, None, reason)
+            return Outcome(False, None, tuple(offers), reason)
 
         if turn == "buyer":
             provider, actor, limit_line = (
@@ -140,7 +192,11 @@ def _rounds(
             system=NEGOTIATOR_PROMPT,
             max_tokens=256,
         )
-        spent += response.input_tokens + response.output_tokens
+        # Counted before anything can `continue` past it, and counted whatever
+        # the reply turns out to be: an unparseable answer is a paid call.
+        calls += 1
+        reported = response.input_tokens + response.output_tokens
+        spent += reported if reported > 0 else _ASSUMED_TOKENS
 
         price, walking = parse_offer(response.text)
 

@@ -71,8 +71,24 @@ class UnbackedCompletion:
 
 
 @dataclass(frozen=True)
+class CheckFailed:
+    """Razorpay refused the lookup for this settlement. Nothing was learned.
+
+    A THIRD OUTCOME, and not a flavour of either disagreement: the books may
+    agree or disagree, and this pass does not know which. It is neither
+    repairable nor containable, because there is no finding to act on — the
+    honest response is to record it, leave the settlement unresolved, and check
+    it again next pass.
+    """
+    settlement_id: str
+    razorpay_order_id: str
+    reason: str
+    correlation_id: str | None = None
+
+
+@dataclass(frozen=True)
 class Reconciliation:
-    """What one reconciliation run found, with the two directions kept apart.
+    """What one reconciliation run found, with the directions kept apart.
 
     Deliberately NOT a flat list. A caller iterating one sequence of "problems"
     is one `isinstance` away from repairing the thing that must not be
@@ -81,9 +97,19 @@ class Reconciliation:
     """
     drifts: list[Drift] = field(default_factory=list)
     unbacked: list[UnbackedCompletion] = field(default_factory=list)
+    unchecked: list[CheckFailed] = field(default_factory=list)
 
     @property
     def clean(self) -> bool:
+        """No DISAGREEMENT was found. Not the same as "everything was checked".
+
+        A rejected lookup is deliberately not counted here. `clean` answers
+        "do the books and the remote disagree anywhere I could see", and a
+        settlement nobody could ask about is not a disagreement — inventing one
+        would make a rate limit read as a drift. `unchecked` is the field that
+        says how much of the pass is unfinished, and a caller that needs "and
+        the pass was complete" must ask for both.
+        """
         return not self.drifts and not self.unbacked
 
 
@@ -126,41 +152,130 @@ class Accountant:
 
         The response to the second is `_contain_unbacked`, not repair. See
         `UnbackedCompletion` for why the two can never share a code path.
+
+        A PASS ONLY CHECKS WHAT IT STILL HAS SOMETHING TO LEARN ABOUT. This
+        used to issue one Razorpay round-trip per SETTLEMENT_INITIATED in the
+        whole log, on every call — R passes over N settlements cost R x N
+        remote calls, and on a resumed or re-tuned run N includes every
+        settlement of every previous run. If the runner reconciles per round,
+        which is the natural design because the failure demo depends on the
+        accountant noticing, that is quadratic against the one external service
+        whose rate limits the design lists as a known unknown.
+
+        Two watermarks prune it, and both are read from the log rather than
+        held in this process, so a fresh accountant over an existing database
+        prunes identically:
+
+        - CONFIRMED: a settlement COMPLETED locally that some earlier pass
+          already saw captured upstream. Recorded in that pass's RECONCILED
+          payload. Both sides agreed and neither can move again — a completion
+          cannot be un-appended and this system never un-captures — so there is
+          nothing a further round-trip could reveal. Note the direction of the
+          trust: a SETTLEMENT_COMPLETED is NOT itself taken as evidence the
+          remote agrees, or the unbacked-completion check would be checking its
+          own assumption. Every completion is verified against Razorpay at
+          least once, and only the verification is remembered.
+        - CONTAINED: an unbacked completion already detected. Permanently
+          wrong, permanently unrepairable, so it is REPORTED every pass — from
+          what the detection recorded — and asked about never again.
+
+        What is left is the outstanding work: settlements still PENDING here.
+        That set is bounded by the market's open exposure rather than by its
+        history, which is the property the run needs.
         """
         events = self._log.read_all()
         completed = {
             e.payload["settlement_id"]
             for e in events if e.type == ev.SETTLEMENT_COMPLETED
         }
-        # An unbacked completion cannot be undone — the log is append-only —
-        # so the condition holds on every later run. It is REPORTED every run
-        # (the books are still wrong) but only ACTED ON once: re-freezing an
+        confirmed = {
+            sid
+            for e in events if e.type == ev.RECONCILED
+            for sid in e.payload.get("confirmed", ())
+        }
+        # An unbacked completion cannot be undone — the log is append-only — so
+        # the condition holds on every later run. It is REPORTED every run (the
+        # books are still wrong) but only ACTED ON once: re-freezing an
         # already-frozen actor on every reconciliation would bury the trade's
-        # thread in duplicates of one event.
-        already_contained = {
-            e.payload["settlement_id"]
+        # thread in duplicates of one event. The detection's own payload is
+        # what the report is rebuilt from, which is also what lets the report
+        # happen without a remote call.
+        contained_by_sid = {
+            e.payload["settlement_id"]: e.payload
             for e in events if e.type == ev.UNBACKED_COMPLETION_DETECTED
         }
 
         drifts: list[Drift] = []
         unbacked: list[UnbackedCompletion] = []
+        unchecked: list[CheckFailed] = []
+        newly_confirmed: list[str] = []
         checked = 0
+        skipped = 0
         for event in events:
             if event.type != ev.SETTLEMENT_INITIATED:
                 continue
             order_id = event.payload.get("razorpay_order_id")
             if not order_id:
                 continue
-            checked += 1
             sid = event.payload["settlement_id"]
             local = "COMPLETED" if sid in completed else "PENDING"
 
-            payments = self._client.order.payments(order_id)
+            # Already contained: still wrong, still reported, never re-asked.
+            recorded = contained_by_sid.get(sid)
+            if recorded is not None:
+                skipped += 1
+                unbacked.append(UnbackedCompletion(
+                    settlement_id=sid,
+                    actor_id=recorded.get("actor_id", event.actor_id),
+                    local_status=recorded.get("local_status", local),
+                    remote_status=recorded.get("remote_status", "none"),
+                    correlation_id=event.correlation_id,
+                    razorpay_order_id=order_id,
+                ))
+                continue
+
+            # Settled work, agreed by both sides on an earlier pass.
+            if local == "COMPLETED" and sid in confirmed:
+                skipped += 1
+                continue
+
+            checked += 1
+            try:
+                payments = self._client.order.payments(order_id)
+            except Exception as exc:  # noqa: BLE001 - one rejected call is not a failed sweep
+                # A LOOKUP THAT FAILED IS NOT A FINDING. One 429 used to raise
+                # out of the whole sweep with a partial pass recorded and the
+                # rest of the market unexamined; the settlements after it in
+                # the log were no more suspect than the ones before. So the
+                # failure is recorded against the settlement it belongs to, on
+                # that trade's own thread, and the sweep carries on. Nothing is
+                # confirmed here, so the next pass checks it again.
+                reason = f"{type(exc).__name__}: {exc}"
+                unchecked.append(CheckFailed(
+                    settlement_id=sid,
+                    razorpay_order_id=order_id,
+                    reason=reason,
+                    correlation_id=event.correlation_id,
+                ))
+                self._log.append(
+                    ACCOUNTANT_ACTOR_ID, ev.RECONCILE_CHECK_FAILED,
+                    {"settlement_id": sid, "razorpay_order_id": order_id,
+                     "local_status": local, "reason": reason},
+                    correlation_id=event.correlation_id,
+                    causation_id=event.event_id,
+                )
+                continue
+
             remote = "none"
             for item in payments.get("items", []):
                 if item.get("status") == "captured":
                     remote = "captured"
                     break
+
+            if local == "COMPLETED" and remote == "captured":
+                # Both sides agree and neither can change. Remember it so no
+                # later pass spends a round-trip re-establishing it.
+                newly_confirmed.append(sid)
 
             if local == "PENDING" and remote == "captured":
                 drift = Drift(
@@ -193,16 +308,23 @@ class Accountant:
                     razorpay_order_id=order_id,
                 )
                 unbacked.append(found)
-                if sid not in already_contained:
-                    self._contain_unbacked(found, event)
+                # Reached only on FIRST detection: an already-contained
+                # settlement was reported and skipped above, before the
+                # round-trip.
+                self._contain_unbacked(found, event)
 
         self._log.append(
             ACCOUNTANT_ACTOR_ID, ev.RECONCILED,
-            {"settlements_checked": checked, "drifts": len(drifts),
-             "unbacked_completions": len(unbacked)},
+            {"settlements_checked": checked, "settlements_skipped": skipped,
+             "drifts": len(drifts), "unbacked_completions": len(unbacked),
+             "checks_failed": len(unchecked),
+             # The watermark itself, and the reason it lives in the log rather
+             # than on this instance: a run is going to be interrupted and
+             # resumed, and an index held in a process does not survive that.
+             "confirmed": newly_confirmed},
             correlation_id="recon",
         )
-        return Reconciliation(drifts=drifts, unbacked=unbacked)
+        return Reconciliation(drifts=drifts, unbacked=unbacked, unchecked=unchecked)
 
     def _contain_unbacked(self, found: UnbackedCompletion, initiated) -> None:
         """Record an unbacked completion and stop the actor it credits.

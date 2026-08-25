@@ -60,7 +60,7 @@ class Exchange:
         minter: Accountant | None = None,
     ) -> None:
         self.log = log
-        self.index = index
+        self._index = index
         self._inr_rail = inr_rail
         self._credit_rail = credit_rail
         # Wired by default, not optionally. Earning is half the economy, and an
@@ -74,7 +74,12 @@ class Exchange:
         # the caps it would like applied to itself.
         self._inr_limits = inr_limits or policy.DEFAULT_INR_LIMITS
         self._credit_limits = credit_limits or policy.DEFAULT_CREDIT_LIMITS
-        self._indexed: list[tuple[str, str]] = []
+        # asset_id -> the text currently in the index for it. NOT a record of
+        # what this process listed: it is what this process has folded out of
+        # the log so far, and it starts empty on every `Exchange` precisely so
+        # that a fresh one over an existing database rebuilds from the log
+        # instead of starting blind. See `index`.
+        self._indexed: dict[str, str] = {}
 
         # The credits rail folded the entire log for one balance, once per
         # payout, and the privacy floor guarantees at least 25 payouts a lot.
@@ -90,6 +95,63 @@ class Exchange:
         if bind is not None:
             bind(lambda actor_id: self.state().credit_balances.get(actor_id, 0))
 
+    @property
+    def index(self) -> HybridIndex:
+        """The retrieval index, brought up to date with the log before it is read.
+
+        A PROJECTION LIKE EVERY OTHER READ PATH HERE, which it was not. The
+        index used to be a plain list on the instance, appended to by
+        `list_asset` and folded from nothing: a second run against the same
+        database found the ask in `state().assets`, found it in `open_orders`,
+        and then intersected it with an empty index and returned no candidates
+        — SILENTLY. A resumed run read as "the market had no supply", which is
+        the worst way for a bug to present, because it looks like an economics
+        result. The design requires resumability in as many words: *on start,
+        fold the log, skip what is already done, continue.*
+
+        Synced lazily rather than in `__init__` so that constructing an
+        `Exchange` still costs nothing and the projection is still folded once,
+        on first use, by whoever needs it first.
+
+        `None` is a legitimate index for an exchange that never matches
+        descriptively — the cost harness passes one — and syncing nothing is
+        the honest response, not a crash.
+        """
+        if self._index is not None:
+            self._sync_index()
+        return self._index
+
+    def _sync_index(self) -> None:
+        """Bring the index level with `state().assets`, embedding only what is new.
+
+        Cheap enough to run on every read: when nothing has been listed since
+        the last call this compares two dicts and returns.
+
+        The append path is the normal one — assets are only ever added — and it
+        costs one embedding per new asset. The full rebuild exists for the case
+        `add()` cannot express: an asset_id re-listed with different text, where
+        the index holds a document the log has superseded. `new_id` makes that
+        unreachable from `src/`, but the log is append-only and persists across
+        runs, so "unreachable today" is not "cannot appear in the database".
+        """
+        docs = {
+            asset_id: f"{asset.title} {_spec_text(asset)}"
+            for asset_id, asset in self.state().assets.items()
+        }
+        if docs == self._indexed:
+            return
+        rewritten = any(
+            asset_id in docs and docs[asset_id] != text
+            for asset_id, text in self._indexed.items()
+        )
+        if rewritten or not self._indexed.keys() <= docs.keys():
+            self._index.index(list(docs.items()))
+        else:
+            self._index.add(
+                [(k, v) for k, v in docs.items() if k not in self._indexed]
+            )
+        self._indexed = docs
+
     def register_actor(self, actor: Actor) -> None:
         self.log.append(
             actor.actor_id,
@@ -99,14 +161,22 @@ class Exchange:
         )
 
     def list_asset(self, asset: Asset) -> None:
+        """Record the listing, then let the index catch up from the log.
+
+        Nothing is handed to the index directly — the same asset reaches it
+        through `state().assets` whether it was listed a moment ago by this
+        process or an hour ago by a previous run, so there is one code path and
+        no way for the two to disagree. Re-listing the same asset is therefore
+        idempotent in the index rather than adding a duplicate document.
+        """
         self.log.append(
             asset.origin_actor_id,
             ev.ASSET_LISTED,
             _serialize(asset),
             correlation_id=f"lst_{asset.asset_id}",
         )
-        self._indexed.append((asset.asset_id, f"{asset.title} {_spec_text(asset)}"))
-        self.index.index(self._indexed)
+        if self._index is not None:
+            self._sync_index()
 
     def post_order(self, order: Order, correlation_id: str) -> None:
         self.log.append(

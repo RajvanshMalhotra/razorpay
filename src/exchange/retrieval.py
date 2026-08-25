@@ -63,6 +63,7 @@ class HybridIndex:
         self._vectors: list[list[float]] = []
 
     def index(self, docs: list[tuple[str, str]]) -> None:
+        """REPLACE the corpus. Every text is re-embedded."""
         self._doc_ids = [doc_id for doc_id, _ in docs]
         self._texts = [text for _, text in docs]
         if not docs:
@@ -71,6 +72,34 @@ class HybridIndex:
             return
         self._bm25 = BM25Okapi([t.lower().split() for t in self._texts])
         self._vectors = self._embed(self._texts)
+
+    def add(self, docs: list[tuple[str, str]]) -> None:
+        """APPEND to the corpus. Only the new texts are embedded.
+
+        `index()` replaces everything, so a caller that grew a list and handed
+        the whole of it over on each listing paid n(n+1)/2 embeddings: 90
+        listings produced 4,095 embedded texts where linear is 90. With
+        `default_embedder()` (model2vec, real weights) rather than a stub, that
+        is what 30 merchants seeding their inventories costs at startup, and it
+        is genuinely quadratic if the runner lists during rounds.
+
+        BM25 is still re-fit over the whole corpus, and has to be: its idf is a
+        property of the corpus, so an appended document changes the scores of
+        the ones already in it. Re-fitting is tokenisation and counting, which
+        is not the expensive half — embedding is, and embedding is now paid
+        once per document for the life of the index.
+
+        Ranking is unaffected: `_rank` breaks ties on document id rather than
+        on position, so a corpus built by appending ranks identically to the
+        same corpus built in one call.
+        """
+        if not docs:
+            return
+        self._doc_ids.extend(doc_id for doc_id, _ in docs)
+        new_texts = [text for _, text in docs]
+        self._texts.extend(new_texts)
+        self._vectors.extend(self._embed(new_texts))
+        self._bm25 = BM25Okapi([t.lower().split() for t in self._texts])
 
     @property
     def size(self) -> int:

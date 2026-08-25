@@ -116,13 +116,25 @@ class Broker:
         if len(matches) <= 1:
             return matches[0]
 
+        # `posted_orders`, not `open_orders`. The shortlist was built from a
+        # snapshot taken in `find_supply`; this reads the LIVE book, and with
+        # 30 merchants sharing one log an ORDER_FILLED or ORDER_EXPIRED on any
+        # of these asks between the two calls is routine. Indexing the book
+        # made that an unrecorded KeyError that killed the broker's turn.
+        # `posted_orders` never loses a row, so the seller can always be named;
+        # an ask that has left the book is still shown, marked, so the Diplomat
+        # can weigh it rather than the market silently losing the candidate.
+        state = self._exchange.state()
         lines = []
         for i, m in enumerate(matches, start=1):
-            seller = self._exchange.state().open_orders[m.ask_order_id].actor_id
+            posted = state.posted_orders.get(m.ask_order_id)
+            seller = posted.actor_id if posted is not None else "unknown"
+            gone = "" if m.ask_order_id in state.open_orders else \
+                " (NO LONGER IN THE BOOK — filled or expired since)"
             recalled = self.subconscious.recall(seller)
             lines.append(
                 f"{i}. seller {seller} at {m.clearing_price} per unit, "
-                f"{m.qty} units. History: "
+                f"{m.qty} units{gone}. History: "
                 + ("; ".join(recalled) if recalled else "never dealt with them.")
             )
 
@@ -216,29 +228,73 @@ class Broker:
         return reply
 
     def _posted_bid_limit(self, bid_order_id: str) -> int | None:
-        """The per-unit ceiling this merchant advertised, read from the log.
+        """The per-unit ceiling THIS merchant advertised, on ITS OWN bid.
 
-        Not from `state().open_orders`: a bid leaves the book once it is
-        filled, and the limit it was posted under still binds the trade it was
-        posted for. The log keeps it either way — and, as everywhere else here,
-        the authoritative figure comes from the log rather than from whoever is
-        asking to spend against it.
+        THE ROW HAS TO BE OURS, not merely a row. `match` is handed to `close()`
+        by the party this ceiling is meant to bind, and `bid_order_id` is a
+        field of it, so reading whatever ORDER_POSTED that id lands on is the
+        project's recurring defect with one extra hop: the figure came from the
+        log, but the constrained party chose the row. It cost exactly what that
+        always costs — a buyer that published 2000/unit named the SELLER's ask
+        at 9000 as its own bid and settled 250,000 paise against a published
+        ceiling of 100,000, with the gate saying ALLOW and every invariant
+        clean.
 
-        MOST RECENT WINS on a repeated order_id, matching
-        `Exchange._counterparty_ask_price` and matching `fold`, which overwrites
-        `open_orders[order_id]` on a repost. Taking the FIRST match read a
-        ceiling off whichever run happened to use that id earliest — the log is
-        append-only and `runs/brokers.db` persists across runs — so the number
-        this merchant is actually bound by today is the last one it posted.
+        So the same four conditions `Exchange._counterparty_ask_price` applies
+        to the mint basis apply here, and any failure refuses rather than
+        clamps or defaults to unbounded:
+
+        - the named order is on record as an ORDER_POSTED at all;
+        - it is a BID (an ask's limit is a floor, not a spending ceiling);
+        - the actor that posted it is THIS merchant — nobody spends against a
+          ceiling somebody else published;
+        - and, by construction, the ceiling checked is the one the buyer bound
+          itself by rather than one it named in the argument.
+
+        Read from `state().posted_orders`, not `state().open_orders`: a bid
+        leaves the book once it is filled, and the limit it was posted under
+        still binds the trade it was posted for. `posted_orders` never loses a
+        row and resolves a repeated order_id MOST RECENT WINS — the same
+        resolution `fold` gives the book and the same one
+        `_counterparty_ask_price` reads, so the ceiling and the book can never
+        disagree about one order. Taking the FIRST match read a ceiling off
+        whichever run happened to use that id earliest, and the log is
+        append-only and `runs/brokers.db` persists across runs.
+
+        It is also the last full-log scan on the money path: `Broker.close`
+        ran one per trade, ahead of `execute_match` and therefore outside every
+        test in `test_projection_cost.py`.
         """
-        limit = None
-        for event in self._exchange.log.read_all():
-            if (
-                event.type == ev.ORDER_POSTED
-                and event.payload.get("order_id") == bid_order_id
-            ):
-                limit = event.payload["limit_price"]
-        return limit
+        posted = self._exchange.state().posted_orders.get(bid_order_id)
+        if posted is None:
+            return None
+        if posted.side != Side.BID:
+            return None
+        if posted.actor_id != self.actor_id:
+            return None
+        return posted.limit_price
+
+    def _no_ceiling_reason(self, bid_order_id: str) -> str:
+        """Why `_posted_bid_limit` found no ceiling. Names the actual defect.
+
+        Three ways to have no ceiling and they are not the same event to a
+        reader of the trail: an order nobody posted, an order that is not a
+        bid, and somebody else's bid. "Not in the log" for the last two would
+        be a false statement about a row that is plainly in the log.
+        """
+        posted = self._exchange.state().posted_orders.get(bid_order_id)
+        if posted is None:
+            return f"Bid order {bid_order_id} is not in the log"
+        if posted.side != Side.BID:
+            return (
+                f"Order {bid_order_id} is a {posted.side}, not a BID; an ask's "
+                "limit is a floor and cannot be read as a spending ceiling"
+            )
+        return (
+            f"Order {bid_order_id} was posted by {posted.actor_id}, not by "
+            f"{self.actor_id}; a merchant cannot spend against a ceiling it "
+            "never published"
+        )
 
     def _refuse_above_posted_limit(
         self, match: Match, agreed_price: int, correlation_id: str,
@@ -262,17 +318,19 @@ class Broker:
         deal is not lost: re-negotiating or re-sizing produces a new match
         (`matching.resize`), which the gate treats on its own terms.
 
-        A bid with no ORDER_POSTED in the log is refused too. An unfindable
-        ceiling is not an absent one, and defaulting to "unbounded" would make
-        this check advisory for exactly the caller that skipped the book.
+        A bid this merchant cannot show it published is refused too — no row,
+        the wrong side, or another actor's order. An unfindable ceiling is not
+        an absent one, and defaulting to "unbounded" would make this check
+        advisory for exactly the caller that skipped the book.
         """
         limit = self._posted_bid_limit(match.bid_order_id)
         if limit is None:
             return self._log_refusal(
                 match, correlation_id,
                 reason=(
-                    f"Bid order {match.bid_order_id} is not in the log; there is "
-                    f"no posted limit to check {agreed_price} against"
+                    f"{self._no_ceiling_reason(match.bid_order_id)}; there is "
+                    f"no posted limit of {self.actor_id}'s to check "
+                    f"{agreed_price} against"
                 ),
                 evaluated={"agreed_price": agreed_price, "bid_limit_price": None},
             )
@@ -298,7 +356,25 @@ class Broker:
         merchant's own posted ceiling. `execute_match` is never reached, so no
         MATCH_PROPOSED and no settlement exist for this action_ref — and the
         match_id is now spent: a corrected retry is a new match.
+
+        ONE DECISION PER match_id, refused here as `execute_match` refuses it
+        at `service.py:139` and for the identical reason. `assert_invariants`
+        joins settlements to decisions on `match_id`, and that join is only
+        sound while the id is unique — so a merchant able to write unlimited
+        POLICY_DECIDED under one `action_ref` manufactures, from its own side,
+        exactly the ambiguity the gate's guard exists to prevent. Closing the
+        gate's door and leaving the merchant's open is half a check.
+
+        Raising rather than returning a second decision, again matching
+        `execute_match`: a caller that has already been refused on these terms
+        is retrying an action that is spent, and `matching.resize` is how a
+        corrected retry gets its own id.
         """
+        if match.match_id in self._exchange.state().decided_action_refs:
+            raise ValueError(
+                f"match {match.match_id} has already carried a policy decision; "
+                "a corrected retry needs a fresh match_id"
+            )
         decision = PolicyDecision(
             decision_id=new_id("dec"),
             action_ref=match.match_id,

@@ -28,6 +28,11 @@ POLICY_DECIDED = "POLICY_DECIDED"
 SETTLEMENT_INITIATED = "SETTLEMENT_INITIATED"
 SETTLEMENT_COMPLETED = "SETTLEMENT_COMPLETED"
 SETTLEMENT_FAILED = "SETTLEMENT_FAILED"
+# The rail could not ask Razorpay whether a payment landed. NOT a failed
+# settlement — the order exists and is payable, and the settlement stays
+# PENDING for the accountant to resolve. Recorded so that "PENDING because
+# nobody paid" and "PENDING because we could not look" stay distinguishable.
+CAPTURE_POLL_FAILED = "CAPTURE_POLL_FAILED"
 CREDITS_TRANSFERRED = "CREDITS_TRANSFERRED"
 RECALL_INJECTED = "RECALL_INJECTED"
 LESSON_CONSOLIDATED = "LESSON_CONSOLIDATED"
@@ -41,6 +46,10 @@ AUCTION_OPENED = "AUCTION_OPENED"
 BID_PLACED = "BID_PLACED"
 AUCTION_CLEARED = "AUCTION_CLEARED"
 RECONCILED = "RECONCILED"
+# One settlement's remote lookup was rejected during a reconciliation sweep.
+# The sweep continues; this settlement is simply unresolved this pass and will
+# be re-checked on the next one, since nothing was learned about it.
+RECONCILE_CHECK_FAILED = "RECONCILE_CHECK_FAILED"
 DRIFT_DETECTED = "DRIFT_DETECTED"
 # Deliberately NOT a second flavour of DRIFT_DETECTED. The two directions the
 # books can disagree in demand opposite responses — one is repaired, the other
