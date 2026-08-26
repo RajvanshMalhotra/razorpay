@@ -8,8 +8,9 @@ from __future__ import annotations
 
 import logging
 import os
+import time
 
-from openai import BadRequestError, OpenAI
+from openai import APIConnectionError, BadRequestError, OpenAI
 
 from exchange.llm.base import LLMMessage, LLMResponse
 
@@ -36,6 +37,41 @@ class OpenAICompatProvider:
         self._client = OpenAI(base_url=base_url, api_key=api_key, timeout=timeout)
         self._model = model
 
+    def _create(self, payload, max_tokens: int, extra: dict):
+        """One request, retried through a dropped connection.
+
+        A dropped connection is not an answer and not a failure — it is the
+        request never happening. Measured across a real run, roughly four
+        turns in ten died on `APIConnectionError: Connection error` while a
+        single call from the same process succeeded every time, so the fault
+        is transient and per-connection rather than anything about the
+        prompt.
+
+        Retried HERE rather than left to the caller because every caller
+        above treats an exception as an outcome: a turn records `error` and
+        moves on, a negotiation ends, a valuation becomes an absent bid. Each
+        of those is a market event, and a network blip is not one.
+
+        Three attempts with a short backoff. Anything that is still failing
+        after that is not a blip, and the caller's own handling is right for
+        it.
+        """
+        last = None
+        for attempt in range(3):
+            try:
+                return self._client.chat.completions.create(
+                    model=self._model,
+                    messages=payload,
+                    max_tokens=max_tokens,
+                    **extra,
+                )
+            except APIConnectionError as exc:
+                last = exc
+                _log.warning("connection to %r dropped (attempt %d/3); retrying",
+                             self._model, attempt + 1)
+                time.sleep(0.5 * (attempt + 1))
+        raise last
+
     def complete(
         self,
         messages: list[LLMMessage],
@@ -54,12 +90,7 @@ class OpenAICompatProvider:
             extra["reasoning_effort"] = reasoning_effort
 
         try:
-            completion = self._client.chat.completions.create(
-                model=self._model,
-                messages=payload,
-                max_tokens=max_tokens,
-                **extra,
-            )
+            completion = self._create(payload, max_tokens, extra)
         except BadRequestError as exc:
             # Some local models (e.g. llama3.2 via Ollama) reject the
             # reasoning_effort param outright rather than ignoring it —
@@ -72,11 +103,7 @@ class OpenAICompatProvider:
                     "model %r rejected reasoning_effort=%r; retrying without it",
                     self._model, reasoning_effort,
                 )
-                completion = self._client.chat.completions.create(
-                    model=self._model,
-                    messages=payload,
-                    max_tokens=max_tokens,
-                )
+                completion = self._create(payload, max_tokens, {})
             else:
                 raise
         choice = completion.choices[0]
@@ -101,12 +128,7 @@ class OpenAICompatProvider:
                 "retrying once with %d",
                 self._model, max_tokens, max_tokens * 3,
             )
-            completion = self._client.chat.completions.create(
-                model=self._model,
-                messages=payload,
-                max_tokens=max_tokens * 3,
-                **extra,
-            )
+            completion = self._create(payload, max_tokens * 3, extra)
             choice = completion.choices[0]
             text = choice.message.content or ""
 
