@@ -191,3 +191,18 @@ def test_no_merchant_mandate_survives_sanitising_as_an_instruction():
 
     for merchant in MERCHANTS:
         assert not Mandate.from_input(merchant.mandate_input()).rejected
+
+
+def test_nobody_gets_only_one_chance_to_trade():
+    """A first run left 12 of 32 merchants having never traded, 10 of them
+    holding exactly one need — so a single walk-away put them out of the
+    market permanently. That is a sampling artifact, not a market behaviour,
+    and it starves the privacy floor, which counts DISTINCT contributors."""
+    assert all(len(m.needs) >= 2 for m in MERCHANTS)
+
+
+def test_a_second_chance_is_in_a_different_round():
+    """Two attempts in one round is one attempt with extra steps."""
+    for merchant in MERCHANTS:
+        rounds = [n.round_no for n in merchant.needs]
+        assert len(set(rounds)) >= 2, merchant.actor_id

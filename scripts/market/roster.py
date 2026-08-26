@@ -30,7 +30,7 @@ weights: the agent reasons from them, nothing multiplies by them.
 """
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 
 
 @dataclass(frozen=True)
@@ -396,6 +396,43 @@ _DRY_GOODS = (
 )
 
 
-MERCHANTS: tuple[Merchant, ...] = (
+def _give_everyone_a_second_chance(
+    merchants: tuple[Merchant, ...],
+) -> tuple[Merchant, ...]:
+    """Nobody buys only once in a whole market.
+
+    A first run left 12 of 32 merchants having never traded, and 10 of them
+    had exactly ONE need — a single negotiation each, so one walk-away or one
+    stall put them out of the market permanently. That is not a market
+    behaviour, it is a sampling artifact: an agent that gets one attempt is
+    being asked to succeed first time against a counterparty it has never
+    met, which is precisely the situation the trial-size rule exists because
+    agents do NOT succeed at.
+
+    It also starved the privacy floor. Contributors are counted DISTINCT, so
+    twenty merchants trading twice is worth less to the house agent than
+    thirty trading once, and the floor is the gate on the whole intelligence
+    economy.
+
+    The repeat is the same need in a later round rather than a new invented
+    one: a merchant that failed to buy something still needs it, and buying
+    it later from someone else is the most ordinary thing in a market.
+    """
+    out = []
+    for merchant in merchants:
+        if len(merchant.needs) >= 2:
+            out.append(merchant)
+            continue
+        first = merchant.needs[0]
+        later = 4 if first.round_no < 4 else 3
+        out.append(replace(merchant, needs=(
+            first,
+            Need(round_no=later, text=first.text,
+                 qty=first.qty, limit_price=first.limit_price),
+        )))
+    return tuple(out)
+
+
+MERCHANTS: tuple[Merchant, ...] = _give_everyone_a_second_chance(
     _SUPPLIERS + _cluster() + _PACKAGING + _TEXTILES + _ELECTRONICS + _DRY_GOODS
 )
