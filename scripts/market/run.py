@@ -118,7 +118,10 @@ def _already_traded(log, actor_id: str, need_text: str, round_no: int) -> bool:
     runner records its own outcome and resumption reads that.
     """
     marker = turn_correlation(actor_id, need_text, round_no)
-    return any(e.type == ev.TURN_ENDED for e in log.read_by_correlation(marker))
+    return any(
+        e.type == ev.TURN_ENDED and e.payload.get("outcome") != "error"
+        for e in log.read_by_correlation(marker)
+    )
 
 
 def turn_correlation(actor_id: str, need_text: str, round_no: int) -> str:
@@ -346,11 +349,19 @@ def run_round(exchange, brokers, merchants, round_no, budget,
 def run_turn(exchange, broker, merchant, need, round_no, budget) -> TurnResult:
     """Take the turn, and RECORD THAT IT ENDED, whatever the outcome.
 
-    The marker is written for every outcome including failure, because the
-    question resumption asks is "did this turn finish?", not "did it work?".
-    A turn that errored has been paid for and is not improved by running it
-    again; a turn that found no supply is genuinely complete. Only a turn
-    that never reached here — because the process died — should run again.
+    The marker is written for EVERY outcome, errors included, because the log
+    should record that the turn was attempted and how it went.
+
+    But an error does not COUNT as finished, and the first version had that
+    wrong. The reasoning was "a turn that errored has been paid for and is not
+    improved by running it again" — true of a model that answered badly, false
+    of one that never answered: five merchants lost their turns to
+    `APIConnectionError: Connection error`, a network blip, and were then
+    permanently skipped as though they had traded.
+
+    A market outcome is settled, walked, denied or no_supply. An error is not
+    a market outcome; it is the market failing to happen. The budget still
+    bounds how often a persistently broken turn can be retried.
     """
     result = _attempt_turn(exchange, broker, merchant, need, round_no, budget)
     exchange.log.append(

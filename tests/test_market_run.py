@@ -336,14 +336,11 @@ def test_a_finished_turn_records_that_it_ended(market):
     assert ended[0].payload["outcome"] == report.turns[0].outcome
 
 
-def test_a_turn_that_errored_still_counts_as_finished(market):
-    """It has been paid for and is not improved by running it again."""
-    from scripts.market.run import _already_traded
-
-    run_round(market, {"m_buyer": _broker(market, ExplodingProvider())},
-              (BUYER,), round_no=1, budget=Budget())
-
-    assert _already_traded(market.log, "m_buyer", BUYER.needs[0].text, 1)
+# NOTE: an earlier version of this file asserted the opposite — that an
+# errored turn counts as finished, on the reasoning that it "has been paid
+# for". That is true of a model which answered badly and false of one that
+# never answered, and five merchants lost their turns to a network blip
+# before the distinction was made. The replacement is below.
 
 
 def test_a_turn_that_found_no_supply_counts_as_finished(market):
@@ -361,3 +358,37 @@ def test_a_turn_that_found_no_supply_counts_as_finished(market):
               round_no=1, budget=Budget())
 
     assert _already_traded(market.log, "m_buyer", nothing.needs[0].text, 1)
+
+
+def test_a_turn_lost_to_an_error_is_retried(market):
+    """Five merchants lost their turns to `APIConnectionError` — a network
+    blip — and were then permanently skipped as though they had traded.
+
+    An error is not a market outcome; it is the market failing to happen.
+    """
+    from scripts.market.run import _already_traded
+
+    run_round(market, {"m_buyer": _broker(market, ExplodingProvider())},
+              (BUYER,), round_no=1, budget=Budget())
+
+    assert not _already_traded(market.log, "m_buyer", BUYER.needs[0].text, 1)
+
+
+def test_the_error_is_still_recorded_even_though_it_is_retried(market):
+    """The log keeps the attempt; only resumption declines to count it."""
+    run_round(market, {"m_buyer": _broker(market, ExplodingProvider())},
+              (BUYER,), round_no=1, budget=Budget())
+
+    ended = [e for e in market.log.read_all() if e.type == "TURN_ENDED"]
+    assert len(ended) == 1
+    assert ended[0].payload["outcome"] == "error"
+
+
+def test_a_real_market_outcome_is_still_final(market):
+    """Only errors are retryable — a walk-away is a decision, not a blip."""
+    from scripts.market.run import _already_traded
+
+    run_round(market, {"m_buyer": _broker(market, ScriptedProvider(["WALK: too dear"]))},
+              (BUYER,), round_no=1, budget=Budget())
+
+    assert _already_traded(market.log, "m_buyer", BUYER.needs[0].text, 1)
