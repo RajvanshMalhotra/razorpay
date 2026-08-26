@@ -246,6 +246,8 @@ def main(argv=None) -> int:
     parser.add_argument("--budget-seconds", type=float, default=3600.0)
     parser.add_argument("--dry-run", action="store_true",
                         help="fakes throughout; spends nothing")
+    parser.add_argument("--only", default="",
+                        help="comma-separated actor ids; trade only these")
     args = parser.parse_args(argv)
 
     if not any((args.seed, args.rounds, args.house, args.pending,
@@ -273,10 +275,24 @@ def main(argv=None) -> int:
 
         if args.rounds:
             brokers = _brokers(exchange, strong, fast)
+            # `--only` exists because Razorpay caps test-mode payment links
+            # at 30 per account. A run that exhausts the quota leaves later
+            # merchants with settlements nobody can pay, and the privacy floor
+            # counts DISTINCT contributors — so the fix is a few more turns for
+            # exactly those merchants, not another whole market.
+            roster = MERCHANTS
+            if args.only:
+                wanted = {a.strip() for a in args.only.split(",") if a.strip()}
+                roster = tuple(m for m in MERCHANTS if m.actor_id in wanted)
+                missing = wanted - {m.actor_id for m in roster}
+                if missing:
+                    print(f"  unknown actor ids ignored: {sorted(missing)}")
+                print(f"  trading only {len(roster)} merchant(s)")
+
             budget = Budget(max_turns=args.budget_turns,
                             max_seconds=args.budget_seconds)
             for round_no in range(1, args.rounds + 1):
-                print(run_round(exchange, brokers, MERCHANTS, round_no, budget))
+                print(run_round(exchange, brokers, roster, round_no, budget))
                 if budget.exhausted():
                     print(f"  budget spent after round {round_no}; "
                           f"re-run to continue")

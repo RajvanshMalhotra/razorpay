@@ -433,6 +433,38 @@ def _give_everyone_a_second_chance(
     return tuple(out)
 
 
-MERCHANTS: tuple[Merchant, ...] = _give_everyone_a_second_chance(
-    _SUPPLIERS + _cluster() + _PACKAGING + _TEXTILES + _ELECTRONICS + _DRY_GOODS
+def _a_fifth_round(merchants: tuple[Merchant, ...]) -> tuple[Merchant, ...]:
+    """One more round of the same needs, for a market that keeps running.
+
+    Not padding. Razorpay caps test-mode payment links at 30 per account, so
+    a run can exhaust the quota partway and leave later merchants holding
+    settlements nobody can pay. Those merchants HAVE traded — negotiated,
+    passed the gate, settled — but their money has no route to move, and the
+    privacy floor counts merchants whose payments actually completed.
+
+    Re-trading them is legitimate rather than convenient: a merchant whose
+    purchase could not be paid for still needs the goods, and buying again is
+    what it would really do. A fifth round is also just a longer market, which
+    is the ordinary thing for a market to be.
+    """
+    out = []
+    for m in merchants:
+        # The merchant's LARGEST standing need, not its first. Copying the
+        # first one made a cluster merchant repeat its January quantity, so
+        # total demand for the planted input fell from 2,600 back to 1,380 in
+        # round 5 — demand that grew for four rounds does not snap back, and
+        # the trend the house agent is meant to find would have reversed in
+        # its final reading.
+        biggest = max(m.needs, key=lambda n: n.qty)
+        out.append(replace(m, needs=m.needs + (
+            Need(round_no=5, text=biggest.text,
+                 qty=biggest.qty, limit_price=biggest.limit_price),
+        )))
+    return tuple(out)
+
+
+MERCHANTS: tuple[Merchant, ...] = _a_fifth_round(
+    _give_everyone_a_second_chance(
+        _SUPPLIERS + _cluster() + _PACKAGING + _TEXTILES + _ELECTRONICS + _DRY_GOODS
+    )
 )
