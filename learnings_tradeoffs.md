@@ -957,6 +957,107 @@ code the first one decides.
 
 ---
 
+---
+
+## 4D. The differentiator had no memory, and I was the reason
+
+### BUG-27 — lessons never survived the process that learned them
+
+`Subconscious._lessons` was a plain list. Every lesson was written to the log
+as `LESSON_CONSOLIDATED` — counterparty, category, text and kind, everything a
+lesson is — and **nothing ever read them back**. The list started empty on
+every process.
+
+A market that runs for two hours across three resumptions therefore woke up
+amnesiac twice. Every merchant forgot who had haggled, who had delivered late,
+and who it had never met. The Subconscious is the project's stated
+differentiator, and it was working perfectly for the length of one process.
+
+Nothing failed. No test caught it. Every test consolidates and recalls inside
+a single process, and **the bug only exists across a boundary no test
+crossed.**
+
+### How it was missed, which is the part worth keeping
+
+This was not an unknown class of defect. `counterparty_confidence` being
+process memory rather than a projection had already been found, written up,
+graded, and deliberately deferred — it is the ninth instance of this project's
+recurring root cause and it is in the standing risks below.
+
+Then, commissioning the pre-run audit, I put it in the brief's **"known and
+accepted — do NOT re-report"** list.
+
+So I told an auditor to ignore the exact category of flaw, and never asked the
+question that category implies: *what else lives only in memory?* The deferral
+was defensible on its own terms. Converting it into a blind spot for every
+future review was not.
+
+**The lesson, stated so it survives this project.** A deferred finding is not
+a closed one. When you tell a reviewer to skip a class of defect, you have
+made yourself the only remaining reader of that class — so the deferral has to
+come with a search for its siblings, not just a note. The pattern this project
+has hit eleven times is *a value the checker must be authoritative about,
+supplied by the party it constrains*; twice now the second instance was found
+only because someone went looking for a twin AFTER fixing the first.
+
+### The fix, and what it was not
+
+Lessons are now restored from the log on construction: `Subconscious(provider,
+log=...)` folds `LESSON_CONSOLIDATED` back into memory, kinds intact. Three
+tests cross a process boundary — the boundary no earlier test crossed —
+including one asserting that `recall`'s counterparty filter survives the round
+trip, because a restore that lost it would leak one counterparty's history
+into another's negotiation.
+
+**It was not a third-party memory layer**, and the research that led there is
+in §6A below. We already had both gates and a domain-specific typing none of
+the products offer. What we lacked was twenty lines reading our own log.
+
+---
+
+## 6A. Memory layers: what was surveyed, and why none was adopted
+
+Surveyed at the point where the persistence gap surfaced, because "should we
+adopt Mem0 or Supermemory?" is the obvious reaction to discovering your memory
+does not persist.
+
+| | licence | self-host free | shape |
+|---|---|---|---|
+| **Mem0** | Apache 2.0, genuinely | yes | vector-first, optional graph |
+| **Supermemory** | engine **closed**; MIT covers only clients, plugins, MCP | **no** — enterprise agreement | cloud-hosted |
+| **Zep** | Community Edition **discontinued** | no | graph with temporal validity |
+| **Graphiti** (Zep's engine) | Apache 2.0 | yes, but you operate a Neo4j | temporal knowledge graph |
+
+Two things worth recording beyond the table.
+
+**"Free and open source" was wrong for the one that sounded most open.**
+Supermemory's MIT badge covers the clients and the MCP server, not the engine.
+Reading the licence rather than the landing page changed the shortlist.
+
+**The benchmark numbers do not reproduce.** Mem0's LongMemEval figure moves
+from 49% to 73.8% depending on whose harness runs it. Any comparison sourced
+from vendor pages is marketing with a decimal point.
+
+**Decision: none adopted.** If one were, it would be Mem0 — the only genuinely
+Apache-2.0 option end to end. But the Subconscious already implements both
+gates the category is about:
+
+- **on write**, a whole episode is compressed by a model call into one
+  sentence, so the raw episode never enters long-term memory;
+- **on read**, `recall` filters by counterparty AND category, which is what
+  stops the leak the isolated contexts exist to prevent.
+
+And it carries something none of the products have: lessons are typed
+`reliability` or `behavioural`. That split is load-bearing and was a bug once
+(BUG-19) — *"they haggle hard"* must shape how you open and must never lower a
+trust score; *"they did not deliver"* must. A general-purpose memory layer
+stores both as undifferentiated text, and we would rebuild the typing on top
+of it anyway.
+
+Adopting one would have meant taking a dependency, eight days from a deadline,
+to replace a differentiator with something less suited — while leaving the
+actual defect, which was that nothing read our own log.
+
 ## 5. Standing risks
 
 | Risk | Status |

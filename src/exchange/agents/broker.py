@@ -61,7 +61,12 @@ class Broker:
         # `provider` would invite exactly the confusion the note above warns
         # about — the negotiator would silently get the expensive model.
         fast = self.fast_tier = fast_provider or provider
-        self.subconscious = subconscious or Subconscious(provider)
+        # Given the log, so this merchant remembers across runs. A broker
+        # built without one starts amnesiac, which is right for a test and
+        # wrong for a market.
+        self.subconscious = subconscious or Subconscious(
+            provider, log=self._exchange.log,
+        )
         self.graph = graph or RelationshipGraph()
 
         self.tree = ContextTree()
