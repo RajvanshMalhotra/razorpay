@@ -27,6 +27,10 @@ MATCH_PROPOSED = "MATCH_PROPOSED"
 POLICY_DECIDED = "POLICY_DECIDED"
 SETTLEMENT_INITIATED = "SETTLEMENT_INITIATED"
 SETTLEMENT_COMPLETED = "SETTLEMENT_COMPLETED"
+# A payment link issued for a settlement whose original could not be
+# created. Recorded as its own event rather than backdated into the
+# settlement, because when a link was issued is part of the record.
+PAYMENT_LINK_REISSUED = "PAYMENT_LINK_REISSUED"
 SETTLEMENT_FAILED = "SETTLEMENT_FAILED"
 # The rail could not ask Razorpay whether a payment landed. NOT a failed
 # settlement — the order exists and is payable, and the settlement stays

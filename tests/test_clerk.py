@@ -142,3 +142,65 @@ def test_an_empty_log_has_nothing_to_pay(log):
     assert report.payable == ()
     assert report.unpayable == ()
     assert report.outstanding == 0
+
+
+# --- a link issued after the fact --------------------------------------------
+#
+# Razorpay caps test-mode payment links at 30 per account. A run that exhausts
+# the quota leaves real settlements — negotiated, gated, agreed, initiated —
+# with no way for their money to move. Reissuing is what a business does with
+# an invoice whose link failed.
+
+
+def test_a_reissued_link_makes_a_settlement_payable(log):
+    from exchange.events import PAYMENT_LINK_REISSUED
+
+    _initiated(log, "stl_1", link=None, url=None,
+               link_error="ServerError: test mode limit of 30 reached")
+    assert pending_payments(log).payable == ()
+
+    log.append("m_buyer", PAYMENT_LINK_REISSUED, {
+        "settlement_id": "stl_1", "amount": 970_000,
+        "payment_link_id": "plink_new", "payment_link_url": "https://rzp.io/rzp/NEW",
+        "original_failure": "test mode limit of 30 reached",
+    }, correlation_id="reissue_stl_1")
+
+    payable = pending_payments(log).payable
+    assert len(payable) == 1
+    assert payable[0].payment_link_id == "plink_new"
+
+
+def test_the_reissue_does_not_rewrite_the_settlement(log):
+    """The log is append-only and the original genuinely had no link. A
+    reader comparing this against Razorpay's dashboard should find the later
+    timestamp, not be told the link existed all along."""
+    from exchange.events import PAYMENT_LINK_REISSUED
+
+    _initiated(log, "stl_1", link=None, url=None, link_error="quota")
+    log.append("m_buyer", PAYMENT_LINK_REISSUED, {
+        "settlement_id": "stl_1", "amount": 970_000,
+        "payment_link_id": "plink_new", "payment_link_url": "https://rzp.io/rzp/NEW",
+        "original_failure": "quota",
+    }, correlation_id="reissue_stl_1")
+
+    initiated = [e for e in log.read_all() if e.type == SETTLEMENT_INITIATED][0]
+    assert initiated.payload.get("payment_link_id") is None
+    reissued = [e for e in log.read_all() if e.type == PAYMENT_LINK_REISSUED][0]
+    assert reissued.payload["original_failure"] == "quota"
+
+
+def test_a_reissued_link_for_a_settled_trade_is_not_offered(log):
+    """Reissuing must not reopen something already paid."""
+    from exchange.events import PAYMENT_LINK_REISSUED
+
+    _initiated(log, "stl_1", link=None, url=None, link_error="quota")
+    log.append("m_buyer", PAYMENT_LINK_REISSUED, {
+        "settlement_id": "stl_1", "amount": 970_000,
+        "payment_link_id": "plink_new", "payment_link_url": "https://rzp.io/rzp/NEW",
+        "original_failure": "quota",
+    }, correlation_id="reissue_stl_1")
+    log.append("m_buyer", SETTLEMENT_COMPLETED,
+               {"settlement_id": "stl_1", "razorpay_payment_id": "pay_1"},
+               correlation_id="c")
+
+    assert pending_payments(log).payable == ()

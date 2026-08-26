@@ -92,6 +92,15 @@ def pending_payments(log) -> ClerkReport:
         if e.type in (ev.SETTLEMENT_COMPLETED, ev.SETTLEMENT_FAILED)
     }
 
+    # A settlement whose link was reissued after the fact is payable through
+    # that link. Kept as a separate lookup rather than merged into the
+    # settlement's own payload, because the log is append-only and the
+    # original genuinely had no link.
+    reissued = {
+        e.payload["settlement_id"]: e.payload
+        for e in events if e.type == ev.PAYMENT_LINK_REISSUED
+    }
+
     payable: list[PayableSettlement] = []
     unpayable: list[UnpayableSettlement] = []
     seen: set[str] = set()
@@ -108,8 +117,9 @@ def pending_payments(log) -> ClerkReport:
         if event.payload.get("currency") not in (None, "INR"):
             continue
 
-        link_id = event.payload.get("payment_link_id")
-        link_url = event.payload.get("payment_link_url")
+        later = reissued.get(sid, {})
+        link_id = event.payload.get("payment_link_id") or later.get("payment_link_id")
+        link_url = event.payload.get("payment_link_url") or later.get("payment_link_url")
         if not link_id or not link_url:
             unpayable.append(UnpayableSettlement(
                 settlement_id=sid,
