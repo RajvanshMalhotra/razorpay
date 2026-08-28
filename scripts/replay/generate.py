@@ -21,104 +21,117 @@ from datetime import datetime, timezone
 from scripts.replay.read import auction, failure_threads, lessons, load
 
 CSS = """
-/* Designed to read as a RECORD, not as marketing. The persuasive thing here
-   is that the numbers are real and checkable, so the page gets out of their
-   way: one accent colour used only for the gate, monospace wherever a figure
-   comes straight from the log, and no illustration anywhere. A judge should
-   feel they are reading evidence. */
-:root{--ink:#12161c;--dim:#66707d;--line:#e3e7ec;--bg:#fbfcfd;--card:#fff;
---ok:#0f7b4f;--no:#a8331f;--gate:#1f4fa8;--accent:#8a5a00}
+/* A TERMINAL, not a document. The content is a market log: thousands of
+   figures, timestamps, verdicts and counterparties. Instrumentation is the
+   honest register for that — a terminal reads as a readout of something that
+   happened, where a marketing page reads as a claim about it. That serves the
+   credibility constraint better than the document draft did.
 
-/* A judge may open this in either theme, and a light-only page in dark mode
-   reads as unfinished. Only the tokens change. */
-@media (prefers-color-scheme: dark){
-  :root{--ink:#e8ecf1;--dim:#98a3b2;--line:#232a33;--bg:#0e1116;--card:#151a21;
-  --ok:#4ec38a;--no:#ef8571;--gate:#7aa6f0;--accent:#d9a441}
+   Bloomberg's actual lesson is not "amber on black". It is that DENSITY IS A
+   COURTESY when every row is something the reader came for: no scroll spent
+   on decoration, labels always adjacent to their number, and one glance
+   telling you the state of the system. Legibility outranks atmosphere
+   everywhere the two disagree. */
+:root{
+  --bg:#07090c; --panel:#0c1014; --raised:#11161c; --line:#1c242e;
+  --ink:#dde5ee; --dim:#7d8b9c; --faint:#4a5666;
+  --amber:#f0a828; --green:#3fd07f; --red:#f4685a; --blue:#5aa9f0;
+  --grid:rgba(255,255,255,.028);
 }
 *{box-sizing:border-box}
+html{color-scheme:dark}
 body{margin:0;background:var(--bg);color:var(--ink);
-font:15px/1.6 ui-sans-serif,-apple-system,"Segoe UI",Roboto,sans-serif;
--webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility;
-/* Every figure on this page is evidence, and evidence that shifts column
-   as it changes is harder to compare. Lining, tabular figures throughout. */
-font-variant-numeric:tabular-nums lining-nums}
-.wrap{max-width:900px;margin:0 auto;padding:0 22px 90px}
-.beat{padding:46px 0;border-top:1px solid var(--line)}
-.beat:first-of-type{border-top:0}
-/* Two-digit markers, mono, low contrast — structure a reader feels rather
-   than reads. They must not compete with the heading beside them, so the
-   number sits at the same baseline and half the weight of the words. */
-/* The number is a RAIL, not the title. It marks position in a narrated
-   sequence — the failure only makes sense after a trade — so the reader
-   can find "beat three" while a narrator says it. The heading beside it
-   carries the actual weight; a 11px mono label standing in for a section
-   title is a hierarchy with a hole in it. */
-.beat{position:relative}
-.beat>.num{font:500 11.5px/1 ui-monospace,SFMono-Regular,Menlo,monospace;
-letter-spacing:.13em;color:var(--dim);margin-bottom:6px}
-.beat>h2{font-size:21px;letter-spacing:-.02em;margin:0 0 10px;line-height:1.25}
-@media(min-width:980px){
-  .beat>.num{position:absolute;left:-62px;top:52px;margin:0;text-align:right;
-  width:44px}
-}
-.lede{color:var(--dim);max-width:64ch;margin:0 0 20px}
-/* The one interactive control on the page. It is used once, deliberately,
-   so it gets feedback rather than motion — and a visible focus ring,
-   because a keyboard user should never have to guess where they are. */
-summary{border-radius:6px;padding:2px 4px;margin:-2px -4px;
-transition:color 120ms ease}
-summary:hover{color:var(--ink)}
-summary:focus-visible{outline:2px solid var(--gate);outline-offset:2px}
-@media (prefers-reduced-motion: reduce){*{transition-duration:0.01ms!important;
-animation-duration:0.01ms!important}}
-.mono{font-family:ui-monospace,SFMono-Regular,Menlo,monospace}
-.big{font-size:31px;letter-spacing:-.025em;margin:0 0 4px}
-.hero{padding:54px 0 30px}
-.rule{border:0;border-top:1px solid var(--line);margin:26px 0}
-.two{display:grid;grid-template-columns:1fr 1fr;gap:22px}
-@media(max-width:720px){.two{grid-template-columns:1fr}}
-.q{border-left:2px solid var(--line);padding:2px 0 2px 14px;margin:10px 0;
-color:var(--ink)}
-.q .by{color:var(--dim);font-size:12.5px}
-h1{font-size:30px;margin:0 0 10px;letter-spacing:-.028em;line-height:1.18;
-max-width:20ch}
-h2{font-size:19px;margin:44px 0 12px;letter-spacing:-.01em}
-/* Browser surfaces still carry the design. Selection and the caret ship
-   with defaults belonging to no design system; theming them is the cheapest
-   signal a page was built rather than assembled. */
-::selection{background:color-mix(in srgb,var(--gate) 22%,transparent);
-color:var(--ink)}
-:root{caret-color:var(--gate);accent-color:var(--gate)}
-.sub{color:var(--dim);margin:0 0 28px}
-.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:12px}
-.stat{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:14px}
-.stat b{display:block;font-size:23px;letter-spacing:-.022em;line-height:1.25}
-.stat span{color:var(--dim);font-size:12.5px;display:block;margin-top:3px}
-.card{background:var(--card);border:1px solid var(--line);border-radius:10px;
-padding:18px;margin:14px 0}
-.head{display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap;
-align-items:baseline;margin-bottom:10px}
-.who{font-weight:600}
-.tag{font-size:11.5px;text-transform:uppercase;letter-spacing:.05em;
-padding:2px 8px;border-radius:20px;border:1px solid var(--line);color:var(--dim)}
-.tag.ok{color:var(--ok);border-color:#bfe3d0}
-.tag.no{color:var(--no);border-color:#efc9c1}
-table{width:100%;border-collapse:collapse;font-size:14px}
-td{padding:7px 8px;border-bottom:1px solid var(--line);vertical-align:top}
+  font:13px/1.5 ui-monospace,SFMono-Regular,"SF Mono",Menlo,Consolas,monospace;
+  font-variant-numeric:tabular-nums lining-nums;
+  -webkit-font-smoothing:antialiased;
+  background-image:linear-gradient(var(--grid) 1px,transparent 1px),
+                   linear-gradient(90deg,var(--grid) 1px,transparent 1px);
+  background-size:34px 34px}
+::selection{background:rgba(240,168,40,.26);color:#fff}
+:root{caret-color:var(--amber);accent-color:var(--amber)}
+
+/* --- the chrome ------------------------------------------------------- */
+.bar{position:sticky;top:0;z-index:9;display:flex;gap:18px;align-items:center;
+  padding:9px 16px;background:rgba(7,9,12,.94);backdrop-filter:blur(8px);
+  border-bottom:1px solid var(--line);font-size:11.5px;letter-spacing:.06em;
+  text-transform:uppercase;color:var(--dim);flex-wrap:wrap}
+.bar .mark{color:var(--amber);font-weight:600;letter-spacing:.14em}
+.bar .sep{color:var(--faint)}
+.bar .live{display:inline-flex;gap:6px;align-items:center;color:var(--green)}
+.dot{width:6px;height:6px;border-radius:50%;background:currentColor}
+.wrap{max-width:1180px;margin:0 auto;padding:20px 16px 70px}
+
+/* --- panels ----------------------------------------------------------- */
+.panel{border:1px solid var(--line);background:var(--panel);margin-bottom:14px;
+  position:relative}
+/* Corner ticks: the cheapest way to say "instrument" without decoration. */
+.panel::before,.panel::after{content:"";position:absolute;width:7px;height:7px;
+  border-color:var(--faint);border-style:solid;pointer-events:none}
+.panel::before{top:-1px;left:-1px;border-width:1px 0 0 1px}
+.panel::after{bottom:-1px;right:-1px;border-width:0 1px 1px 0}
+.phead{display:flex;gap:12px;align-items:baseline;padding:9px 13px;
+  border-bottom:1px solid var(--line);background:var(--raised)}
+.phead .idx{color:var(--amber);font-size:11px;letter-spacing:.12em}
+.phead h2{margin:0;font-size:12.5px;font-weight:600;letter-spacing:.055em;
+  text-transform:uppercase;color:var(--ink)}
+.phead .note{margin-left:auto;color:var(--faint);font-size:11px;
+  letter-spacing:.05em;text-transform:uppercase}
+.pbody{padding:13px}
+.lede{color:var(--dim);margin:0 0 12px;max-width:76ch;line-height:1.62}
+
+/* --- readouts --------------------------------------------------------- */
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(132px,1fr));
+  gap:1px;background:var(--line);border:1px solid var(--line)}
+.stat{background:var(--panel);padding:11px 12px}
+.stat b{display:block;font-size:20px;font-weight:600;letter-spacing:-.01em;
+  color:var(--ink);line-height:1.2}
+.stat span{display:block;margin-top:4px;font-size:10.5px;letter-spacing:.07em;
+  text-transform:uppercase;color:var(--faint)}
+.stat.up b{color:var(--green)} .stat.warn b{color:var(--amber)}
+
+table{width:100%;border-collapse:collapse;font-size:12.5px}
+thead th{text-align:left;padding:6px 10px;font-size:10.5px;font-weight:600;
+  letter-spacing:.08em;text-transform:uppercase;color:var(--faint);
+  border-bottom:1px solid var(--line);white-space:nowrap}
+td{padding:6px 10px;border-bottom:1px solid rgba(28,36,46,.55);
+  vertical-align:top}
+tbody tr:hover{background:rgba(255,255,255,.022)}
 tr:last-child td{border-bottom:0}
-td.a{white-space:nowrap;font-weight:600;width:1%}
-td.p{white-space:nowrap;text-align:right;font-variant-numeric:tabular-nums;width:1%}
-.ev{font:12.5px/1.5 ui-monospace,SFMono-Regular,Menlo,monospace;color:var(--dim)}
-.ev td{padding:5px 8px}
-.ev .t{color:var(--ink)}
-.ev .deny{color:var(--no);font-weight:600}
-.ev .allow{color:var(--gate);font-weight:600}
-.note{background:#fff8ea;border:1px solid #f0dfba;border-radius:10px;
-padding:14px 16px;margin:14px 0;font-size:14px}
-.empty{color:var(--dim);font-style:italic;padding:12px 0}
+td.a{white-space:nowrap;color:var(--blue);width:1%}
+td.p{white-space:nowrap;text-align:right;width:1%;color:var(--ink)}
+td.t{white-space:nowrap;color:var(--dim);width:1%}
+td.seq{color:var(--faint);text-align:right;width:1%}
+.deny{color:var(--red);font-weight:600}
+.allow{color:var(--green);font-weight:600}
+.ok{color:var(--green)} .no{color:var(--red)}
+
+.tag{display:inline-block;font-size:10px;letter-spacing:.07em;
+  text-transform:uppercase;padding:2px 7px;border:1px solid var(--line);
+  color:var(--dim);white-space:nowrap}
+.tag.ok{color:var(--green);border-color:rgba(63,208,127,.34)}
+.tag.no{color:var(--red);border-color:rgba(244,104,90,.34)}
+.tag.amber{color:var(--amber);border-color:rgba(240,168,40,.34)}
+
+.head{display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap;
+  align-items:baseline;margin-bottom:9px;padding-bottom:9px;
+  border-bottom:1px solid var(--line)}
+.who{color:var(--blue)}
 .scroll{overflow-x:auto}
-footer{margin-top:56px;color:var(--dim);font-size:12.5px;
-border-top:1px solid var(--line);padding-top:16px}
+.q{border-left:2px solid var(--line);padding:3px 0 3px 12px;margin:9px 0;
+  color:var(--ink);line-height:1.6}
+.q .by{color:var(--faint);font-size:11px;letter-spacing:.05em;margin-top:3px}
+.big{font-size:17px;line-height:1.45;color:var(--ink);margin:0 0 10px;
+  max-width:70ch}
+.rule{border:0;border-top:1px solid var(--line);margin:12px 0}
+.empty{color:var(--faint);padding:8px 0}
+summary{cursor:pointer;color:var(--dim);font-size:11px;letter-spacing:.07em;
+  text-transform:uppercase;padding:3px 5px;margin:6px -5px 0;border-radius:2px}
+summary:hover{color:var(--amber)}
+summary:focus-visible{outline:1px solid var(--amber);outline-offset:2px}
+footer{border-top:1px solid var(--line);margin-top:18px;padding:12px 2px;
+  color:var(--faint);font-size:11px;letter-spacing:.04em;line-height:1.7}
+@media(prefers-reduced-motion:reduce){*{transition-duration:.01ms!important}}
+@media(max-width:640px){.bar{font-size:10.5px;gap:10px}.wrap{padding:14px 10px 50px}}
 """
 
 
@@ -130,8 +143,21 @@ def rupees(paise) -> str:
     return f"₹{(paise or 0) / 100:,.2f}"
 
 
-def _stat(value, label) -> str:
-    return f'<div class="stat"><b>{esc(value)}</b><span>{esc(label)}</span></div>'
+def _stat(value, label, tone: str = "") -> str:
+    cls = f"stat {tone}".strip()
+    return (f'<div class="{cls}"><b>{esc(value)}</b>'
+            f'<span>{esc(label)}</span></div>')
+
+
+def _panel(idx: str, title: str, body: str, note: str = "") -> str:
+    """Every readout sits in a labelled frame. A terminal's discipline is that
+    nothing floats: if it is on screen it belongs to a named panel, and the
+    reader always knows which instrument they are looking at."""
+    tail = f'<span class="note">{esc(note)}</span>' if note else ""
+    return (f'<section class="panel">'
+            f'<div class="phead"><span class="idx">{esc(idx)}</span>'
+            f'<h2>{esc(title)}</h2>{tail}</div>'
+            f'<div class="pbody">{body}</div></section>')
 
 
 def _negotiation(trade) -> str:
@@ -144,7 +170,9 @@ def _negotiation(trade) -> str:
         f'<td>{esc(e.payload.get("message", "").strip())}</td></tr>'
         for e in rounds
     )
-    return f'<div class="scroll"><table>{rows}</table></div>'
+    return ('<div class="scroll"><table><thead><tr>'
+            '<th>party</th><th style="text-align:right">offer</th>'
+            f'<th>reasoning</th></tr></thead><tbody>{rows}</tbody></table></div>')
 
 
 def _events(trade) -> str:
@@ -173,7 +201,10 @@ def _events(trade) -> str:
         rows.append(f'<tr><td class="p">{e.seq}</td>'
                     f'<td class="a">{esc(e.actor_id)}</td>'
                     f'<td class="t">{esc(e.type)}</td><td>{detail}</td></tr>')
-    return f'<div class="scroll"><table class="ev">{"".join(rows)}</table></div>'
+    return ('<div class="scroll"><table><thead><tr>'
+            '<th style="text-align:right">seq</th><th>actor</th>'
+            '<th>event</th><th>detail</th></tr></thead>'
+            f'<tbody>{"".join(rows)}</tbody></table></div>')
 
 
 def _detail(e) -> str:
@@ -297,65 +328,56 @@ def build(db_path: str) -> str:
 
     generated = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
 
-    return f"""<!doctype html>
-<html lang="en"><head><meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Agent Exchange — market replay</title><style>{CSS}</style></head>
-<body><div class="wrap">
+    beat1 = (f'<div class="grid">{stats}</div>'
+             f'<p class="lede" style="margin-top:12px">{summary.walked} of '
+             f'{summary.negotiations} negotiations ended without a deal. That '
+             f'is not a failure rate. Agents decline, and a market where every '
+             f'deal closes is not a market.</p>')
+    beat2 = (f'<p class="lede">Discovery, a real negotiation, the gate refusing '
+             f'a full lot to a stranger and then allowing a smaller one, and '
+             f'money moving. {len(trials)} trades in this log were refused and '
+             f're-tried smaller.</p>'
+             + (_trade_card(lead) if lead
+                else '<div class="empty">No completed trade.</div>'))
+    beat3 = f'<p class="lede">{esc(failure_note)}</p>{failure_html}'
+    beat5 = (f'<p class="lede">Each merchant&rsquo;s Subconscious compresses a '
+             f'whole trade into one durable sentence, typed by what it may '
+             f'affect: a reliability lesson can move a counterparty&rsquo;s '
+             f'standing, a behavioural one never can.</p>'
+             + (lesson_html or '<div class="empty">No lessons yet.</div>'))
 
-<div class="hero">
-  <h1>A market of AI agents, and the record it left</h1>
-  <p class="lede">{summary.merchants} Razorpay merchants, each represented by
-    an agent that found counterparties, negotiated, and settled real test-mode
-    payments. Every figure below is read from an append-only log. This page
-    runs nothing.</p>
-</div>
+    panels = "".join([
+        _panel("01", "The market", beat1,
+               note=f"{rupees(summary.value_paise)} transacted"),
+        _panel("02", "One trade, end to end", beat2, note="one correlation id"),
+        _panel("03", "The failure, caught and repaired", beat3,
+               note=f"{len(failures)} drifts caught"),
+        _panel("04", "The intelligence economy", econ,
+               note="second price, sealed bids"),
+        _panel("05", "What the agents remember", beat5,
+               note=f"{summary.lessons} lessons"),
+    ])
 
-<section class="beat">
-  <div class="num">01</div>
-  <h2>The market</h2>
-  <div class="grid">{stats}</div>
-  <p class="lede" style="margin-top:18px">{summary.walked} negotiations ended
-    without a deal. That is not a failure rate — agents decline, and a market
-    where every deal closes is not a market.</p>
-</section>
-
-<section class="beat">
-  <div class="num">02</div>
-  <h2>One trade, end to end</h2>
-  <p class="lede">Discovery, a real negotiation, the gate refusing a full lot
-    to a stranger and then allowing a smaller one, and money moving.
-    {len(trials)} of this log's trades were refused and re-tried smaller.</p>
-  {_trade_card(lead) if lead else '<div class="empty">No completed trade.</div>'}
-</section>
-
-<section class="beat">
-  <div class="num">03</div>
-  <h2>The failure, caught and repaired</h2>
-  <p class="lede">{esc(failure_note)}</p>
-  {failure_html}
-</section>
-
-<section class="beat">
-  <div class="num">04</div>
-  <h2>The intelligence economy</h2>
-  {econ}
-</section>
-
-<section class="beat">
-  <div class="num">05</div>
-  <h2>What the agents remember</h2>
-  <p class="lede">Each merchant's Subconscious compresses a whole trade into
-    one durable sentence, typed by what it may affect: a reliability lesson
-    can move a counterparty's standing, a behavioural one never can.</p>
-  {lesson_html or '<div class="empty">No lessons yet.</div>'}
-</section>
-
-<footer>Generated {esc(generated)} from {esc(summary.events)} events in
-{esc(db_path)}. Gate: {summary.gate_allow} allowed, {summary.gate_deny}
-refused. Nothing on this page was computed by the page — every number comes
-from the log or the projection the exchange itself runs on.</footer>
-</div></body></html>"""
+    return (
+        '<!doctype html>\n<html lang="en"><head><meta charset="utf-8">'
+        '<meta name="viewport" content="width=device-width,initial-scale=1">'
+        '<title>AGENT EXCHANGE &mdash; market replay</title>'
+        f'<style>{CSS}</style></head><body>'
+        '<div class="bar"><span class="mark">AGENT EXCHANGE</span>'
+        '<span class="sep">/</span><span>replay</span>'
+        f'<span class="sep">/</span><span>{esc(db_path)}</span>'
+        f'<span class="sep">/</span><span>{summary.events} events</span>'
+        f'<span class="sep">/</span><span>{summary.merchants} merchants</span>'
+        '<span class="live"><span class="dot"></span>log sealed</span></div>'
+        f'<div class="wrap">{panels}'
+        f'<footer>Generated {esc(generated)} from {esc(summary.events)} events '
+        f'in {esc(db_path)} &middot; gate {summary.gate_allow} allowed / '
+        f'{summary.gate_deny} refused &middot; {summary.completed} payments '
+        f'completed against real Razorpay test-mode orders.<br>'
+        f'Nothing on this page was computed by the page. Every figure is read '
+        f'from the log, or from the same projection the exchange itself runs '
+        f'on.</footer></div></body></html>'
+    )
 
 
 def main(argv=None) -> int:
