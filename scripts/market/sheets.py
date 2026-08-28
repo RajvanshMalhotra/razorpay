@@ -153,14 +153,23 @@ def main(argv=None) -> int:
     key_file = os.environ.get("GOOGLE_SERVICE_ACCOUNT_FILE")
     sheet_id = os.environ.get("GOOGLE_SHEET_ID")
     if not key_file or not sheet_id:
-        # Deliberately names what is missing and where it goes, and never
-        # echoes a value — an error message is a place secrets leak.
-        print("\n  No Google credentials configured, so nothing was synced.")
+        # Names exactly what is missing and never echoes a value — an error
+        # message is a place secrets leak. It used to say "no credentials"
+        # when only one of the two was absent, which sent you looking for a
+        # problem you had already solved.
+        missing = [name for name, value in
+                   (("GOOGLE_SERVICE_ACCOUNT_FILE", key_file),
+                    ("GOOGLE_SHEET_ID", sheet_id)) if not value]
+        print(f"\n  Nothing was synced: {' and '.join(missing)} "
+              f"{'is' if len(missing) == 1 else 'are'} not set in .env.")
         print("  The CSVs above are complete and import into Sheets as they are.")
-        print("  To sync automatically, add to .env:")
-        print("    GOOGLE_SERVICE_ACCOUNT_FILE=/absolute/path/to/key.json")
-        print("    GOOGLE_SHEET_ID=<id from the sheet URL>")
-        print("  then share the sheet with the service account's client_email.")
+        if "GOOGLE_SERVICE_ACCOUNT_FILE" in missing:
+            print("    GOOGLE_SERVICE_ACCOUNT_FILE=/absolute/path/to/key.json")
+        if "GOOGLE_SHEET_ID" in missing:
+            print("    GOOGLE_SHEET_ID=<the id between /d/ and /edit in the "
+                  "sheet URL>")
+            print("  and share that sheet with the service account's "
+                  "client_email as an Editor.")
         return 1
     if not pathlib.Path(key_file).exists():
         print(f"\n  GOOGLE_SERVICE_ACCOUNT_FILE points at a file that is not "
