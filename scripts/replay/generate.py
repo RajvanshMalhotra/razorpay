@@ -26,7 +26,7 @@ CSS = """
    way: one accent colour used only for the gate, monospace wherever a figure
    comes straight from the log, and no illustration anywhere. A judge should
    feel they are reading evidence. */
-:root{--ink:#12161c;--dim:#6b7684;--line:#e3e7ec;--bg:#fbfcfd;--card:#fff;
+:root{--ink:#12161c;--dim:#66707d;--line:#e3e7ec;--bg:#fbfcfd;--card:#fff;
 --ok:#0f7b4f;--no:#a8331f;--gate:#1f4fa8;--accent:#8a5a00}
 
 /* A judge may open this in either theme, and a light-only page in dark mode
@@ -48,12 +48,19 @@ font-variant-numeric:tabular-nums lining-nums}
 /* Two-digit markers, mono, low contrast — structure a reader feels rather
    than reads. They must not compete with the heading beside them, so the
    number sits at the same baseline and half the weight of the words. */
-.beat>.num{display:flex;gap:12px;align-items:baseline;margin-bottom:10px;
-font:500 11.5px/1 ui-monospace,SFMono-Regular,Menlo,monospace;
-letter-spacing:.13em;text-transform:uppercase;color:var(--dim)}
-.beat>.num .n{color:var(--line);font-weight:600;
-/* darker than the rule it matches, so it reads as ink not as a border */
-filter:brightness(.72)}
+/* The number is a RAIL, not the title. It marks position in a narrated
+   sequence — the failure only makes sense after a trade — so the reader
+   can find "beat three" while a narrator says it. The heading beside it
+   carries the actual weight; a 11px mono label standing in for a section
+   title is a hierarchy with a hole in it. */
+.beat{position:relative}
+.beat>.num{font:500 11.5px/1 ui-monospace,SFMono-Regular,Menlo,monospace;
+letter-spacing:.13em;color:var(--dim);margin-bottom:6px}
+.beat>h2{font-size:21px;letter-spacing:-.02em;margin:0 0 10px;line-height:1.25}
+@media(min-width:980px){
+  .beat>.num{position:absolute;left:-62px;top:52px;margin:0;text-align:right;
+  width:44px}
+}
 .lede{color:var(--dim);max-width:64ch;margin:0 0 20px}
 /* The one interactive control on the page. It is used once, deliberately,
    so it gets feedback rather than motion — and a visible focus ring,
@@ -76,6 +83,12 @@ color:var(--ink)}
 h1{font-size:30px;margin:0 0 10px;letter-spacing:-.028em;line-height:1.18;
 max-width:20ch}
 h2{font-size:19px;margin:44px 0 12px;letter-spacing:-.01em}
+/* Browser surfaces still carry the design. Selection and the caret ship
+   with defaults belonging to no design system; theming them is the cheapest
+   signal a page was built rather than assembled. */
+::selection{background:color-mix(in srgb,var(--gate) 22%,transparent);
+color:var(--ink)}
+:root{caret-color:var(--gate);accent-color:var(--gate)}
 .sub{color:var(--dim);margin:0 0 28px}
 .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:12px}
 .stat{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:14px}
@@ -299,7 +312,8 @@ def build(db_path: str) -> str:
 </div>
 
 <section class="beat">
-  <div class="num"><span class="n">01</span><span>the market</span></div>
+  <div class="num">01</div>
+  <h2>The market</h2>
   <div class="grid">{stats}</div>
   <p class="lede" style="margin-top:18px">{summary.walked} negotiations ended
     without a deal. That is not a failure rate — agents decline, and a market
@@ -307,7 +321,8 @@ def build(db_path: str) -> str:
 </section>
 
 <section class="beat">
-  <div class="num"><span class="n">02</span><span>one trade, end to end</span></div>
+  <div class="num">02</div>
+  <h2>One trade, end to end</h2>
   <p class="lede">Discovery, a real negotiation, the gate refusing a full lot
     to a stranger and then allowing a smaller one, and money moving.
     {len(trials)} of this log's trades were refused and re-tried smaller.</p>
@@ -315,18 +330,21 @@ def build(db_path: str) -> str:
 </section>
 
 <section class="beat">
-  <div class="num"><span class="n">03</span><span>the failure, caught and repaired</span></div>
+  <div class="num">03</div>
+  <h2>The failure, caught and repaired</h2>
   <p class="lede">{esc(failure_note)}</p>
   {failure_html}
 </section>
 
 <section class="beat">
-  <div class="num"><span class="n">04</span><span>the intelligence economy</span></div>
+  <div class="num">04</div>
+  <h2>The intelligence economy</h2>
   {econ}
 </section>
 
 <section class="beat">
-  <div class="num"><span class="n">05</span><span>what the agents remember</span></div>
+  <div class="num">05</div>
+  <h2>What the agents remember</h2>
   <p class="lede">Each merchant's Subconscious compresses a whole trade into
     one durable sentence, typed by what it may affect: a reliability lesson
     can move a counterparty's standing, a behavioural one never can.</p>

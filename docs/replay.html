@@ -7,7 +7,7 @@
    way: one accent colour used only for the gate, monospace wherever a figure
    comes straight from the log, and no illustration anywhere. A judge should
    feel they are reading evidence. */
-:root{--ink:#12161c;--dim:#6b7684;--line:#e3e7ec;--bg:#fbfcfd;--card:#fff;
+:root{--ink:#12161c;--dim:#66707d;--line:#e3e7ec;--bg:#fbfcfd;--card:#fff;
 --ok:#0f7b4f;--no:#a8331f;--gate:#1f4fa8;--accent:#8a5a00}
 
 /* A judge may open this in either theme, and a light-only page in dark mode
@@ -29,12 +29,19 @@ font-variant-numeric:tabular-nums lining-nums}
 /* Two-digit markers, mono, low contrast — structure a reader feels rather
    than reads. They must not compete with the heading beside them, so the
    number sits at the same baseline and half the weight of the words. */
-.beat>.num{display:flex;gap:12px;align-items:baseline;margin-bottom:10px;
-font:500 11.5px/1 ui-monospace,SFMono-Regular,Menlo,monospace;
-letter-spacing:.13em;text-transform:uppercase;color:var(--dim)}
-.beat>.num .n{color:var(--line);font-weight:600;
-/* darker than the rule it matches, so it reads as ink not as a border */
-filter:brightness(.72)}
+/* The number is a RAIL, not the title. It marks position in a narrated
+   sequence — the failure only makes sense after a trade — so the reader
+   can find "beat three" while a narrator says it. The heading beside it
+   carries the actual weight; a 11px mono label standing in for a section
+   title is a hierarchy with a hole in it. */
+.beat{position:relative}
+.beat>.num{font:500 11.5px/1 ui-monospace,SFMono-Regular,Menlo,monospace;
+letter-spacing:.13em;color:var(--dim);margin-bottom:6px}
+.beat>h2{font-size:21px;letter-spacing:-.02em;margin:0 0 10px;line-height:1.25}
+@media(min-width:980px){
+  .beat>.num{position:absolute;left:-62px;top:52px;margin:0;text-align:right;
+  width:44px}
+}
 .lede{color:var(--dim);max-width:64ch;margin:0 0 20px}
 /* The one interactive control on the page. It is used once, deliberately,
    so it gets feedback rather than motion — and a visible focus ring,
@@ -57,6 +64,12 @@ color:var(--ink)}
 h1{font-size:30px;margin:0 0 10px;letter-spacing:-.028em;line-height:1.18;
 max-width:20ch}
 h2{font-size:19px;margin:44px 0 12px;letter-spacing:-.01em}
+/* Browser surfaces still carry the design. Selection and the caret ship
+   with defaults belonging to no design system; theming them is the cheapest
+   signal a page was built rather than assembled. */
+::selection{background:color-mix(in srgb,var(--gate) 22%,transparent);
+color:var(--ink)}
+:root{caret-color:var(--gate);accent-color:var(--gate)}
 .sub{color:var(--dim);margin:0 0 28px}
 .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:12px}
 .stat{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:14px}
@@ -99,7 +112,8 @@ border-top:1px solid var(--line);padding-top:16px}
 </div>
 
 <section class="beat">
-  <div class="num"><span class="n">01</span><span>the market</span></div>
+  <div class="num">01</div>
+  <h2>The market</h2>
   <div class="grid"><div class="stat"><b>32</b><span>merchants</span></div><div class="stat"><b>31 / 36</b><span>agreed / walked away</span></div><div class="stat"><b>74</b><span>gate decisions</span></div><div class="stat"><b>34</b><span>payments completed</span></div><div class="stat"><b>₹139,903.24</b><span>transacted</span></div><div class="stat"><b>24</b><span>points minted</span></div><div class="stat"><b>14</b><span>lessons learned</span></div><div class="stat"><b>961</b><span>events in the log</span></div></div>
   <p class="lede" style="margin-top:18px">36 negotiations ended
     without a deal. That is not a failure rate — agents decline, and a market
@@ -107,7 +121,8 @@ border-top:1px solid var(--line);padding-top:16px}
 </section>
 
 <section class="beat">
-  <div class="num"><span class="n">02</span><span>one trade, end to end</span></div>
+  <div class="num">02</div>
+  <h2>One trade, end to end</h2>
   <p class="lede">Discovery, a real negotiation, the gate refusing a full lot
     to a stranger and then allowing a smaller one, and money moving.
     25 of this log's trades were refused and re-tried smaller.</p>
@@ -127,13 +142,15 @@ border-top:1px solid var(--line);padding-top:16px}
 </section>
 
 <section class="beat">
-  <div class="num"><span class="n">03</span><span>the failure, caught and repaired</span></div>
+  <div class="num">03</div>
+  <h2>The failure, caught and repaired</h2>
   <p class="lede">Not injected. A payment link paid after the settlement returned PENDING produces exactly this, and that is how it happened — 17 times in this log.</p>
   <div class="scroll"><table class="ev"><tr><td class="p">110</td><td class="a">m_bl_koramangala</td><td class="t">ORDER_POSTED</td><td></td></tr><tr><td class="p">125</td><td class="a">m_bl_koramangala</td><td class="t">COUNTERPARTY_CHOSEN</td><td></td></tr><tr><td class="p">126</td><td class="a">m_bl_koramangala</td><td class="t">NEGOTIATION_OPENED</td><td></td></tr><tr><td class="p">178</td><td class="a">m_bl_koramangala</td><td class="t">NEGOTIATION_ROUND</td><td></td></tr><tr><td class="p">179</td><td class="a">m_bl_yelahanka</td><td class="t">NEGOTIATION_ROUND</td><td></td></tr><tr><td class="p">180</td><td class="a">m_bl_koramangala</td><td class="t">NEGOTIATION_ENDED</td><td>agreed at 14400</td></tr><tr><td class="p">181</td><td class="a">m_bl_koramangala</td><td class="t">MATCH_PROPOSED</td><td></td></tr><tr><td class="p">182</td><td class="a">gate</td><td class="t">POLICY_DECIDED</td><td><span class="deny">DENY</span> Amount 1728000 exceeds unknown counterparty cap 500000 at confidence 0.00</td></tr><tr><td class="p">183</td><td class="a">m_bl_koramangala</td><td class="t">MATCH_PROPOSED</td><td></td></tr><tr><td class="p">184</td><td class="a">gate</td><td class="t">POLICY_DECIDED</td><td><span class="allow">ALLOW</span> Within all configured limits</td></tr><tr><td class="p">185</td><td class="a">m_bl_koramangala</td><td class="t">SETTLEMENT_INITIATED</td><td>₹4,896.00 · order_TV9ZXn4loRxgAn</td></tr><tr><td class="p">186</td><td class="a">m_bl_koramangala</td><td class="t">TURN_ENDED</td><td></td></tr><tr><td class="p">760</td><td class="a">accountant</td><td class="t">DRIFT_DETECTED</td><td>local PENDING · remote captured</td></tr><tr><td class="p">784</td><td class="a">accountant</td><td class="t">SETTLEMENT_COMPLETED</td><td>pay_TV9vZYMUoq2QCI</td></tr><tr><td class="p">785</td><td class="a">accountant</td><td class="t">POINTS_MINTED</td><td></td></tr><tr><td class="p">944</td><td class="a">m_bl_koramangala</td><td class="t">LESSON_CONSOLIDATED</td><td></td></tr></table></div>
 </section>
 
 <section class="beat">
-  <div class="num"><span class="n">04</span><span>the intelligence economy</span></div>
+  <div class="num">04</div>
+  <h2>The intelligence economy</h2>
   
       <p class="big">&ldquo;Micro-payment adoption is expanding, driven by a fragmentation of one-off, low-value settlements across a broadening merchant base.&rdquo;</p>
       <p class="lede">Mined by the house agent from 16
@@ -152,14 +169,15 @@ The rise in micro-payment adoption points to a broadening low-value settlement b
 </section>
 
 <section class="beat">
-  <div class="num"><span class="n">05</span><span>what the agents remember</span></div>
+  <div class="num">05</div>
+  <h2>What the agents remember</h2>
   <p class="lede">Each merchant's Subconscious compresses a whole trade into
     one durable sentence, typed by what it may affect: a reliability lesson
     can move a counterparty's standing, a behavioural one never can.</p>
   <div class="q">They paid the full 499800 paise and completed settlement without any follow-up, so they honor their financial commitments.<div class="by">m_bl_jayanagar on m_packmate · reliability</div></div><div class="q">They paid the full 480000 paise on time and completed the settlement as agreed at 24000 per unit.<div class="by">m_bl_indiranagar on m_nilgiri_cold · reliability</div></div><div class="q">They paid the full 187000 paise and settled completely after negotiating 7 offers to reach 748 per unit, so trust them to honor the final agreed terms without payment issues.<div class="by">m_third_wave_supply on m_packmate · reliability</div></div><div class="q">They paid the full 499800 paise as agreed and completed the settlement without delay, so you can count on them for reliable payment.<div class="by">m_western_ghats on m_labelhouse · reliability</div></div>
 </section>
 
-<footer>Generated 2026-08-28 11:34 UTC from 961 events in
+<footer>Generated 2026-08-28 11:41 UTC from 961 events in
 runs/market.db. Gate: 49 allowed, 25
 refused. Nothing on this page was computed by the page — every number comes
 from the log or the projection the exchange itself runs on.</footer>
