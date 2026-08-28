@@ -1887,7 +1887,7 @@ LANDING_CSS = """
   /* Four signals and no decoration. Blue works, green settles, red
      refuses, gold marks what is internal. */
   --blue:oklch(52% .18 252); --green:oklch(56% .14 155);
-  --red:oklch(55% .19 27); --gold:oklch(62% .13 74);
+  --red:oklch(55% .19 27); --gold:oklch(58% .14 82);
 
   /* The instruments: dark panels the page sets into itself. */
   --void:oklch(19% .028 255); --deep:oklch(23% .03 255);
@@ -1896,8 +1896,11 @@ LANDING_CSS = """
   --low:oklch(64% .018 255);
   /* On a dark instrument the signals lift a step to stay legible. */
   --ember:oklch(74% .15 250); --mint:oklch(80% .15 162);
-  --flare:oklch(70% .19 25); --iris:oklch(81% .14 78);
+  --flare:oklch(70% .19 25); --iris:oklch(86% .16 92);
 
+  /* Graph paper, and the one thing yellow genuinely does on paper. */
+  --dot:color-mix(in oklab,var(--ink) 13%,transparent);
+  --hi:oklch(89% .17 96);
   --iris-wash:color-mix(in oklab,var(--iris) 14%,transparent);
   --mint-wash:color-mix(in oklab,var(--mint) 13%,transparent);
   --disp:'Fraunces Display',"Iowan Old Style",Georgia,serif;
@@ -1911,9 +1914,15 @@ html{scroll-behavior:smooth}
 @view-transition{navigation:auto}
 ::view-transition-old(root),::view-transition-new(root){
   animation-duration:.34s;animation-timing-function:cubic-bezier(.16,1,.3,1)}
-body{margin:0;background:var(--paper);color:var(--ink);
-  font-family:var(--sans);font-size:16px;line-height:1.6;
-  -webkit-font-smoothing:antialiased}
+body{margin:0;color:var(--ink);font-family:var(--sans);font-size:16px;
+  line-height:1.6;-webkit-font-smoothing:antialiased;
+  background-color:var(--paper);
+  background-image:radial-gradient(circle at 1px 1px,var(--dot) 1px,
+    transparent 0);
+  background-size:24px 24px;background-attachment:fixed}
+/* The white bands are sheets laid on the grid, so the page has a floor and
+   the content has somewhere to sit. */
+.light{box-shadow:0 1px 0 var(--pline) inset}
 ::selection{background:var(--blue);color:#fff}
 :focus-visible{outline:2px solid var(--blue);outline-offset:3px}
 html{scrollbar-color:var(--pedge) var(--paper)}
@@ -1924,7 +1933,7 @@ h1,h2,h3{font-family:var(--disp);font-weight:600;letter-spacing:-.028em;
 
 .band{padding:clamp(60px,8vw,110px) clamp(20px,5vw,64px)}
 .in{max-width:1180px;margin:0 auto}
-.dark{background:var(--paper);color:var(--ink)}
+.dark{background:transparent;color:var(--ink)}
 .light{background:var(--card);color:var(--ink);
   border-block:1px solid var(--pline)}
 
@@ -1933,7 +1942,12 @@ h1,h2,h3{font-family:var(--disp);font-weight:600;letter-spacing:-.028em;
   gap:clamp(30px,4vw,60px);align-items:center;padding-top:clamp(20px,4vw,44px)}
 @media(max-width:960px){.hero{grid-template-columns:1fr}}
 .hero h1{font-size:clamp(38px,5.1vw,66px);line-height:1.02}
-.hero h1 em{font-style:italic;color:var(--blue)}
+.hero h1 em{font-style:italic;color:var(--ink);position:relative;
+  background-image:linear-gradient(transparent 58%,var(--hi) 58%,
+    var(--hi) 92%,transparent 92%);
+  background-repeat:no-repeat;background-size:0 100%;
+  animation:mark .9s .35s cubic-bezier(.16,1,.3,1) forwards}
+@keyframes mark{to{background-size:100% 100%}}
 .hero .say{margin:24px 0 0;color:var(--body);font-size:clamp(16px,1.4vw,18px);
   max-width:52ch;line-height:1.62}
 .hero .say b{color:var(--ink);font-weight:650}
@@ -2005,7 +2019,10 @@ h1,h2,h3{font-family:var(--disp);font-weight:600;letter-spacing:-.028em;
 /* --- section headings ----------------------------------------------------- */
 .lead{max-width:56ch;margin:0 0 clamp(34px,4vw,52px)}
 .lead h2{font-size:clamp(30px,3.9vw,46px);line-height:1.06}
-.lead h2 em{font-style:italic;color:var(--blue)}
+.lead h2 em{font-style:italic;color:var(--ink);
+  background-image:linear-gradient(transparent 58%,var(--hi) 58%,
+    var(--hi) 92%,transparent 92%);
+  background-repeat:no-repeat;background-size:100% 100%}
 .lead p{margin:16px 0 0;font-size:17px;line-height:1.62;color:var(--body)}
 
 /* --- what your agent does ------------------------------------------------- */
@@ -2069,8 +2086,8 @@ h1,h2,h3{font-family:var(--disp);font-weight:600;letter-spacing:-.028em;
 .st .d{font-size:13.5px;color:var(--soft);margin-top:6px;line-height:1.5}
 /* Content is visible by default; the reveal is added by script, so a page
    whose JavaScript never runs still reads completely. */
-.js .st,.js .pr,.js .jobs,.js .wheel{opacity:0;transform:translateY(10px)}
-.js .st.in,.js .pr.in,.js .jobs.in,.js .wheel.in{opacity:1;transform:none;
+.js .steps,.js .pr,.js .jobs,.js .wheel{opacity:0;transform:translateY(10px)}
+.js .steps.in,.js .pr.in,.js .jobs.in,.js .wheel.in{opacity:1;transform:none;
   transition:opacity .5s cubic-bezier(.16,1,.3,1),
              transform .5s cubic-bezier(.16,1,.3,1)}
 
@@ -2111,7 +2128,8 @@ footer{padding:26px clamp(20px,5vw,64px);border-top:1px solid var(--pline);
   background:var(--paper)}
 @media(prefers-reduced-motion:reduce){
   *{animation:none!important;scroll-behavior:auto}
-  .js .st,.js .pr,.js .jobs,.js .wheel{opacity:1;transform:none}
+  .js .steps,.js .pr,.js .jobs,.js .wheel{opacity:1;transform:none}
+  .hero h1 em{background-size:100% 100%}
   .enter,.spread .track i,.spread .val{transition-duration:.01ms!important}
 }
 """ + NET_CSS
@@ -2158,7 +2176,7 @@ if(matchMedia('(prefers-reduced-motion: reduce)').matches){
 
 /* The steps are a numbered sequence and the panels are lists, so both earn a
    stagger. The delay is capped: a reader who scrolls fast must never wait. */
-var reveal=[].slice.call(document.querySelectorAll('.st,.pr,.jobs,.wheel'));
+var reveal=[].slice.call(document.querySelectorAll('.steps,.pr,.jobs,.wheel'));
 if(!('IntersectionObserver' in window)){
   reveal.forEach(function(el){el.classList.add('in')});
 }else{
@@ -2213,12 +2231,12 @@ def build_landing(db_path: str, roster) -> str:
 
         # ---- hero: the hook ------------------------------------------------
         + '<section class="band dark"><div class="in hero"><div>'
-        + "<h1>The best campaign in your category is <em>for sale</em>. "
-          "Your agent is already bidding.</h1>"
-        + '<p class="say">Every business on Razorpay gets an agent. It buys '
-          'your supplies, argues down your prices, keeps your books, and bids '
-          'for what is working across the rest of the network. <b>When your '
-          'own win is the thing being sold, you are paid for it.</b></p>'
+        + "<h1>Your Razorpay account is now <em>a seat on the "
+          "exchange</em>.</h1>"
+        + '<p class="say">The best campaign in your category is already for '
+          'sale on it, and your agent is bidding. It also buys your supplies, '
+          'argues down your prices and keeps your books &mdash; and <b>when '
+          'your own win is the thing being sold, you are paid for it.</b></p>'
         + f'<div class="tape">'
           f'<span><b class="m num">{rupees(summary.value_paise)}</b> settled '
           f'between agents</span>'
