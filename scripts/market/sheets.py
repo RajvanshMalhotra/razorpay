@@ -37,6 +37,7 @@ from __future__ import annotations
 
 import argparse
 import csv
+import json
 import os
 import pathlib
 import sys
@@ -72,13 +73,22 @@ def write_csvs(events, out_dir: pathlib.Path) -> tuple[int, pathlib.Path]:
     return written, ledger
 
 
-def push_to_sheet(events, key_file: str, sheet_id: str, limit: int | None = None):
+TABS_FILE = "sheet-tabs.json"
+
+
+def push_to_sheet(events, key_file: str, sheet_id: str, limit: int | None = None,
+                  out_dir: pathlib.Path | None = None):
     """One tab per merchant, replaced wholesale on each run.
 
     Replaced rather than appended: these books are a projection of an
     append-only log, so the log is the only thing that accumulates. Appending
     here would double every row on a second run and quietly make the sheet
     disagree with its own source.
+
+    Records each merchant's tab id on the way out. A merchant's dashboard
+    links straight to its own tab rather than to the top of a shared
+    workbook, and a tab id is the only thing that makes that possible — so
+    the push writes down what it learns instead of throwing it away.
     """
     import gspread
     from google.oauth2.service_account import Credentials
@@ -87,7 +97,7 @@ def push_to_sheet(events, key_file: str, sheet_id: str, limit: int | None = None
     creds = Credentials.from_service_account_file(key_file, scopes=scopes)
     book = gspread.authorize(creds).open_by_key(sheet_id)
 
-    pushed = []
+    pushed, tabs = [], {}
     for actor in merchants(events)[:limit]:
         books = entries_for(events, actor)
         if not books.entries:
@@ -100,6 +110,15 @@ def push_to_sheet(events, key_file: str, sheet_id: str, limit: int | None = None
             tab = book.add_worksheet(title=title, rows=200, cols=len(COLUMNS))
         tab.update(values=sheet_rows(books), range_name="A1")
         pushed.append(actor)
+        tabs[actor] = tab.id
+
+    if out_dir is not None:
+        # The sheet id itself is NOT written here. It lives in .env, and
+        # duplicating a private workbook's identifier into a file that sits
+        # beside generated pages is how it ends up somewhere it should not.
+        out_dir.mkdir(parents=True, exist_ok=True)
+        (out_dir / TABS_FILE).write_text(
+            json.dumps(tabs, indent=2, sort_keys=True), encoding="utf-8")
     return pushed
 
 
@@ -149,7 +168,8 @@ def main(argv=None) -> int:
         return 1
 
     try:
-        pushed = push_to_sheet(events, key_file, sheet_id, args.only)
+        pushed = push_to_sheet(events, key_file, sheet_id, args.only,
+                               out_dir=pathlib.Path(args.out))
     except Exception as error:  # noqa: BLE001 — the cause belongs on screen
         print(f"\n  Google refused the sync: {type(error).__name__}: {error}")
         print("  The usual cause is the sheet not being shared with the "
@@ -158,6 +178,8 @@ def main(argv=None) -> int:
 
     print(f"\n  synced {len(pushed)} tabs to "
           f"https://docs.google.com/spreadsheets/d/{sheet_id}")
+    print(f"  tab ids written to {args.out}/{TABS_FILE} — rebuild the pages "
+          f"and each merchant links straight to its own tab.")
     return 0
 
 

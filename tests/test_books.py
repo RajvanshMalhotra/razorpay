@@ -21,17 +21,17 @@ class E:
 
 def _trade(corr="turn_1", buyer="m_a", seller="m_b", amount=490_000,
            qty=20, done=True, by="m_a", verdicts=("ALLOW",), base=100,
-           agreed=24_500, clearing=None):
+           agreed=24_500, clearing=None, ask="ord_ask"):
     events = [
         E(base, seller, "ORDER_POSTED",
-          {"order_id": "ord_ask", "side": "ASK", "asset_ref": "ast_1"}, "seed"),
+          {"order_id": ask, "side": "ASK", "asset_ref": "ast_1"}, "seed"),
         E(base + 1, buyer, "ORDER_POSTED",
           {"order_id": "ord_bid", "side": "BID",
            "asset_query": {"text": "cold brew concentrate"}}, corr),
         E(base + 2, buyer, "COUNTERPARTY_CHOSEN",
-          {"ask_order_id": "ord_ask"}, corr),
+          {"ask_order_id": ask}, corr),
         E(base + 3, buyer, "MATCH_PROPOSED",
-          {"ask_order_id": "ord_ask", "qty": qty,
+          {"ask_order_id": ask, "qty": qty,
            "clearing_price": clearing}, corr),
     ]
     if agreed is not None:

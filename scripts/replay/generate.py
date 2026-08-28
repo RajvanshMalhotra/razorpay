@@ -662,6 +662,12 @@ p.lede{font-size:15px;color:var(--body);margin:0 0 20px;max-width:74ch}
   border-radius:10px;background:var(--paper);font-size:12.5px;color:var(--mute)}
 .connect b{color:var(--body)}
 .connect .chips{display:flex;gap:7px;margin-top:9px;flex-wrap:wrap}
+.connect.synced{border-style:solid;border-color:var(--moneysoft);
+  background:var(--moneysoft)}
+.sheetbtn{display:inline-block;margin-top:11px;background:var(--money);
+  color:#fff;border-radius:8px;padding:9px 15px;font-size:13.5px;
+  font-weight:650;text-decoration:none}
+.sheetbtn:hover{filter:brightness(1.08)}
 .chip{background:var(--card);border:1px solid var(--edge);border-radius:7px;
   padding:5px 11px;font-size:12px;color:var(--pale);cursor:not-allowed}
 
@@ -1045,6 +1051,35 @@ def build_merchant(db_path: str, actor_id: str, roster) -> str:
     )
 
 
+def _sheet_link(actor_id: str):
+    """The live link to this merchant's own tab, when the sync has run.
+
+    Two things have to be true: a sheet id in the environment, and a tab id
+    recorded by the last push. Without both there is no honest link to draw,
+    so the card explains how to get one instead of rendering a dead button.
+
+    The sheet id is read from the environment at build time and never stored
+    beside the pages.
+    """
+    import json
+    import os
+    import pathlib as _p
+
+    sheet_id = os.environ.get("GOOGLE_SHEET_ID")
+    if not sheet_id:
+        return None
+    tabs_file = _p.Path("runs/books/sheet-tabs.json")
+    if not tabs_file.exists():
+        return None
+    try:
+        gid = json.loads(tabs_file.read_text()).get(actor_id)
+    except (ValueError, OSError):
+        return None
+    if gid is None:
+        return None
+    return f"https://docs.google.com/spreadsheets/d/{sheet_id}/edit#gid={gid}"
+
+
 def _books_card(books) -> str:
     """The books, kept automatically, in the columns an accountant reads.
 
@@ -1086,14 +1121,30 @@ def _books_card(books) -> str:
         f'<span class="meta">{len(books.entries)} entries &middot; kept '
         f'automatically</span></div><div class="cb">'
         f'<div class="bkgrid">{figures}</div>{table}'
-        '<div class="connect"><b>These books sync to a Google Sheet.</b> '
-        'The grid above is exactly what gets pushed &mdash; one tab per '
-        'merchant, replaced on every run, because the books are a projection '
-        'of a log that is the only thing allowed to accumulate. Run '
-        '<code>python -m scripts.market.sheets --sheet</code> '
-        'with a service-account key in <code>.env</code>; without one the same '
-        'command writes CSVs that open in Sheets as they are.</div>'
-        "</div></section>")
+        + _sheet_sync(books.actor_id)
+        + "</div></section>")
+
+
+def _sheet_sync(actor_id: str) -> str:
+    """Either the live link, or exactly what is missing. Never a dead button."""
+    link = _sheet_link(actor_id)
+    if link:
+        return (
+            '<div class="connect synced">'
+            '<b>These books are synced.</b> The grid above is exactly what is '
+            'in the sheet &mdash; your own tab, replaced on every run, because '
+            'the books are a projection of a log that is the only thing '
+            'allowed to accumulate.'
+            f'<a class="sheetbtn" href="{esc(link)}" target="_blank" '
+            f'rel="noopener">Open your tab in Google Sheets &rarr;</a></div>')
+    return (
+        '<div class="connect"><b>These books are ready to sync to a Google '
+        'Sheet.</b> The grid above is exactly what gets pushed &mdash; one tab '
+        'per merchant, replaced on every run. Run '
+        '<code>python -m scripts.market.sheets --sheet</code> with a '
+        'service-account key in <code>.env</code> and this card becomes a link '
+        'straight to your tab. Without one, the same command writes CSVs that '
+        'open in Sheets as they are.</div>')
 
 
 def _catalogue_card(view) -> str:
