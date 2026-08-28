@@ -277,9 +277,187 @@ def tape(events, limit: int = 2000):
             "seq": e.seq, "actor": e.actor_id, "type": e.type,
             "says": SAYS.get(e.type, e.type.lower().replace("_", " ")),
             "detail": detail[:150], "tone": tone,
+            # The thread this row belongs to. Carried so the page can follow
+            # a trade as it plays rather than making a reader match ids by
+            # eye — which is the difference between an audit trail you can
+            # watch and one you can only file.
+            "corr": e.correlation_id,
         })
     step = max(1, len(out) // limit)
     return out[::step][:limit]
+
+
+def _clip(text, limit):
+    """Cut on a word boundary and say so.
+
+    Slicing mid-word ("...their proven history of honoring commitmen") reads
+    as the agent having produced garbage rather than the page having run out
+    of room, which is the wrong thing to make a reader doubt.
+    """
+    text = str(text or "").strip()
+    if len(text) <= limit:
+        return text
+    return text[:limit].rsplit(" ", 1)[0].rstrip(" ,;:") + "…"
+
+
+
+# --- the rail ----------------------------------------------------------------
+#
+# Every trade in this system travels the same six stations in the same order,
+# and that order IS the argument: a gate ruling exists before money moves,
+# and a lesson exists after it. A trade that breaks does not get a different
+# shape — it grows two more stations out of the fifth one.
+#
+# Each station carries the sequence number of the event that filled it. That
+# number is the whole claim of the page in its smallest form: look it up in
+# the log and you will find exactly what the station says.
+
+STATIONS = (
+    ("wants", "wants"),
+    ("picked", "picked"),
+    ("haggled", "haggled"),
+    ("gate", "the gate"),
+    ("paid", "paid"),
+    ("broke", "books disagree"),
+    ("froze", "froze"),
+    ("repaired", "repaired"),
+    ("remembered", "remembered"),
+)
+
+
+def _station(key, seq=None, head="", lines=(), tone=""):
+    return {"key": key, "seq": seq, "head": head,
+            "lines": [str(x) for x in lines if x], "tone": tone}
+
+
+def rails(events, limit: int = 90):
+    """One follow-along trail per trade, keyed by correlation id.
+
+    Built from the trade's own events and nothing else, so a station that
+    shows a price is showing the price the log recorded at that sequence
+    number. Stations that never happened are absent rather than blank: an
+    empty box invites a reader to assume the step was skipped, when in most
+    threads it simply does not apply.
+    """
+    # WHO OWNS EACH ASK. The chosen event names an order, not a merchant,
+    # and a station that reads `ast_labels` tells a viewer nothing about who
+    # is on the other side of the trade. The log has the answer one hop away.
+    seller_of = {e.payload.get("order_id"): e.actor_id
+                 for e in events if e.type == "ORDER_POSTED"}
+
+    threads: dict[str, list] = {}
+    for event in events:
+        if (event.correlation_id.startswith("turn_")
+                or event.correlation_id.startswith("shop_")):
+            threads.setdefault(event.correlation_id, []).append(event)
+
+    out = {}
+    for corr, thread in threads.items():
+        first = {}
+        for event in thread:
+            first.setdefault(event.type, event)
+
+        posted = first.get("ORDER_POSTED")
+        query = (posted.payload.get("asset_query") or {}) if posted else {}
+        rulings = [e for e in thread if e.type == "POLICY_DECIDED"]
+        rounds = [e for e in thread if e.type == "NEGOTIATION_ROUND"]
+        ended = first.get("NEGOTIATION_ENDED")
+        opened = first.get("SETTLEMENT_INITIATED")
+        done = first.get("SETTLEMENT_COMPLETED")
+        drift = first.get("DRIFT_DETECTED")
+        froze = first.get("ACTOR_FROZEN")
+        resumed = first.get("ACTOR_RESUMED")
+        lesson = first.get("LESSON_CONSOLIDATED")
+        chosen = first.get("COUNTERPARTY_CHOSEN")
+        matched = first.get("MATCH_PROPOSED")
+
+        stations = []
+        if posted:
+            stations.append(_station(
+                "wants", posted.seq,
+                f'{posted.payload.get("qty")} units',
+                [f'at most {posted.payload.get("limit_price")} each']))
+        if chosen or matched:
+            src = chosen or matched
+            ask = ((chosen.payload.get("ask_order_id") if chosen else None)
+                   or (matched.payload.get("ask_order_id") if matched else None))
+            seller = seller_of.get(ask, "")
+            shortlist = len((chosen.payload.get("shortlist") or ())
+                            if chosen else ())
+            why = _clip(chosen.payload.get("reason"), 96) if chosen else ""
+            stations.append(_station(
+                "picked", src.seq, seller or "a counterparty",
+                [f"from {shortlist} candidates" if shortlist else "", why]))
+        if ended or rounds:
+            agreed = ended.payload.get("agreed") if ended else False
+            stations.append(_station(
+                "haggled", (ended or rounds[0]).seq,
+                (f'agreed {ended.payload.get("final_price")}' if agreed
+                 else "walked away"),
+                [f"{len(rounds)} offers"],
+                tone="allow" if agreed else "deny"))
+        if rulings:
+            verdicts = [r.payload.get("verdict") for r in rulings]
+            allowed = "ALLOW" in verdicts
+            stations.append(_station(
+                "gate", rulings[0].seq,
+                " then ".join(verdicts),
+                [str(rulings[0].payload.get("reason", ""))[:96]],
+                tone="allow" if allowed and "DENY" not in verdicts
+                else ("mixed" if allowed else "deny")))
+        if opened:
+            stations.append(_station(
+                "paid", opened.seq,
+                f'{(opened.payload.get("amount") or 0) / 100:,.2f} rupees',
+                [str(opened.payload.get("razorpay_order_id") or ""),
+                 str(done.payload.get("razorpay_payment_id") or "")
+                 if done else "awaiting capture"],
+                tone="allow" if done else ""))
+        if drift:
+            stations.append(_station(
+                "broke", drift.seq, "local vs Razorpay",
+                [f'we said {drift.payload.get("local_status")}',
+                 f'they said {drift.payload.get("remote_status")}'],
+                tone="deny"))
+        if froze:
+            stations.append(_station(
+                "froze", froze.seq, "trading stopped",
+                [str(froze.payload.get("reason", ""))[:70]], tone="deny"))
+        if resumed:
+            repair = next((e for e in thread
+                           if e.type == "SETTLEMENT_COMPLETED"
+                           and e.actor_id == "accountant"), None)
+            stations.append(_station(
+                "repaired", (repair or resumed).seq, "put right",
+                [str(repair.payload.get("razorpay_payment_id"))
+                 if repair else "", "cleared to trade again"],
+                tone="allow"))
+        if lesson:
+            stations.append(_station(
+                "remembered", lesson.seq,
+                str(lesson.payload.get("kind") or "lesson"),
+                [str(lesson.payload.get("text", ""))[:110]]))
+
+        if len(stations) < 2:
+            continue
+
+        out[corr] = {
+            "corr": corr,
+            "buyer": posted.actor_id if posted else thread[0].actor_id,
+            "need": query.get("text", "") or "",
+            "human": corr.startswith("shop_"),
+            "first_seq": thread[0].seq,
+            "stations": stations,
+            "amount": (opened.payload.get("amount") if opened else None),
+            "settled": bool(done),
+            "talk": [{"who": e.actor_id,
+                      "price": e.payload.get("price"),
+                      "said": str(e.payload.get("message", "")).strip()[:150]}
+                     for e in rounds][:12],
+        }
+
+    ordered = sorted(out.values(), key=lambda r: r["first_seq"])
+    return {r["corr"]: r for r in ordered[:limit]}
 
 
 def storefront(events):
@@ -341,3 +519,205 @@ def catalogue(events, limit: int = 40):
             out[e.payload["asset_ref"]]["price"] = e.payload.get("limit_price")
             out[e.payload["asset_ref"]]["qty"] = e.payload.get("qty")
     return [v | {"id": k} for k, v in out.items() if v.get("price")][:limit]
+
+
+# --- one merchant's own view -------------------------------------------------
+#
+# The merchant page answers a different question from the desk. Not "what is
+# the market doing" but "what did MY agents do with MY money, and can I check
+# it". Everything below is scoped to one actor and derived from its own
+# threads — a merchant is never shown a figure computed from anybody else's
+# trading, which is the same boundary the privacy floor enforces upstream.
+
+# WHICH PART OF THE BROKER DID WHAT. The four roles are real components with
+# isolated contexts, and each leaves a distinct signature in the log. The
+# mapping is written down here rather than guessed at in the template, and the
+# page prints the event types beside each role so a reader can check the
+# attribution instead of trusting it.
+ROLE_EVENTS = {
+    "trader": ("ORDER_POSTED", "MATCH_PROPOSED", "NEGOTIATION_OPENED",
+               "NEGOTIATION_ROUND", "NEGOTIATION_ENDED",
+               "SETTLEMENT_INITIATED", "SETTLEMENT_COMPLETED"),
+    "scout": ("BID_PLACED", "AUCTION_CLEARED", "INSIGHT_MINTED"),
+    "diplomat": ("COUNTERPARTY_CHOSEN",),
+    "subconscious": ("LESSON_CONSOLIDATED", "RECALL_INJECTED"),
+}
+
+ROLE_BLURB = {
+    "trader": "Buys and sells. Posts what you need, negotiates, settles.",
+    "scout": "Watches what is rising and bids points for market intelligence.",
+    "diplomat": "Reads counterparties and advises who to deal with. Never vetoes.",
+    "subconscious": "Never acts. Watches every deal and keeps what is worth "
+                    "remembering.",
+}
+
+# What a merchant would actually want pushed to it, in the words it would want.
+NOTIFY = {
+    "SETTLEMENT_COMPLETED": ("paid", "green"),
+    "SETTLEMENT_INITIATED": ("committed", ""),
+    "POLICY_DECIDED": ("gate", ""),
+    "DRIFT_DETECTED": ("books disagree", "red"),
+    "ACTOR_FROZEN": ("frozen", "red"),
+    "ACTOR_RESUMED": ("resumed", "green"),
+    "LESSON_CONSOLIDATED": ("learned", ""),
+    "POINTS_MINTED": ("points", "amber"),
+    "AUCTION_CLEARED": ("auction", "amber"),
+    "NEGOTIATION_ENDED": ("talks", ""),
+}
+
+
+def merchant_view(events, actor_id: str, rail_map=None):
+    """Everything one merchant's own dashboard needs, scoped to that merchant."""
+    rail_map = rail_map if rail_map is not None else rails(events)
+
+    mine_corrs = {r["corr"] for r in rail_map.values()
+                  if r["buyer"] == actor_id}
+    thread = [e for e in events
+              if e.correlation_id in mine_corrs or e.actor_id == actor_id]
+
+    registered = next((e for e in events if e.type == "ACTOR_REGISTERED"
+                       and e.actor_id == actor_id), None)
+
+    spent = sum(e.payload.get("amount", 0) for e in thread
+                if e.type == "SETTLEMENT_INITIATED" and e.actor_id == actor_id)
+    confirmed = sum(1 for e in thread if e.type == "SETTLEMENT_COMPLETED")
+    refused = sum(1 for e in thread if e.type == "POLICY_DECIDED"
+                  and e.payload.get("verdict") != "ALLOW")
+    allowed = sum(1 for e in thread if e.type == "POLICY_DECIDED"
+                  and e.payload.get("verdict") == "ALLOW")
+    points = sum(e.payload.get("points", 0) for e in events
+                 if e.type == "POINTS_MINTED"
+                 and e.payload.get("actor_id") == actor_id)
+
+    roles = {}
+    for role, types in ROLE_EVENTS.items():
+        acted = [e for e in thread if e.type in types and e.actor_id == actor_id]
+        roles[role] = {
+            "name": role,
+            "blurb": ROLE_BLURB[role],
+            "count": len(acted),
+            "types": list(types),
+            "last": _role_line(role, acted),
+            "result": _role_result(role, acted, thread, actor_id),
+        }
+
+    catalogue_rows = [
+        {"asset_id": e.payload.get("asset_id"),
+         "title": e.payload.get("title", ""),
+         "spec": e.payload.get("spec") or {}}
+        for e in events
+        if e.type == "ASSET_LISTED" and e.actor_id == actor_id
+    ]
+    priced = {e.payload.get("asset_ref"): e.payload for e in events
+              if e.type == "ORDER_POSTED" and e.payload.get("side") == "ASK"
+              and e.actor_id == actor_id}
+    for row in catalogue_rows:
+        order = priced.get(row["asset_id"]) or {}
+        row["price"] = order.get("limit_price")
+        row["qty"] = order.get("qty")
+
+    messages = []
+    for event in thread:
+        if event.type not in NOTIFY:
+            continue
+        if event.type == "POLICY_DECIDED" and \
+                event.payload.get("verdict") == "ALLOW":
+            continue  # an allow is not news; a refusal is
+        kind, tone = NOTIFY[event.type]
+        messages.append({
+            "seq": event.seq,
+            "kind": kind,
+            "tone": tone,
+            "from": event.actor_id,
+            "text": _notify_text(event),
+            "corr": event.correlation_id,
+        })
+    messages = list(reversed(messages))[:14]
+
+    return {
+        "actor_id": actor_id,
+        "name": actor_id[2:].replace("_", " "),
+        "plan": (registered.payload.get("plan_tier") if registered
+                 else "standard"),
+        "spent_paise": spent,
+        "confirmed": confirmed,
+        "allowed": allowed,
+        "refused": refused,
+        "points": points,
+        "roles": roles,
+        "catalogue": catalogue_rows,
+        "messages": messages,
+        "corrs": sorted(mine_corrs),
+    }
+
+
+def _role_line(role, acted):
+    if not acted:
+        return "nothing yet this run"
+    last = acted[-1]
+    payload = last.payload
+    if role == "trader":
+        if last.type == "NEGOTIATION_ROUND":
+            return f'offered {payload.get("price")}'
+        if last.type == "SETTLEMENT_INITIATED":
+            return f'committed {(payload.get("amount") or 0) / 100:,.2f} rupees'
+        if last.type == "ORDER_POSTED":
+            return f'posted for {payload.get("qty")} units'
+    if role == "diplomat" and last.type == "COUNTERPARTY_CHOSEN":
+        return _clip(payload.get("reason"), 150)
+    if role == "scout" and last.type == "BID_PLACED":
+        return f'bid {payload.get("amount")} points for market intelligence'
+    if role == "subconscious" and last.type == "LESSON_CONSOLIDATED":
+        return _clip(payload.get("text"), 190)
+    return last.type.lower().replace("_", " ")
+
+
+def _role_result(role, acted, thread, actor_id):
+    """One number that says whether this part of the broker did its job."""
+    if role == "trader":
+        settled = sum(1 for e in thread if e.type == "SETTLEMENT_INITIATED"
+                      and e.actor_id == actor_id)
+        walked = sum(1 for e in thread if e.type == "NEGOTIATION_ENDED"
+                     and not e.payload.get("agreed"))
+        return f"{settled} settled, {walked} walked away"
+    if role == "scout":
+        won = sum(1 for e in thread if e.type == "AUCTION_CLEARED"
+                  and e.payload.get("winner_id") == actor_id)
+        bids = sum(1 for e in acted if e.type == "BID_PLACED")
+        return f"{bids} bids, {won} won"
+    if role == "diplomat":
+        return f"{len(acted)} counterparties chosen"
+    if role == "subconscious":
+        lessons_kept = sum(1 for e in acted if e.type == "LESSON_CONSOLIDATED")
+        return f"{lessons_kept} lessons kept"
+    return ""
+
+
+def _notify_text(event):
+    payload = event.payload
+    if event.type == "SETTLEMENT_COMPLETED":
+        return f'Payment confirmed by Razorpay — {payload.get("razorpay_payment_id")}'
+    if event.type == "SETTLEMENT_INITIATED":
+        return (f'{(payload.get("amount") or 0) / 100:,.2f} rupees committed '
+                f'— {payload.get("razorpay_order_id")}')
+    if event.type == "POLICY_DECIDED":
+        return f'Refused: {payload.get("reason", "")}'
+    if event.type == "DRIFT_DETECTED":
+        return (f'Our books say {payload.get("local_status")}, Razorpay says '
+                f'{payload.get("remote_status")}. Checking.')
+    if event.type == "ACTOR_FROZEN":
+        return f'Trading paused: {payload.get("reason", "")}'
+    if event.type == "ACTOR_RESUMED":
+        return "Sorted. Trading resumed."
+    if event.type == "LESSON_CONSOLIDATED":
+        return _clip(payload.get("text"), 200)
+    if event.type == "POINTS_MINTED":
+        return f'{payload.get("points")} points earned'
+    if event.type == "AUCTION_CLEARED":
+        return (f'{payload.get("winner_id")} won the intelligence lot at '
+                f'{payload.get("price")} points')
+    if event.type == "NEGOTIATION_ENDED":
+        return ("Agreed at " + str(payload.get("final_price"))
+                if payload.get("agreed")
+                else f'No deal — {payload.get("reason", "")}')
+    return event.type

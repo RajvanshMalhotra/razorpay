@@ -9,15 +9,37 @@ web
 ## Stack
 
 Static HTML, generated. `scripts/replay/generate.py` reads an append-only
-SQLite event log and writes a single self-contained `docs/replay.html` — no
+SQLite event log and writes one page per merchant plus the internal desk — no
 framework, no build step, no network at view time. Regenerate with:
 
 ```
-.venv/bin/python -m scripts.replay.generate runs/market.db docs/replay.html
+.venv/bin/python -m scripts.replay.generate runs/market.db docs/
 ```
 
 Every figure on the page is baked in from the log at generation time. The
 page cannot fetch, so it cannot show anything the log did not contain.
+
+## Surfaces
+
+**Two audiences that want opposite things, so two pages with two visual
+worlds.** This is the central product decision and everything else follows
+from it.
+
+| | `docs/m-<merchant>.html` | `docs/desk.html` |
+|---|---|---|
+| Reader | a merchant | Razorpay staff |
+| Question | what did my agents do with my money | what is the whole book doing |
+| Look | light, roomy, friendly | pure-black terminal, dense |
+| Motion | none — read it like a statement | live tape, counters climbing |
+| Gate | open | passcode (a stage prop, labelled as one) |
+
+A merchant does not benefit from watching thirty-two agents trade, so the
+live floor is not on its page. The campaign board is not either: ranking what
+is climbing across the client base is the house's own view, and a merchant
+reaches that material only by winning the auction for a lot minted from it.
+
+The merchant page carries four things: the four parts of its broker and what
+each one did, the money trail per trade, its catalogue, and one input box.
 
 ## Users
 
@@ -55,6 +77,20 @@ content. Other merchants pay to watch. Revenue is shared.*
 The campaign board is the part a neighbouring product cannot truthfully
 copy. Ranking what is climbing across a client base requires seeing the whole
 book, which only the payment processor does.
+
+## Not built, and never faked
+
+Slack, Discord, WhatsApp and Telegram integration is **out of scope by
+decision**, not by omission — autonomous outreach on those platforms violates
+their terms and reads as a spambot. The merchant page has a messages feed
+because merchants want one; it is fed from what the agents actually recorded,
+every line carries its event number, and the panel says in plain words that
+Slack and Discord are not connected. Inventing chatter there would be the one
+fabricated thing on a pair of pages whose whole claim is that every figure is
+checkable.
+
+Catalogue items a merchant adds are saved in that browser only, and the card
+says so. The log is sealed and read-only from the page.
 
 ## Constraints
 

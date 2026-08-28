@@ -1,0 +1,417 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Bl Thirdwave — your agents</title><style>
+:root{
+  --paper:#F2F5FA; --card:#FFF; --line:#E1E7F2; --edge:#CFD8E8;
+  --ink:#111826; --body:#3D4759; --mute:#6B7A94; --pale:#93A0B6;
+  --brand:#2B5CE6; --brandsoft:#EAF0FE;
+  --money:#0B7A57; --moneysoft:#E6F5EF;
+  --warn:#C2410C; --warnsoft:#FDF0E7;
+  --stop:#CE3226; --stopsoft:#FCEDEB;
+  --violet:#6D5BD0; --violetsoft:#F0EDFB;
+  --mono:ui-monospace,SFMono-Regular,"SF Mono",Menlo,Consolas,monospace;
+  --sans:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",
+    sans-serif;
+  --serif:"Iowan Old Style","Palatino Linotype",Palatino,Georgia,serif;
+  --shadow:0 1px 2px rgba(17,24,38,.05),0 4px 14px rgba(17,24,38,.05);
+}
+*{box-sizing:border-box}
+html,body{margin:0}
+body{background:var(--paper);color:var(--ink);font-family:var(--sans);
+  font-size:15px;line-height:1.55;-webkit-font-smoothing:antialiased}
+
+/* --- header -------------------------------------------------------------- */
+.top{background:var(--card);border-bottom:1px solid var(--line)}
+.top .in{max-width:1240px;margin:0 auto;padding:16px 22px;display:flex;
+  align-items:center;gap:14px;flex-wrap:wrap}
+.avatar{width:38px;height:38px;border-radius:9px;background:var(--brand);
+  color:#fff;display:grid;place-items:center;font-weight:700;font-size:15px;
+  flex:none}
+.whoami h1{margin:0;font-size:19px;font-weight:650;letter-spacing:-.01em;
+  text-transform:capitalize}
+.whoami p{margin:0;color:var(--mute);font-size:12.5px}
+.switch{margin-left:auto;display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+select.sw{appearance:none;background:var(--card);border:1px solid var(--edge);
+  border-radius:8px;color:var(--body);font-family:var(--sans);font-size:13px;
+  padding:8px 30px 8px 12px;cursor:pointer;max-width:250px;
+  background-image:linear-gradient(45deg,transparent 50%,var(--mute) 50%),
+    linear-gradient(135deg,var(--mute) 50%,transparent 50%);
+  background-position:calc(100% - 16px) 50%,calc(100% - 11px) 50%;
+  background-size:5px 5px,5px 5px;background-repeat:no-repeat}
+select.sw:focus{outline:2px solid var(--brand);outline-offset:1px}
+.deskbtn{background:var(--violet);color:#fff;border-radius:8px;padding:8px 14px;
+  font-size:12.5px;font-weight:600;text-decoration:none;white-space:nowrap}
+.deskbtn:hover{filter:brightness(1.08)}
+
+/* --- the four figures ---------------------------------------------------- */
+.figures{max-width:1240px;margin:0 auto;padding:20px 22px 0;display:grid;
+  grid-template-columns:repeat(auto-fit,minmax(158px,1fr));gap:12px}
+.fig{background:var(--card);border:1px solid var(--line);border-radius:12px;
+  padding:14px 16px;box-shadow:var(--shadow)}
+.fig .v{font-family:var(--mono);font-size:25px;letter-spacing:-.02em;
+  line-height:1.15;color:var(--ink)}
+.fig.money .v{color:var(--money)}
+.fig.warn .v{color:var(--warn)}
+.fig.brand .v{color:var(--brand)}
+.fig .l{font-size:12px;color:var(--mute);margin-top:4px}
+
+/* --- tabs ---------------------------------------------------------------- */
+.tabs{max-width:1240px;margin:20px auto 0;padding:0 22px;display:flex;gap:4px;
+  border-bottom:1px solid var(--line);flex-wrap:wrap}
+.tab{appearance:none;background:none;border:0;border-bottom:2px solid
+  transparent;color:var(--mute);font-family:var(--sans);font-size:14px;
+  font-weight:600;padding:11px 14px;cursor:pointer;margin-bottom:-1px}
+.tab:hover{color:var(--ink)}
+.tab[aria-selected=true]{color:var(--brand);border-bottom-color:var(--brand)}
+.tab:focus-visible{outline:2px solid var(--brand);outline-offset:-2px;
+  border-radius:6px}
+
+.wrap{max-width:1240px;margin:0 auto;padding:22px}
+.pane{display:none}
+.pane[data-on]{display:block}
+h2.sec{font-size:13px;font-weight:700;letter-spacing:.05em;
+  text-transform:uppercase;color:var(--pale);margin:0 0 12px}
+p.lede{font-size:15px;color:var(--body);margin:0 0 20px;max-width:74ch}
+
+/* --- THE CREW: the signature -----------------------------------------------
+   Your broker is not one agent, it is four parts with separate memories, and
+   this is the only place a merchant ever sees that. Each card names the part,
+   says in one plain line what it is for, shows what it last did IN ITS OWN
+   WORDS, and ends with the one number that says whether it did its job.
+   The event types feeding each card are printed on it, so the attribution can
+   be checked rather than taken on trust. */
+.crew{display:grid;grid-template-columns:repeat(auto-fit,minmax(258px,1fr));
+  gap:14px;margin-bottom:26px}
+.role{background:var(--card);border:1px solid var(--line);border-radius:14px;
+  overflow:hidden;box-shadow:var(--shadow);display:flex;flex-direction:column}
+.role .rh{padding:13px 16px 11px;border-bottom:1px solid var(--line);
+  display:flex;align-items:center;gap:10px}
+.role .dot{width:30px;height:30px;border-radius:8px;display:grid;
+  place-items:center;font-size:14px;flex:none}
+.role h3{margin:0;font-size:15.5px;font-weight:650;text-transform:capitalize}
+.role .cnt{margin-left:auto;font-family:var(--mono);font-size:12px;
+  color:var(--mute)}
+.role .rb{padding:13px 16px;flex:1}
+.role .job{font-size:13.5px;color:var(--mute);margin:0 0 12px}
+.role .did{font-family:var(--serif);font-size:15px;color:var(--ink);
+  line-height:1.45;margin:0}
+.role .rf{padding:10px 16px;border-top:1px solid var(--line);
+  background:var(--paper);display:flex;justify-content:space-between;gap:10px;
+  align-items:center;flex-wrap:wrap}
+.role .res{font-weight:650;font-size:13.5px}
+.role .src{font-family:var(--mono);font-size:10px;color:var(--pale)}
+.role.trader .dot{background:var(--brandsoft);color:var(--brand)}
+.role.trader .res{color:var(--brand)}
+.role.scout .dot{background:var(--warnsoft);color:var(--warn)}
+.role.scout .res{color:var(--warn)}
+.role.diplomat .dot{background:var(--moneysoft);color:var(--money)}
+.role.diplomat .res{color:var(--money)}
+.role.subconscious .dot{background:var(--violetsoft);color:var(--violet)}
+.role.subconscious .res{color:var(--violet)}
+
+/* --- two-up -------------------------------------------------------------- */
+.duo{display:grid;grid-template-columns:minmax(0,1.15fr) minmax(0,1fr);gap:16px}
+@media(max-width:940px){.duo{grid-template-columns:1fr}}
+.card{background:var(--card);border:1px solid var(--line);border-radius:14px;
+  box-shadow:var(--shadow);overflow:hidden}
+.card>.ch{padding:12px 16px;border-bottom:1px solid var(--line);display:flex;
+  justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap}
+.card>.ch h3{margin:0;font-size:14.5px;font-weight:650}
+.card>.ch .meta{font-size:12px;color:var(--pale)}
+.card>.cb{padding:14px 16px}
+.card>.cb.tight{padding:6px 16px 12px}
+
+/* --- messages ------------------------------------------------------------ */
+.msg{display:grid;grid-template-columns:auto 1fr;gap:11px;padding:11px 0;
+  border-bottom:1px solid var(--line);align-items:start}
+.msg:last-child{border-bottom:0}
+.msg .pip{width:8px;height:8px;border-radius:50%;background:var(--pale);
+  margin-top:7px}
+.msg.green .pip{background:var(--money)}
+.msg.red .pip{background:var(--stop)}
+.msg.amber .pip{background:var(--warn)}
+.msg>span:last-child{display:flex;flex-direction:column;min-width:0}
+.msg .kind{font-size:11px;font-weight:700;letter-spacing:.06em;
+  text-transform:uppercase;color:var(--pale)}
+.msg.green .kind{color:var(--money)}
+.msg.red .kind{color:var(--stop)}
+.msg.amber .kind{color:var(--warn)}
+.msg .txt{font-family:var(--serif);font-size:14.5px;color:var(--body);
+  margin-top:2px;overflow-wrap:anywhere}
+.msg .ev{font-family:var(--mono);font-size:10.5px;color:var(--pale);
+  margin-top:3px}
+.connect{margin-top:14px;padding:12px 14px;border:1px dashed var(--edge);
+  border-radius:10px;background:var(--paper);font-size:12.5px;color:var(--mute)}
+.connect b{color:var(--body)}
+.connect .chips{display:flex;gap:7px;margin-top:9px;flex-wrap:wrap}
+.chip{background:var(--card);border:1px solid var(--edge);border-radius:7px;
+  padding:5px 11px;font-size:12px;color:var(--pale);cursor:not-allowed}
+
+/* --- catalogue ----------------------------------------------------------- */
+.item{display:grid;grid-template-columns:1fr auto auto;gap:12px;padding:10px 0;
+  border-bottom:1px solid var(--line);align-items:baseline}
+.item:last-of-type{border-bottom:0}
+.item .t{font-size:14.5px}
+.item .q{font-family:var(--mono);font-size:12px;color:var(--mute)}
+.item .p{font-family:var(--mono);font-size:14px;color:var(--money);
+  font-weight:600}
+.item .mine{font-size:10.5px;background:var(--brandsoft);color:var(--brand);
+  border-radius:5px;padding:1px 7px;font-weight:700;margin-left:7px}
+.addrow{display:grid;grid-template-columns:1fr 88px 96px auto;gap:8px;
+  margin-top:14px}
+@media(max-width:640px){.addrow{grid-template-columns:1fr}}
+input.f,.ask input{font-family:var(--sans);font-size:14px;padding:9px 12px;
+  border:1px solid var(--edge);border-radius:9px;background:var(--card);
+  color:var(--ink);width:100%}
+input.f:focus,.ask input:focus{outline:2px solid var(--brand);
+  outline-offset:-1px;border-color:var(--brand)}
+button.go{background:var(--brand);color:#fff;border:0;border-radius:9px;
+  font-family:var(--sans);font-size:13.5px;font-weight:650;padding:9px 18px;
+  cursor:pointer;white-space:nowrap}
+button.go:hover{filter:brightness(1.07)}
+button.go:focus-visible{outline:2px solid var(--ink);outline-offset:2px}
+
+/* --- the money trail ----------------------------------------------------- */
+.picker{display:flex;gap:8px;align-items:center;flex-wrap:wrap;
+  margin-bottom:18px}
+.trade{appearance:none;background:var(--card);border:1px solid var(--edge);
+  border-radius:9px;color:var(--body);font-family:var(--sans);font-size:13px;
+  padding:8px 13px;cursor:pointer}
+.trade:hover{border-color:var(--brand);color:var(--brand)}
+.trade[aria-pressed=true]{background:var(--brand);border-color:var(--brand);
+  color:#fff;font-weight:600}
+.trade:focus-visible{outline:2px solid var(--brand);outline-offset:2px}
+.trade b{font-family:var(--mono);font-weight:600;margin-left:9px;
+  color:var(--money)}
+.trade[aria-pressed=true] b{color:#fff}
+
+.who{display:flex;align-items:baseline;gap:10px;flex-wrap:wrap;
+  margin-bottom:14px}
+.who .agent{font-family:var(--mono);font-size:13.5px;color:var(--brand)}
+.who .verb{font-size:11.5px;letter-spacing:.11em;text-transform:uppercase;
+  color:var(--pale)}
+.who .need{font-family:var(--serif);font-size:23px;line-height:1.2}
+.who .cid{font-family:var(--mono);font-size:10.5px;color:var(--pale)}
+.human-tag{background:var(--brand);color:#fff;font-size:10px;font-weight:700;
+  letter-spacing:.08em;text-transform:uppercase;padding:2px 8px;
+  border-radius:5px}
+
+.rail{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));
+  gap:12px}
+.stn{background:var(--card);border:1px solid var(--line);border-radius:12px;
+  border-top:3px solid var(--edge);padding:13px 15px 15px;position:relative;
+  box-shadow:var(--shadow)}
+.stn[data-tone=allow]{border-top-color:var(--money)}
+.stn[data-tone=deny]{border-top-color:var(--stop)}
+.stn[data-tone=mixed]{border-top-color:var(--warn)}
+.stn .gl{position:absolute;top:11px;right:14px;font-size:16px;color:var(--pale)}
+.stn[data-tone=allow] .gl{color:var(--money)}
+.stn[data-tone=deny] .gl{color:var(--stop)}
+.stn[data-tone=mixed] .gl{color:var(--warn)}
+.stn .cap{font-size:11px;font-weight:700;letter-spacing:.08em;
+  text-transform:uppercase;color:var(--pale)}
+.stn .cap b{background:var(--pale);color:#fff;border-radius:4px;padding:0 5px;
+  margin-right:7px;font-weight:700}
+/* The stamp: the event this station is accountable to. */
+.stn .seq{font-family:var(--mono);font-size:11px;color:var(--brand);
+  margin-top:4px}
+.stn .hd{font-family:var(--mono);font-size:17px;margin-top:9px;line-height:1.25}
+.stn[data-tone=allow] .hd{color:var(--money)}
+.stn[data-tone=deny] .hd{color:var(--stop)}
+.stn[data-tone=mixed] .hd{color:var(--warn)}
+.stn .ln{font-family:var(--serif);font-size:14px;color:var(--mute);
+  margin-top:7px;line-height:1.4;overflow-wrap:anywhere}
+.stn .ln.mono{font-family:var(--mono);font-size:11px;color:var(--pale)}
+
+.said{display:grid;grid-template-columns:160px 68px 1fr;gap:12px;padding:9px 0;
+  border-bottom:1px solid var(--line);align-items:baseline}
+.said:last-child{border-bottom:0}
+.said .w{font-family:var(--mono);font-size:11.5px;color:var(--pale)}
+.said .p{font-family:var(--mono);font-size:14px;color:var(--money);
+  text-align:right;font-weight:600}
+.said .m{font-family:var(--serif);font-size:15px;color:var(--body)}
+@media(max-width:820px){.said{grid-template-columns:1fr;gap:2px}}
+
+/* --- shared -------------------------------------------------------------- */
+.hit{display:grid;grid-template-columns:1fr auto auto;gap:14px;padding:10px 0;
+  border-bottom:1px solid var(--line);align-items:baseline}
+.hit:last-child{border-bottom:0}
+.hit .tt{font-family:var(--serif);font-size:15px}
+.hit .sl{font-family:var(--mono);font-size:11.5px;color:var(--mute)}
+.hit .pr{font-family:var(--mono);font-size:14px;color:var(--money);
+  font-weight:600}
+.ask{display:flex;gap:9px;margin-bottom:16px;max-width:660px}
+table{width:100%;border-collapse:collapse;font-size:13.5px}
+th{text-align:left;font-size:11px;letter-spacing:.06em;text-transform:uppercase;
+  color:var(--pale);font-weight:700;padding:7px 10px 7px 0;
+  border-bottom:1px solid var(--line)}
+td{padding:7px 10px 7px 0;border-bottom:1px solid var(--line);
+  vertical-align:top;color:var(--body)}
+td.a{font-family:var(--mono);font-size:11.5px;color:var(--mute);
+  white-space:nowrap}
+td.q{font-family:var(--serif);font-size:14.5px;color:var(--ink)}
+.empty{color:var(--pale);font-family:var(--serif);font-style:italic;
+  font-size:14.5px;padding:10px 0}
+.note{background:var(--brandsoft);border-radius:10px;padding:12px 15px;
+  font-size:13.5px;color:var(--body);margin:16px 0;line-height:1.55}
+.note b{color:var(--ink)}
+footer{max-width:1240px;margin:0 auto;padding:22px;color:var(--pale);
+  font-size:11.5px;font-family:var(--mono);line-height:1.75;
+  border-top:1px solid var(--line)}
+a{color:var(--brand)}
+@media(prefers-reduced-motion:reduce){*{transition:none!important}}
+</style></head><body><header class="top"><div class="in"><div class="avatar">B</div><div class="whoami"><h1>bl thirdwave</h1><p>m_bl_thirdwave &middot; standard plan &middot; represented by four agents</p></div><div class="switch"><select class="sw" id="sw" aria-label="view another merchant"><option value="m-bl-electronic-city.html">Bl Electronic City</option><option value="m-bl-hsr.html">Bl Hsr</option><option value="m-bl-indiranagar.html">Bl Indiranagar</option><option value="m-bl-jayanagar.html">Bl Jayanagar</option><option value="m-bl-koramangala.html">Bl Koramangala</option><option value="m-bl-malleswaram.html">Bl Malleswaram</option><option value="m-bl-thirdwave.html" selected>Bl Thirdwave</option><option value="m-bl-whitefield.html">Bl Whitefield</option><option value="m-bl-yelahanka.html">Bl Yelahanka</option><option value="m-bottleworks.html">Bottleworks</option><option value="m-cablecraft.html">Cablecraft</option><option value="m-cratehub.html">Cratehub</option><option value="m-dyeworks.html">Dyeworks</option><option value="m-greenwrap.html">Greenwrap</option><option value="m-jutemill.html">Jutemill</option><option value="m-kaapi-roasters.html">Kaapi Roasters</option><option value="m-labelhouse.html">Labelhouse</option><option value="m-loomline.html">Loomline</option><option value="m-millstone.html">Millstone</option><option value="m-mouldtech.html">Mouldtech</option><option value="m-nilgiri-cold.html">Nilgiri Cold</option><option value="m-packmate.html">Packmate</option><option value="m-powerbank.html">Powerbank</option><option value="m-reelco.html">Reelco</option><option value="m-saltworks.html">Saltworks</option><option value="m-screenguard.html">Screenguard</option><option value="m-spicebazaar.html">Spicebazaar</option><option value="m-stitchright.html">Stitchright</option><option value="m-third-wave-supply.html">Third Wave Supply</option><option value="m-threadbare.html">Threadbare</option><option value="m-weavehouse.html">Weavehouse</option><option value="m-western-ghats.html">Western Ghats</option></select><a class="deskbtn" href="desk.html">Razorpay desk &rarr;</a></div></div></header><div class="figures"><div class="fig money"><div class="v">₹11,570</div><div class="l">committed by your agents</div></div><div class="fig"><div class="v">6</div><div class="l">trades on your book</div></div><div class="fig warn"><div class="v">2</div><div class="l">refused by the gate</div></div><div class="fig brand"><div class="v">2,000</div><div class="l">points earned</div></div></div><div class="tabs" role="tablist"><button class="tab" data-pane="agents" aria-selected="true">My agents</button><button class="tab" data-pane="money" aria-selected="false">Where the money went</button><button class="tab" data-pane="ask" aria-selected="false">Ask for something</button></div><div class="wrap"><section class="pane" id="pn-agents" data-on><p class="lede">Your broker is four parts with separate memories. Three of them act; the fourth only watches and remembers. Each card shows what that part last did, in its own words, and the event types it was read from.</p><div class="crew"><article class="role trader"><div class="rh"><span class="dot">₹</span><h3>trader</h3><span class="cnt">29 actions</span></div><div class="rb"><p class="job">Buys and sells. Posts what you need, negotiates, settles.</p><p class="did">committed 1,700.00 rupees</p></div><div class="rf"><span class="res">3 settled, 1 walked away</span><span class="src">ORDER_POSTED MATCH_PROPOSED NEGOTIATION_OPENED</span></div></article><article class="role scout"><div class="rh"><span class="dot">◎</span><h3>scout</h3><span class="cnt">1 action</span></div><div class="rb"><p class="job">Watches what is rising and bids points for market intelligence.</p><p class="did">bid 500 points for market intelligence</p></div><div class="rf"><span class="res">1 bids, 0 won</span><span class="src">BID_PLACED AUCTION_CLEARED INSIGHT_MINTED</span></div></article><article class="role diplomat"><div class="rh"><span class="dot">◇</span><h3>diplomat</h3><span class="cnt">6 actions</span></div><div class="rb"><p class="job">Reads counterparties and advises who to deal with. Never vetoes.</p><p class="did">3. m_packmate at 850 per unit is the lowest-priced offer by far, meets your quantity and budget limits, and their proven history of honoring…</p></div><div class="rf"><span class="res">6 counterparties chosen</span><span class="src">COUNTERPARTY_CHOSEN</span></div></article><article class="role subconscious"><div class="rh"><span class="dot">✦</span><h3>subconscious</h3><span class="cnt">1 action</span></div><div class="rb"><p class="job">Never acts. Watches every deal and keeps what is worth remembering.</p><p class="did">They paid the agreed 19500 per unit and completed the settlement, so they are trustworthy on payment.</p></div><div class="rf"><span class="res">1 lessons kept</span><span class="src">LESSON_CONSOLIDATED RECALL_INJECTED</span></div></article></div><div class="duo"><section class="card"><div class="ch"><h3>Messages</h3><span class="meta">13 from your agents</span></div><div class="cb tight"><div class="msg "><span class="pip"></span><span><span class="kind">committed</span><span class="txt">1,700.00 rupees committed — order_TVAbmLRMDzgYrP</span><span class="ev">event 961 &middot; m_bl_thirdwave</span></span></div><div class="msg "><span class="pip"></span><span><span class="kind">learned</span><span class="txt">They paid the agreed 19500 per unit and completed the settlement, so they are trustworthy on payment.</span><span class="ev">event 951 &middot; m_bl_thirdwave</span></span></div><div class="msg green"><span class="pip"></span><span><span class="kind">resumed</span><span class="txt">Sorted. Trading resumed.</span><span class="ev">event 938 &middot; accountant</span></span></div><div class="msg green"><span class="pip"></span><span><span class="kind">paid</span><span class="txt">Payment confirmed by Razorpay — pay_TV9vxLLDM2PvgD</span><span class="ev">event 937 &middot; accountant</span></span></div><div class="msg red"><span class="pip"></span><span><span class="kind">frozen</span><span class="txt">Trading paused: books disagree on stl_87b9f1b75d0b</span><span class="ev">event 936 &middot; accountant</span></span></div><div class="msg red"><span class="pip"></span><span><span class="kind">books disagree</span><span class="txt">Our books say PENDING, Razorpay says captured. Checking.</span><span class="ev">event 763 &middot; accountant</span></span></div><div class="msg "><span class="pip"></span><span><span class="kind">committed</span><span class="txt">4,995.00 rupees committed — order_TV9iW6ZyWo7RRP</span><span class="ev">event 427 &middot; m_bl_thirdwave</span></span></div><div class="msg "><span class="pip"></span><span><span class="kind">gate</span><span class="txt">Refused: Amount 3700000 exceeds per-transaction cap 2000000</span><span class="ev">event 424 &middot; gate</span></span></div><div class="msg "><span class="pip"></span><span><span class="kind">talks</span><span class="txt">Agreed at 18500</span><span class="ev">event 422 &middot; m_bl_thirdwave</span></span></div><div class="msg "><span class="pip"></span><span><span class="kind">committed</span><span class="txt">4,875.00 rupees committed — order_TV9f8zUWrrmo8T</span><span class="ev">event 261 &middot; m_bl_thirdwave</span></span></div><div class="msg "><span class="pip"></span><span><span class="kind">gate</span><span class="txt">Refused: Amount 3120000 exceeds per-transaction cap 2000000</span><span class="ev">event 258 &middot; gate</span></span></div><div class="msg "><span class="pip"></span><span><span class="kind">talks</span><span class="txt">Agreed at 19500</span><span class="ev">event 256 &middot; m_bl_thirdwave</span></span></div><div class="msg "><span class="pip"></span><span><span class="kind">talks</span><span class="txt">No deal — no agreement after 4 offers</span><span class="ev">event 192 &middot; m_bl_thirdwave</span></span></div><div class="connect"><b>Slack and Discord are not connected in this build.</b> Outbound messaging was deliberately left out of scope, so rather than show you invented chatter, this feed is built from what your agents actually recorded &mdash; every line carries the event number it came from.<div class="chips"><span class="chip">Slack &mdash; not connected</span><span class="chip">Discord &mdash; not connected</span></div></div></div></section><section class="card"><div class="ch"><h3>Your catalogue</h3><span class="meta">1 listed on the exchange</span></div><div class="cb tight"><div class="item"><span class="t">flavour syrup bottles house blend 0</span><span class="q">500 units</span><span class="p">₹120</span></div><div id="added"></div><div class="addrow"><input class="f" id="i-title" placeholder="what you sell" aria-label="what you sell"><input class="f" id="i-qty" placeholder="qty" aria-label="quantity" inputmode="numeric"><input class="f" id="i-price" placeholder="₹ / unit" aria-label="price per unit" inputmode="numeric"><button class="go" id="add">Add</button></div><div class="connect">Items you add are saved <b>in this browser only</b>. The event log behind this page is sealed and read-only, so a static page cannot post to the order book &mdash; in the running exchange, adding a line here posts an ASK that other merchants&rsquo; agents can find.</div></div></section></div></section><section class="pane" id="pn-money"><p class="lede">Every trade your agents made, from what you needed to the payment id Razorpay gave back. Each step carries the event number it came from, so you can look any of it up in the log yourself.</p><div class="picker"><button class="trade" data-corr="turn_2_m_bl_thirdwave_cold_brew_concentrate_for_a_twelve_store" aria-pressed="false">cold brew concentrate for a…<b>₹4,875</b></button><button class="trade" data-corr="turn_3_m_bl_thirdwave_cold_brew_concentrate_for_a_twelve_store" aria-pressed="false">cold brew concentrate for a…<b>₹4,995</b></button><button class="trade" data-corr="shop_3f476f5eeb93" aria-pressed="false">compostable poly mailers for…<b>₹1,700</b></button><button class="trade" data-corr="turn_1_m_bl_thirdwave_cold_brew_concentrate_for_a_twelve_store" aria-pressed="false">cold brew concentrate for a…<b>no deal</b></button><button class="trade" data-corr="shop_1d2ca286582f" aria-pressed="false">compostable poly mailers for…<b>no deal</b></button><button class="trade" data-corr="shop_b2c48348d2ae" aria-pressed="false">biodegradable mailers under 22…<b>no deal</b></button></div><div class="who" id="who"></div><div class="rail" id="rail"></div><div style="height:20px"></div><section class="card"><div class="ch"><h3>What they said to each other</h3><span class="meta">every offer, quoted</span></div><div class="cb" id="talk"></div></section></section><section class="pane" id="pn-ask"><p class="lede">Type what you need in plain words. This writes a descriptive bid to the same order book your agents use &mdash; you approve it, and the gate still decides. A person saying yes is consent, not permission, and it does not raise a spending cap.</p><div class="ask"><input id="q" type="text" class="f" aria-label="what do you need" placeholder="biodegradable mailers under 22 rupees a unit"><button class="go" id="go">Search the book</button></div><section class="card"><div class="ch"><h3>What is actually on the book</h3><span class="meta">read from the log</span></div><div class="cb" id="hits"><div class="empty">Type a need and press search. This reads the real catalogue and refuses when nothing matches.</div></div></section><div style="height:16px"></div><section class="card"><div class="ch"><h3>A purchase a person actually made</h3><span class="meta">the same events as an agent&rsquo;s trade</span></div><div class="cb"><table><tr><td class="a">957</td><td class="a">m_bl_thirdwave</td><td class="a">ORDER_POSTED</td><td class="q">posted what it needs</td></tr><tr><td class="a">958</td><td class="a">m_bl_thirdwave</td><td class="a">COUNTERPARTY_CHOSEN</td><td class="q">picked who to deal with</td></tr><tr><td class="a">959</td><td class="a">m_bl_thirdwave</td><td class="a">MATCH_PROPOSED</td><td class="q">proposed the terms</td></tr><tr><td class="a">960</td><td class="a">gate</td><td class="a">POLICY_DECIDED</td><td class="q">the gate ruled</td></tr><tr><td class="a">961</td><td class="a">m_bl_thirdwave</td><td class="a">SETTLEMENT_INITIATED</td><td class="q">money committed</td></tr></table></div></section></section></div><footer>Read from runs/market.db &middot; 968 events &middot; generated 2026-08-28 15:33 UTC.<br>Every figure on this page is scoped to m_bl_thirdwave and read from the log. Nothing was computed by the page.</footer><script type="application/json" id="mkt">{"rails":{"shop_1d2ca286582f":{"corr":"shop_1d2ca286582f","buyer":"m_bl_thirdwave","need":"compostable poly mailers for subscription boxes","human":true,"first_seq":955,"stations":[{"key":"wants","seq":955,"head":"200 units","lines":["at most 2600 each"],"tone":""},{"key":"picked","seq":956,"head":"m_packmate","lines":["from 3 candidates","3. Seller m_packmate offers the lowest price (850) and has a proven history of honoring\u2026"],"tone":""}],"amount":null,"settled":false,"talk":[]},"shop_3f476f5eeb93":{"corr":"shop_3f476f5eeb93","buyer":"m_bl_thirdwave","need":"compostable poly mailers for subscription boxes","human":true,"first_seq":957,"stations":[{"key":"wants","seq":957,"head":"200 units","lines":["at most 2600 each"],"tone":""},{"key":"picked","seq":958,"head":"m_packmate","lines":["from 3 candidates","3. m_packmate at 850 per unit is the lowest-priced offer by far, meets your quantity and budget\u2026"],"tone":""},{"key":"gate","seq":960,"head":"ALLOW","lines":["Within all configured limits"],"tone":"allow"},{"key":"paid","seq":961,"head":"1,700.00 rupees","lines":["order_TVAbmLRMDzgYrP","awaiting capture"],"tone":""}],"amount":170000,"settled":false,"talk":[]},"shop_b2c48348d2ae":{"corr":"shop_b2c48348d2ae","buyer":"m_bl_thirdwave","need":"biodegradable mailers under 22 rupees a unit","human":true,"first_seq":953,"stations":[{"key":"wants","seq":953,"head":"300 units","lines":["at most 2200 each"],"tone":""},{"key":"picked","seq":954,"head":"m_bottleworks","lines":["from 3 candidates","3. Seller m_bottleworks offers the lowest price at 17.50 rupees per unit (1750 paise) for 300\u2026"],"tone":""}],"amount":null,"settled":false,"talk":[]},"turn_1_m_bl_thirdwave_cold_brew_concentrate_for_a_twelve_store":{"corr":"turn_1_m_bl_thirdwave_cold_brew_concentrate_for_a_twelve_store","buyer":"m_bl_thirdwave","need":"cold brew concentrate for a twelve store rollout, unsweetened","human":false,"first_seq":109,"stations":[{"key":"wants","seq":109,"head":"100 units","lines":["at most 31000 each"],"tone":""},{"key":"picked","seq":121,"head":"m_nilgiri_cold","lines":["from 3 candidates","2. Seller m_nilgiri_cold asks 24,500, already below our 26,000 opening, guaranteeing a\u2026"],"tone":""},{"key":"haggled","seq":192,"head":"walked away","lines":["4 offers"],"tone":"deny"}],"amount":null,"settled":false,"talk":[{"who":"m_bl_thirdwave","price":23000,"said":"PRICE: 23000 - I'm offering a lower price given your opening ask is below my limit, leaving room for negotiation."},{"who":"m_nilgiri_cold","price":24000,"said":"PRICE: 24000 - We've reduced from our initial ask; this is a reasonable counter given your offer."},{"who":"m_bl_thirdwave","price":22000,"said":"PRICE: 22000 - Your current offer is still far from our target, anchoring lower to shift the negotiation range."},{"who":"m_nilgiri_cold","price":23000,"said":"PRICE: 23000 - We've moved down from our last counter, but 22000 is too low; this split keeps the deal viable."}]},"turn_2_m_bl_thirdwave_cold_brew_concentrate_for_a_twelve_store":{"corr":"turn_2_m_bl_thirdwave_cold_brew_concentrate_for_a_twelve_store","buyer":"m_bl_thirdwave","need":"cold brew concentrate for a twelve store rollout, unsweetened","human":false,"first_seq":205,"stations":[{"key":"wants","seq":205,"head":"160 units","lines":["at most 31000 each"],"tone":""},{"key":"picked","seq":217,"head":"m_powerbank","lines":["from 3 candidates","3. Seller m_powerbank offers the lowest price at 21,000 per unit, well below my opening bid and\u2026"],"tone":""},{"key":"haggled","seq":256,"head":"agreed 19500","lines":["5 offers"],"tone":"allow"},{"key":"gate","seq":258,"head":"DENY then ALLOW","lines":["Amount 3120000 exceeds per-transaction cap 2000000"],"tone":"mixed"},{"key":"paid","seq":261,"head":"4,875.00 rupees","lines":["order_TV9f8zUWrrmo8T","pay_TV9vxLLDM2PvgD"],"tone":"allow"},{"key":"broke","seq":763,"head":"local vs Razorpay","lines":["we said PENDING","they said captured"],"tone":"deny"},{"key":"froze","seq":936,"head":"trading stopped","lines":["books disagree on stl_87b9f1b75d0b"],"tone":"deny"},{"key":"repaired","seq":937,"head":"put right","lines":["pay_TV9vxLLDM2PvgD","cleared to trade again"],"tone":"allow"},{"key":"remembered","seq":951,"head":"reliability","lines":["They paid the agreed 19500 per unit and completed the settlement, so they are trustworthy on payment."],"tone":""}],"amount":487500,"settled":true,"talk":[{"who":"m_bl_thirdwave","price":20000,"said":"PRICE: 20000. Your opening is within my range, but I\u2019d like to see if we can start a bit lower."},{"who":"m_powerbank","price":20500,"said":"PRICE: 20500. I can offer a modest reduction given the volume, but I need to stay above cost."},{"who":"m_bl_thirdwave","price":19000,"said":"PRICE: 19000. Given the bulk volume and potential for a long-term partnership, this reflects a fair market rate while respecting your cost structure."},{"who":"m_powerbank","price":19500,"said":"PRICE: 19500. Given the volume and potential partnership, this is a fair midpoint that still respects my cost floor."},{"who":"m_bl_thirdwave","price":19500,"said":"PRICE: 19500. This is acceptable given the volume and partnership potential."}]},"turn_3_m_bl_thirdwave_cold_brew_concentrate_for_a_twelve_store":{"corr":"turn_3_m_bl_thirdwave_cold_brew_concentrate_for_a_twelve_store","buyer":"m_bl_thirdwave","need":"cold brew concentrate for a twelve store rollout, unsweetened","human":false,"first_seq":342,"stations":[{"key":"wants","seq":342,"head":"200 units","lines":["at most 31000 each"],"tone":""},{"key":"picked","seq":382,"head":"m_powerbank","lines":["from 3 candidates","3. m_powerbank's 21,000 ask is the lowest, and following your plan to bid 18,000 and concede to\u2026"],"tone":""},{"key":"haggled","seq":422,"head":"agreed 18500","lines":["5 offers"],"tone":"allow"},{"key":"gate","seq":424,"head":"DENY then ALLOW","lines":["Amount 3700000 exceeds per-transaction cap 2000000"],"tone":"mixed"},{"key":"paid","seq":427,"head":"4,995.00 rupees","lines":["order_TV9iW6ZyWo7RRP","awaiting capture"],"tone":""}],"amount":499500,"settled":false,"talk":[{"who":"m_bl_thirdwave","price":18000,"said":"PRICE: 18000 - This aligns better with our budget constraints."},{"who":"m_powerbank","price":19000,"said":"PRICE: 19000 - We can meet at 19000 given the scope of this deal."},{"who":"m_bl_thirdwave","price":17000,"said":"PRICE: 17000 - We see room to tighten margins; this is a fair midpoint closer to our target."},{"who":"m_powerbank","price":18500,"said":"PRICE: 18500 - Our costs don't allow below this; it's our final offer."},{"who":"m_bl_thirdwave","price":18500,"said":"PRICE: 18500 - Accepting your final offer as it falls well within our budget."}]}},"cat":[{"title":"cold brew concentrate arabica single origin","seller":"m_kaapi_roasters","price":34000,"qty":6000,"id":"ast_cb_kaapi"},{"title":"green coffee beans washed arabica","seller":"m_kaapi_roasters","price":21000,"qty":4000,"id":"ast_beans_kaapi"},{"title":"cold brew concentrate robusta blend bulk","seller":"m_western_ghats","price":29500,"qty":9000,"id":"ast_cb_ghats"},{"title":"cold brew concentrate value grade","seller":"m_nilgiri_cold","price":24500,"qty":12000,"id":"ast_cb_nilgiri"},{"title":"cold brew concentrate speciality nitro ready","seller":"m_third_wave_supply","price":38000,"qty":3500,"id":"ast_cb_thirdwave"},{"title":"flavour syrup bottles house blend 0","seller":"m_bl_thirdwave","price":12000,"qty":500,"id":"ast_syrup_thirdwave"},{"title":"flavour syrup bottles house blend 1","seller":"m_bl_koramangala","price":12300,"qty":500,"id":"ast_syrup_koramangala"},{"title":"flavour syrup bottles house blend 2","seller":"m_bl_indiranagar","price":12600,"qty":500,"id":"ast_syrup_indiranagar"},{"title":"flavour syrup bottles house blend 3","seller":"m_bl_whitefield","price":12900,"qty":500,"id":"ast_syrup_whitefield"},{"title":"flavour syrup bottles house blend 4","seller":"m_bl_jayanagar","price":13200,"qty":500,"id":"ast_syrup_jayanagar"},{"title":"flavour syrup bottles house blend 5","seller":"m_bl_hsr","price":13500,"qty":500,"id":"ast_syrup_hsr"},{"title":"flavour syrup bottles house blend 6","seller":"m_bl_malleswaram","price":13800,"qty":500,"id":"ast_syrup_malleswaram"},{"title":"flavour syrup bottles house blend 7","seller":"m_bl_electronic_city","price":14100,"qty":500,"id":"ast_syrup_electronic_city"},{"title":"flavour syrup bottles house blend 8","seller":"m_bl_yelahanka","price":14400,"qty":500,"id":"ast_syrup_yelahanka"},{"title":"biodegradable mailers compostable poly 10x13","seller":"m_greenwrap","price":1940,"qty":20000,"id":"ast_mailers_green"},{"title":"corrugated cartons double wall","seller":"m_greenwrap","price":3800,"qty":8000,"id":"ast_cartons_green"},{"title":"biodegradable mailers for subscription boxes","seller":"m_packmate","price":2100,"qty":15000,"id":"ast_mailers_pack"},{"title":"shrink wrap film for pallet loads","seller":"m_packmate","price":850,"qty":9000,"id":"ast_shrink_pack"},{"title":"food grade PET bottles one litre","seller":"m_bottleworks","price":1750,"qty":40000,"id":"ast_pet_bottle"},{"title":"recycled kraft paper reels 120gsm","seller":"m_reelco","price":5000,"qty":6000,"id":"ast_kraft_reel"},{"title":"waterproof product labels roll fed","seller":"m_labelhouse","price":600,"qty":50000,"id":"ast_labels"},{"title":"returnable plastic crates stackable","seller":"m_cratehub","price":42000,"qty":900,"id":"ast_crates"},{"title":"organic cotton twill fabric rolls","seller":"m_loomline","price":28000,"qty":3000,"id":"ast_cotton_twill"},{"title":"reactive dye pigments industrial grade","seller":"m_dyeworks","price":8600,"qty":2500,"id":"ast_dye"},{"title":"blank cotton tshirts combed ringspun","seller":"m_stitchright","price":18000,"qty":5000,"id":"ast_tshirt_blank"},{"title":"linen blend fabric rolls natural","seller":"m_weavehouse","price":34000,"qty":1800,"id":"ast_linen"},{"title":"polyester thread cones industrial","seller":"m_threadbare","price":900,"qty":20000,"id":"ast_thread"},{"title":"braided USB C cables one metre","seller":"m_cablecraft","price":14000,"qty":8000,"id":"ast_usbc"},{"title":"injection moulded ABS enclosures small","seller":"m_mouldtech","price":5200,"qty":12000,"id":"ast_abs"},{"title":"lithium cells 18650 grade A","seller":"m_powerbank","price":21000,"qty":9000,"id":"ast_cells"},{"title":"tempered glass screen protectors bulk","seller":"m_screenguard","price":3400,"qty":30000,"id":"ast_tempered"},{"title":"green cardamom whole pods bulk","seller":"m_spicebazaar","price":180000,"qty":400,"id":"ast_cardamom"},{"title":"jute sacks hessian lined","seller":"m_jutemill","price":4000,"qty":15000,"id":"ast_jute"},{"title":"stoneground wheat flour sacks","seller":"m_millstone","price":92000,"qty":1200,"id":"ast_flour"},{"title":"iodised salt bulk edible","seller":"m_saltworks","price":38000,"qty":5000,"id":"ast_salt"}],"actor":"m_bl_thirdwave"}</script><script>
+(function(){
+var M=JSON.parse(document.getElementById('mkt').textContent);
+
+var CAPS={wants:'wants',picked:'picked',haggled:'haggled',gate:'the gate',
+  paid:'paid',broke:'books disagree',froze:'froze',repaired:'repaired',
+  remembered:'remembered'};
+var GLYPH={wants:'○',picked:'→',haggled:'⇄',gate:'✓',
+  paid:'₹',broke:'≠',froze:'⏸',repaired:'✓',
+  remembered:'★'};
+function glyph(s){
+  if(s.key==='gate')return s.tone==='deny'?'✕':
+    (s.tone==='mixed'?'✕→✓':'✓');
+  if(s.key==='haggled'&&s.tone==='deny')return '✕';
+  return GLYPH[s.key]||'';
+}
+function esc(t){var d=document.createElement('div');
+  d.textContent=t==null?'':t;return d.innerHTML}
+function drawRail(r,upto,ids){
+  var stations=r.stations.filter(function(s){return s.seq<=upto});
+  if(!stations.length)return false;
+  document.getElementById(ids.who).innerHTML=
+    '<span class="agent">'+esc(r.buyer)+'</span>'+
+    '<span class="verb">'+(r.human?'typed':'wants')+'</span>'+
+    '<span class="need">'+esc(r.need||'—')+'</span>'+
+    (r.human?'<span class="human-tag">a person typed this</span>':'')+
+    '<span class="cid">'+esc(r.corr)+'</span>';
+  document.getElementById(ids.rail).innerHTML=stations.map(function(s,n){
+    return '<div class="stn" data-tone="'+esc(s.tone||'')+'">'+
+      '<div class="gl">'+glyph(s)+'</div>'+
+      '<div class="cap"><b>'+(n+1)+'</b>'+esc(CAPS[s.key]||s.key)+'</div>'+
+      '<div class="seq">event '+s.seq+'</div>'+
+      '<div class="hd">'+esc(s.head)+'</div>'+
+      s.lines.map(function(l,k){
+        return '<div class="ln'+(k?' mono':'')+'">'+esc(l)+'</div>'}).join('')+
+      '</div>'}).join('');
+  if(ids.talk){
+    document.getElementById(ids.talk).innerHTML=r.talk.length?
+      r.talk.map(function(t){
+        return '<div class="said"><span class="w">'+esc(t.who)+
+          '</span><span class="p">'+esc(t.price)+'</span><span class="m">'+
+          esc(t.said)+'</span></div>'}).join('')
+      :'<div class="empty">No offers on this thread — the match cleared '+
+       'at the asking price.</div>';
+  }
+  return true;
+}
+function wireViews(){
+  [].forEach.call(document.querySelectorAll('.nav[data-view]'),function(v){
+    v.addEventListener('click',function(){
+      [].forEach.call(document.querySelectorAll('.nav[data-view]'),
+        function(o){
+          var on=o===v;
+          o.setAttribute('aria-selected',on?'true':'false');
+          var p=document.getElementById('vw-'+o.dataset.view);
+          if(!p)return;
+          if(on){p.setAttribute('data-on','');p.scrollTop=0}
+          else p.removeAttribute('data-on')})})});
+}
+
+var IDS={who:'who',rail:'rail',talk:'talk'};
+
+/* --- tabs ------------------------------------------------------------- */
+[].forEach.call(document.querySelectorAll('.tab'),function(t){
+  t.addEventListener('click',function(){
+    [].forEach.call(document.querySelectorAll('.tab'),function(o){
+      var on=o===t;
+      o.setAttribute('aria-selected',on?'true':'false');
+      var p=document.getElementById('pn-'+o.dataset.pane);
+      if(!p)return;
+      if(on)p.setAttribute('data-on','');else p.removeAttribute('data-on')})})});
+
+/* --- the money trail -------------------------------------------------- */
+function show(corr){
+  if(!M.rails[corr])return;
+  drawRail(M.rails[corr],1e9,IDS);
+  [].forEach.call(document.querySelectorAll('.trade'),function(b){
+    b.setAttribute('aria-pressed',b.dataset.corr===corr?'true':'false')});
+}
+[].forEach.call(document.querySelectorAll('.trade'),function(b){
+  b.addEventListener('click',function(){show(b.dataset.corr)})});
+var first=document.querySelector('.trade');
+if(first)show(first.dataset.corr);
+
+/* --- switching merchant ------------------------------------------------
+   Each merchant is a separate generated page, so this is a plain
+   navigation. Nothing is filtered client-side, which means what you see
+   was scoped to your actor before it ever reached the browser. */
+var sw=document.getElementById('sw');
+if(sw)sw.addEventListener('change',function(){location.href=sw.value});
+
+/* --- ask for something ------------------------------------------------
+   Searches the REAL catalogue read out of the log. It does not pretend to
+   run an agent in the browser: the honest claim is that a person reaches
+   the same order book, and the evidence is the recorded thread below. */
+var q=document.getElementById('q'),hits=document.getElementById('hits');
+if(q){
+  var search=function(){
+    var terms=(q.value||q.placeholder).toLowerCase().split(/\s+/)
+      .filter(function(w){return w.length>3});
+    var found=M.cat.map(function(c){
+      var t=c.title.toLowerCase(),n=0;
+      terms.forEach(function(w){if(t.indexOf(w)>=0)n++});
+      return[c,n]}).filter(function(p){return p[1]>0})
+      .sort(function(a,b){return b[1]-a[1]}).slice(0,6);
+    hits.innerHTML=found.length?found.map(function(p){var c=p[0];
+      return '<div class="hit"><span class="tt">'+esc(c.title)+
+        '</span><span class="sl">'+esc(c.seller)+'</span><span class="pr">₹'+
+        (c.price/100).toFixed(2)+'</span></div>'}).join('')
+      :'<div class="empty">Nothing on the book matches that. The agents only '+
+       'stock what merchants have actually listed.</div>';
+  };
+  document.getElementById('go').addEventListener('click',search);
+  q.addEventListener('keydown',function(e){if(e.key==='Enter')search()});
+}
+
+/* --- your catalogue ---------------------------------------------------
+   Added items live in THIS BROWSER only, and the card says so. The event
+   log is sealed and read-only from here; a real listing posts an ASK to
+   the order book through the exchange, which a static page cannot do and
+   should not pretend to. */
+var KEY='catalogue:'+M.actor;
+function saved(){
+  try{return JSON.parse(localStorage.getItem(KEY)||'[]')}catch(e){return[]}
+}
+function store(rows){
+  try{localStorage.setItem(KEY,JSON.stringify(rows))}catch(e){}
+}
+function renderAdded(){
+  var box=document.getElementById('added');
+  if(!box)return;
+  var rows=saved();
+  box.innerHTML=rows.map(function(r,n){
+    return '<div class="item"><span class="t">'+esc(r.title)+
+      '<span class="mine">added by you</span></span>'+
+      '<span class="q">'+esc(r.qty)+' units</span>'+
+      '<span class="p">₹'+esc(r.price)+'</span></div>'}).join('');
+}
+var add=document.getElementById('add');
+if(add){
+  renderAdded();
+  add.addEventListener('click',function(){
+    var t=document.getElementById('i-title').value.trim();
+    var qy=document.getElementById('i-qty').value.trim();
+    var pr=document.getElementById('i-price').value.trim();
+    if(!t)return document.getElementById('i-title').focus();
+    var rows=saved();
+    rows.push({title:t,qty:qy||'—',price:pr||'—'});
+    store(rows); renderAdded();
+    document.getElementById('i-title').value='';
+    document.getElementById('i-qty').value='';
+    document.getElementById('i-price').value='';
+  });
+}
+})();
+</script></body></html>

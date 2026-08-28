@@ -1,30 +1,49 @@
-"""Turn a market log into one self-contained HTML page.
+"""Turn a market log into two self-contained HTML pages.
 
-    .venv/bin/python -m scripts.replay.generate runs/market.db docs/replay.html
+    .venv/bin/python -m scripts.replay.generate runs/market.db docs/
 
-No server, no build step, no network at view time. It opens from disk, on any
-machine, in a year — which matters because the page's whole claim is that a
-reader can check it, and a page that needs infrastructure to render is a page
-that will eventually stop rendering.
+    docs/replay.html   the exchange — follow any trade end to end
+    docs/desk.html     Razorpay internal — the live floor and the board
 
-ONE THING ON SCREEN AT A TIME. The page was seven panes at once and it was
-unreadable — the viewer's eye had nowhere to land, and a judge watching a
-recording cannot choose where to look. Now it is six scenes and you are only
-ever in one. Every feature survived; none of them share a screen.
+No server, no build step, no network at view time. They open from disk, on any
+machine, in a year — which matters because the pages' whole claim is that a
+reader can check them, and a page that needs infrastructure to render is a
+page that will eventually stop rendering.
 
-They run on ONE CLOCK. Switching scenes does not restart anything: the tape
-plays, and each scene is a different readout of the same moment. That shared
-clock is what makes this a terminal rather than six charts on a background.
+TWO PAGES, BECAUSE THERE ARE TWO AUDIENCES AND THEY WANT OPPOSITE THINGS.
 
-DESIGN RULE, applied everywhere below: where legibility and credibility
-conflict, the raw event wins. Prices are shown as the log records them,
-reasoning is quoted rather than paraphrased, and nothing on the page is
-computed here that `fold` could compute instead.
+A merchant does not care to watch thirty-two agents trade. It cares about one
+question — what did my agent do with my money, and can I check it — so
+`replay.html` is a single trade's trail, still, readable, picked by hand. No
+clock, no ticker, nothing moving. You read it like a statement.
+
+Razorpay's own staff want the opposite: everything at once, live. The floor,
+the ledger, the agents, and the campaign board that ranks what is climbing
+across the client base. That is `desk.html`, behind a gate, because none of it
+is a merchant's to see.
+
+THE GATE IS A STAGE PROP AND THE PAGE SAYS SO. These are static files; a
+client-side check is not access control, and dressing one up as if it were
+would be the only dishonest thing on an otherwise checkable pair of pages.
+
+ONE LAYOUT, LEARNED ONCE. Every trade travels the same rail — wants, picked,
+haggled, the gate, paid, remembered. The interesting cases are not different
+screens: a trade that breaks grows three more stations out of the fifth one; a
+trade a person typed differs only at the first.
+
+EVERY STATION IS STAMPED WITH ITS EVENT NUMBER. That number is the argument in
+its smallest form — look it up in the log and you find exactly what the
+station says.
+
+TYPE CARRIES PROVENANCE. Mono is what the system recorded: numbers, ids, event
+types, verdicts. Serif is what somebody said: an agent's reasoning, a lesson,
+a headline from the press.
 """
 from __future__ import annotations
 
 import html
 import json
+import pathlib
 import sys
 from datetime import datetime, timezone
 
@@ -33,21 +52,12 @@ from scripts.replay.read import (
     board,
     catalogue,
     failure_threads,
-    lessons,
     load,
+    merchant_view,
+    rails,
     storefront,
     tape,
 )
-
-
-def state_actors(events):
-    return {e.actor_id for e in events if e.actor_id.startswith("m_")}
-
-
-def arc_seen(thread, arc):
-    """Which steps of a story a thread actually contains."""
-    types = {e.type for e in thread}
-    return [t for t in arc if t in types]
 
 
 def esc(text) -> str:
@@ -58,477 +68,1106 @@ def rupees(paise) -> str:
     return f"₹{(paise or 0) / 100:,.0f}"
 
 
+def state_actors(events):
+    return {e.actor_id for e in events if e.actor_id.startswith("m_")}
+
+
 # --- the visual world --------------------------------------------------------
 #
-# A dealing room at night, not a dashboard. The ground is near-black with a
-# blue cast, data is monospaced because every figure here is meant to be read
-# against another figure, and colour carries exactly four meanings and no
-# decoration: allowed, refused, money, and the house.
+# A Bloomberg terminal, taken seriously rather than referenced. That means
+# pure black — not charcoal, not near-black — because the whole legibility
+# model depends on bright text sitting on nothing. Amber is the primary
+# reading colour; blue heads every panel the way function keys do; green and
+# red mean settled and refused and nothing else.
 #
-# Violet is reserved. It appears only on the internal campaign board and
-# nowhere else on the page, so the one screen merchants cannot see is the one
-# screen that does not look like the others.
+# Density is the point. Labels are small, uppercase and monospaced; data is
+# large and bright; there is no gradient and no rounded corner, because a
+# terminal earns trust by looking built to be read for eight hours rather than
+# screenshotted once.
 #
-# Fonts are system stacks on purpose. The page is recorded to video, often
-# offline, and a webfont that fails to load mid-take is a re-shoot.
+# Violet is reserved for the internal board and appears on no other surface,
+# so the one screen merchants cannot see is the one that does not look like
+# the others.
+#
+# Fonts are system stacks on purpose. The pages are recorded to video, often
+# offline, and a webfont that fails to load mid-take is a re-shoot. The
+# pairing still does real work: mono for what was recorded, serif for what was
+# said.
 
 CSS = """
 :root{
-  --ink:#0A0C10; --panel:#11141A; --raise:#171B22; --line:#242A34;
-  --text:#CBD3DE; --dim:#7A8595; --faint:#4C5768;
-  --allow:#3FBF9C; --deny:#E06055; --money:#E0A83C; --house:#9B7BF0;
+  --bg:#000; --panel:#0A0A0A; --lift:#161616; --rule:#282828; --edge:#3A3A3A;
+  --amber:#FFA028; --white:#EDEDED; --dim:#8E8E8E; --faint:#5C5C5C;
+  --blue:#4D9EFF; --green:#26D07C; --red:#FF4B3E; --violet:#B69CFF;
   --mono:ui-monospace,SFMono-Regular,"SF Mono",Menlo,Consolas,monospace;
-  --sans:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
+  --serif:"Iowan Old Style","Palatino Linotype",Palatino,Georgia,serif;
 }
 *{box-sizing:border-box}
 html,body{margin:0;height:100%}
-body{background:var(--ink);color:var(--text);font-family:var(--sans);
-  font-size:15px;line-height:1.5;-webkit-font-smoothing:antialiased;
+body{background:var(--bg);color:var(--white);font-family:var(--mono);
+  font-size:13px;line-height:1.45;-webkit-font-smoothing:antialiased;
   display:flex;flex-direction:column;overflow:hidden}
-@media(max-width:900px){body{overflow:auto;height:auto}}
+@media(max-width:1000px){body{overflow:auto;height:auto}}
 
-/* --- the fixed head: identity, scenes, transport, clock ------------------ */
-.bar{display:flex;align-items:center;gap:14px;padding:0 18px;height:44px;
-  border-bottom:1px solid var(--line);background:var(--panel);flex:none;
-  font-family:var(--mono);font-size:11.5px;letter-spacing:.08em;
-  text-transform:uppercase;color:var(--faint)}
-.mark{color:var(--text);font-weight:600;letter-spacing:.16em}
-.bar .sep{color:var(--line)}
-.sealed{margin-left:auto;display:flex;align-items:center;gap:7px;
-  color:var(--allow)}
-.sealed i{width:6px;height:6px;border-radius:50%;background:var(--allow);
-  display:block}
+/* --- the head ------------------------------------------------------------ */
+.bar{display:flex;align-items:center;flex:none;background:var(--panel);
+  border-bottom:1px solid var(--rule);flex-wrap:wrap}
+.mark{background:var(--amber);color:#000;font-weight:700;letter-spacing:.16em;
+  font-size:11px;padding:7px 13px;white-space:nowrap}
+.stat{padding:7px 14px;border-right:1px solid var(--rule);white-space:nowrap;
+  font-size:10.5px;color:var(--faint);letter-spacing:.1em;
+  text-transform:uppercase}
+.stat b{font-size:14px;font-weight:600;color:var(--white);letter-spacing:0;
+  margin-right:6px}
+.stat b.amber{color:var(--amber)}
+.stat b.green{color:var(--green)}
+.stat b.red{color:var(--red)}
+.navs{margin-left:auto;display:flex}
+.nav{appearance:none;background:none;border:0;border-left:1px solid var(--rule);
+  color:var(--dim);font-family:var(--mono);font-size:11px;letter-spacing:.13em;
+  text-transform:uppercase;padding:8px 16px;cursor:pointer}
+.nav:hover{color:var(--white);background:var(--lift)}
+.nav[aria-selected=true]{background:var(--amber);color:#000;font-weight:700}
+.nav.house[aria-selected=true]{background:var(--violet)}
+.nav:focus-visible{outline:2px solid var(--blue);outline-offset:-2px}
+a.nav{text-decoration:none;display:inline-block}
 
-.scenes{display:flex;gap:2px;padding:0 12px;background:var(--panel);
-  border-bottom:1px solid var(--line);flex:none;overflow-x:auto}
-.tab{appearance:none;background:none;border:0;border-bottom:2px solid
-  transparent;color:var(--dim);font-family:var(--mono);font-size:12px;
-  letter-spacing:.12em;text-transform:uppercase;padding:11px 14px 9px;
-  cursor:pointer;white-space:nowrap;display:flex;gap:8px;align-items:baseline}
-.tab b{color:var(--faint);font-weight:500;font-size:10px}
-.tab:hover{color:var(--text)}
-.tab[aria-selected=true]{color:var(--text);border-bottom-color:var(--money)}
-.tab[aria-selected=true] b{color:var(--money)}
-.tab:focus-visible{outline:2px solid var(--money);outline-offset:-2px}
-.tab[data-scene=desk][aria-selected=true]{border-bottom-color:var(--house)}
-.tab[data-scene=desk][aria-selected=true] b{color:var(--house)}
+/* Blue panel heads, the way a terminal labels a window. */
+.head{background:var(--lift);border-bottom:1px solid var(--rule);
+  padding:5px 12px;font-size:10px;letter-spacing:.17em;text-transform:uppercase;
+  color:var(--blue);display:flex;justify-content:space-between;gap:12px;
+  align-items:center;flex:none}
+.head em{font-style:normal;color:var(--faint);letter-spacing:.1em}
 
-.transport{display:flex;align-items:center;gap:8px;padding:8px 18px;
-  background:var(--panel);border-bottom:1px solid var(--line);flex:none}
-.tbtn{appearance:none;background:var(--raise);border:1px solid var(--line);
-  color:var(--dim);font-family:var(--mono);font-size:11px;letter-spacing:.1em;
-  text-transform:uppercase;padding:5px 12px;border-radius:3px;cursor:pointer}
-.tbtn:hover{color:var(--text);border-color:var(--dim)}
-.tbtn[aria-pressed=true]{color:var(--ink);background:var(--money);
-  border-color:var(--money);font-weight:600}
-.tbtn:focus-visible{outline:2px solid var(--money);outline-offset:2px}
-.clock{margin-left:auto;font-family:var(--mono);font-size:11px;
-  color:var(--faint);letter-spacing:.08em;text-transform:uppercase}
-.clock b{color:var(--money);font-weight:600}
-/* THE SIGNATURE. One hairline across the whole head, shared by every scene.
-   It is the only element that never changes when you switch tabs, which is
-   how the page says: same run, same moment, different window onto it. */
-.progress{height:2px;background:var(--line);flex:none;position:relative}
-.progress i{position:absolute;inset:0 auto 0 0;width:0;background:var(--money);
-  display:block;transition:width .18s linear}
-
-/* --- scenes -------------------------------------------------------------- */
+/* --- shell --------------------------------------------------------------- */
 main{flex:1;min-height:0;position:relative}
-.scene{position:absolute;inset:0;display:none;flex-direction:column;
-  padding:22px 26px 18px;overflow:auto}
-.scene[data-active]{display:flex}
-@media(max-width:900px){
-  main{position:static}
-  .scene{position:static;padding:18px 14px}
-}
-.headline{font-size:25px;line-height:1.3;font-weight:400;margin:0 0 6px;
-  max-width:62ch;letter-spacing:-.01em}
-.headline em{font-style:normal;color:var(--money)}
-.sub{margin:0 0 20px;color:var(--dim);font-size:14px;max-width:74ch}
-.sub code{font-family:var(--mono);font-size:12.5px;color:var(--text)}
+.vw{position:absolute;inset:0;display:none;flex-direction:column;overflow:auto;
+  padding:14px 16px}
+.vw[data-on]{display:flex}
+@media(max-width:1000px){main{position:static}.vw{position:static}}
 
-.stats{display:flex;gap:34px;flex-wrap:wrap;margin:0 0 22px;
-  padding-bottom:20px;border-bottom:1px solid var(--line)}
-.stat .v{font-family:var(--mono);font-size:27px;color:var(--text);
-  letter-spacing:-.02em;line-height:1.1}
-.stat .l{font-size:11px;letter-spacing:.1em;text-transform:uppercase;
-  color:var(--faint);margin-top:5px}
-.stat.money .v{color:var(--money)}
-.stat.allow .v{color:var(--allow)}
-.stat.deny .v{color:var(--deny)}
-.stat.house .v{color:var(--house)}
+.panel{border:1px solid var(--rule);background:var(--panel);display:flex;
+  flex-direction:column;min-height:0;overflow:hidden}
+.panel .body{overflow:auto;padding:10px 12px;flex:1;min-height:0}
+.panel .body.flush{padding:0}
+@media(max-width:1000px){.panel .body{max-height:42vh}}
 
-.cols{display:grid;gap:16px;flex:1;min-height:0}
-.c-floor{grid-template-columns:minmax(0,1.9fr) minmax(280px,1fr)}
-.c-gate{grid-template-columns:minmax(0,1fr) minmax(0,1fr)}
-@media(max-width:900px){.cols{grid-template-columns:1fr!important}}
-.stack{display:flex;flex-direction:column;gap:16px;min-height:0}
-/* Both children were content-sized inside a column that already had a fixed
-   height, so the second one was simply clipped off the bottom. The roster is
-   allowed to take what it needs up to a share of the column; the negotiation
-   takes the rest, because it is the pane that keeps growing. */
-.stack>.box:first-child{flex:0 1 auto;max-height:55%}
-.stack>.box:last-child{flex:1 1 0;min-height:120px}
+/* --- the picker ---------------------------------------------------------- */
+.picker{display:flex;align-items:center;gap:7px;flex-wrap:wrap;
+  padding:0 0 13px;border-bottom:1px solid var(--rule);margin-bottom:14px}
+.picker .lab{font-size:10px;letter-spacing:.17em;text-transform:uppercase;
+  color:var(--faint);margin-right:3px}
+.pick,select.pick{appearance:none;background:var(--lift);color:var(--dim);
+  border:1px solid var(--rule);font-family:var(--mono);font-size:11.5px;
+  padding:6px 12px;cursor:pointer;letter-spacing:.05em}
+.pick:hover{color:var(--white);border-color:var(--edge)}
+.pick[aria-pressed=true]{background:var(--amber);color:#000;
+  border-color:var(--amber);font-weight:700}
+.pick:focus-visible{outline:2px solid var(--blue);outline-offset:1px}
+select.pick{max-width:330px}
 
-.box{background:var(--panel);border:1px solid var(--line);border-radius:5px;
-  display:flex;flex-direction:column;min-height:0;overflow:hidden}
-.box>h2{margin:0;padding:9px 13px;font-family:var(--mono);font-size:10.5px;
-  letter-spacing:.14em;text-transform:uppercase;color:var(--faint);
-  border-bottom:1px solid var(--line);font-weight:500;display:flex;
-  justify-content:space-between;gap:10px;align-items:center;flex:none}
-.box>h2 span{color:var(--dim)}
-.body{overflow:auto;padding:10px 13px;flex:1;min-height:0}
-.body.flush{padding:0}
-@media(max-width:900px){.body{max-height:44vh}}
+/* --- THE RAIL: the signature -------------------------------------------
+   Every trade travels the same stations in the same order, and the order is
+   the argument: the gate rules before money moves, and a lesson is filed
+   after it. Each card's top edge takes the colour of what happened there, so
+   the shape of a trade reads before a single word does. */
+.who{display:flex;align-items:baseline;gap:10px;flex-wrap:wrap;
+  padding-bottom:11px}
+.who .agent{color:var(--amber);font-size:14px}
+.who .verb{color:var(--faint);font-size:11px;letter-spacing:.13em;
+  text-transform:uppercase}
+.who .need{font-family:var(--serif);font-size:23px;color:var(--white);
+  line-height:1.2}
+.who .cid{color:var(--faint);font-size:10.5px;letter-spacing:.04em}
+.human-tag{background:var(--amber);color:#000;font-size:9.5px;font-weight:700;
+  letter-spacing:.12em;text-transform:uppercase;padding:2px 7px}
 
-/* --- the tape ------------------------------------------------------------ */
-.tape{font-family:var(--mono);font-size:12.5px}
-.row{display:grid;grid-template-columns:52px 150px 1fr;gap:10px;
-  padding:3px 13px;border-left:2px solid transparent;align-items:baseline}
-.row .s{color:var(--faint);font-size:11px}
-.row .w{color:var(--text);overflow:hidden;text-overflow:ellipsis;
+.rail{display:flex;gap:1px;flex-wrap:wrap;background:var(--rule);
+  border:1px solid var(--rule)}
+.stn{flex:1 1 148px;min-width:148px;background:var(--panel);
+  border-top:3px solid var(--edge);padding:9px 12px 13px;position:relative}
+.stn[data-tone=allow]{border-top-color:var(--green)}
+.stn[data-tone=deny]{border-top-color:var(--red)}
+.stn[data-tone=mixed]{border-top-color:var(--amber)}
+.stn .gl{position:absolute;top:8px;right:11px;font-size:15px;color:var(--faint)}
+.stn[data-tone=allow] .gl{color:var(--green)}
+.stn[data-tone=deny] .gl{color:var(--red)}
+.stn[data-tone=mixed] .gl{color:var(--amber)}
+.stn .cap{font-size:10px;letter-spacing:.16em;text-transform:uppercase;
+  color:var(--blue)}
+.stn .cap b{background:var(--blue);color:#000;font-weight:700;padding:0 4px;
+  margin-right:6px}
+/* The stamp: the event this station is accountable to. */
+.stn .seq{font-size:10.5px;color:var(--amber);margin-top:3px;
+  letter-spacing:.05em}
+.stn .hd{font-size:16px;margin-top:8px;line-height:1.25;color:var(--white)}
+.stn[data-tone=allow] .hd{color:var(--green)}
+.stn[data-tone=deny] .hd{color:var(--red)}
+.stn[data-tone=mixed] .hd{color:var(--amber)}
+.stn .ln{font-family:var(--serif);font-size:13.5px;color:var(--dim);
+  margin-top:6px;line-height:1.4;overflow-wrap:anywhere}
+.stn .ln.mono{font-family:var(--mono);font-size:10.5px;color:var(--faint)}
+
+/* --- what they said ------------------------------------------------------ */
+.said{display:grid;grid-template-columns:158px 66px 1fr;gap:12px;
+  padding:5px 0;align-items:baseline;border-bottom:1px solid var(--rule)}
+.said .w{font-size:11px;color:var(--faint)}
+.said .p{font-size:13px;color:var(--amber);text-align:right}
+.said .m{font-family:var(--serif);font-size:14.5px;color:var(--white)}
+@media(max-width:1000px){.said{grid-template-columns:1fr;gap:1px}}
+
+/* --- the floor (internal) ------------------------------------------------ */
+.floor{display:grid;grid-template-columns:minmax(215px,1fr) minmax(0,2.1fr);
+  gap:12px;flex:1;min-height:0}
+@media(max-width:1000px){.floor{grid-template-columns:1fr}}
+.mgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(98px,1fr));
+  gap:1px}
+.m{font-size:10.5px;color:var(--faint);padding:3px 5px;display:flex;gap:6px;
+  align-items:center;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
+.m i{width:5px;height:5px;background:var(--rule);flex:none}
+.m.act{color:var(--white);background:var(--lift)}
+.m.act i{background:var(--green)}
+.m.buy{color:var(--amber);background:var(--lift)}
+.m.buy i{background:var(--amber)}
+.m.frz{color:var(--red)}
+.m.frz i{background:var(--red)}
+
+.lrow{display:grid;grid-template-columns:46px 138px 1fr;gap:10px;
+  padding:2px 11px;border-left:2px solid transparent;align-items:baseline;
+  font-size:12px}
+.lrow .s{color:var(--faint);font-size:10.5px}
+.lrow .a{color:var(--dim);overflow:hidden;text-overflow:ellipsis;
   white-space:nowrap}
-.row .x{color:var(--dim);white-space:nowrap;overflow:hidden;
-  text-overflow:ellipsis}
-.row.allow{border-left-color:var(--allow)}
-.row.deny{border-left-color:var(--deny)}
-.row.amber{border-left-color:var(--money)}
-.row.new{background:#1B2029}
-@media(prefers-reduced-motion:no-preference){.row.new{transition:background .5s}}
-.row .x b{color:var(--text);font-weight:400}
-
-/* --- merchants ----------------------------------------------------------- */
-.mgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(112px,1fr));
-  gap:3px}
-.m{font-family:var(--mono);font-size:10.5px;color:var(--faint);padding:3px 5px;
-  border-radius:3px;display:flex;gap:6px;align-items:center;overflow:hidden;
-  white-space:nowrap;text-overflow:ellipsis}
-.m i{width:5px;height:5px;border-radius:50%;background:var(--line);flex:none}
-.m.act{color:var(--text);background:var(--raise)}
-.m.act i{background:var(--allow)}
-.m.frz{color:var(--deny)}
-.m.frz i{background:var(--deny)}
-
-/* --- negotiation --------------------------------------------------------- */
-.nline{display:grid;grid-template-columns:auto auto 1fr;gap:9px;
-  padding:5px 0;border-bottom:1px solid var(--line);font-size:13px;
-  align-items:baseline}
-.nline .who{font-family:var(--mono);font-size:11px;color:var(--dim)}
-.nline .px{font-family:var(--mono);color:var(--money)}
-.nline .msg{color:var(--text)}
-
-/* --- the gate ------------------------------------------------------------ */
-.grow{display:grid;grid-template-columns:62px 1fr;gap:10px;padding:4px 0;
-  font-family:var(--mono);font-size:12px;border-bottom:1px solid var(--line);
-  align-items:baseline}
-.verdict{font-weight:600;letter-spacing:.06em}
-.allow,.verdict.allow{color:var(--allow)}
-.deny,.verdict.deny{color:var(--deny)}
-.grow .msg{color:var(--dim);overflow:hidden;text-overflow:ellipsis;
+.lrow .d{color:var(--faint);overflow:hidden;text-overflow:ellipsis;
   white-space:nowrap}
+.lrow .d b{color:var(--white);font-weight:400}
+.lrow.allow{border-left-color:var(--green)}
+.lrow.deny{border-left-color:var(--red)}
+.lrow.amber{border-left-color:var(--amber)}
+.lrow.new{background:var(--lift)}
+@media(prefers-reduced-motion:no-preference){
+  .lrow.new{transition:background .6s}}
 
-/* --- the break: a stepper ------------------------------------------------ */
-.steps{display:flex;gap:0;flex-wrap:wrap;margin-bottom:20px}
-.step{flex:1;min-width:150px;padding:13px 15px;background:var(--panel);
-  border:1px solid var(--line);border-right:0;position:relative}
-.step:last-child{border-right:1px solid var(--line)}
-.step .n{font-family:var(--mono);font-size:10px;letter-spacing:.14em;
-  color:var(--faint);text-transform:uppercase}
-.step .t{font-family:var(--mono);font-size:13px;margin-top:5px}
-.step .d{font-size:12.5px;color:var(--dim);margin-top:5px;line-height:1.4}
-.step.bad .t{color:var(--deny)}
-.step.good .t{color:var(--allow)}
+.trans{display:flex;align-items:center;gap:6px;padding:0 0 11px;
+  flex-wrap:wrap}
+.progress{height:2px;background:var(--rule);position:relative;
+  margin-bottom:12px}
+.progress i{position:absolute;inset:0 auto 0 0;width:0;background:var(--amber);
+  display:block;transition:width .18s linear}
+.clock{margin-left:auto;font-size:11px;color:var(--faint);letter-spacing:.09em;
+  text-transform:uppercase}
+.clock b{color:var(--amber);font-weight:600}
 
-/* --- tables -------------------------------------------------------------- */
-table{width:100%;border-collapse:collapse;font-size:12.5px}
-th{text-align:left;font-family:var(--mono);font-size:10px;letter-spacing:.12em;
-  text-transform:uppercase;color:var(--faint);font-weight:500;
-  padding:6px 10px 6px 0;border-bottom:1px solid var(--line)}
-td{padding:5px 10px 5px 0;border-bottom:1px solid var(--line);
-  vertical-align:top}
-td.mono,td.a,td.p{font-family:var(--mono)}
-td.a{color:var(--dim);font-size:11.5px;white-space:nowrap}
-td.p{color:var(--faint);font-size:11px}
-td.t{font-family:var(--mono);font-size:11px;color:var(--dim);white-space:nowrap}
-
-/* --- the desk: violet, and only here ------------------------------------- */
-.internal{border:1px solid var(--house);border-radius:5px;overflow:hidden;
-  margin-bottom:20px}
-.internal>.hdr{background:rgba(155,123,240,.12);padding:8px 14px;
-  font-family:var(--mono);font-size:10.5px;letter-spacing:.14em;
-  text-transform:uppercase;color:var(--house);display:flex;gap:12px;
-  justify-content:space-between;flex-wrap:wrap}
-.internal>.hdr b{font-weight:600}
-.internal>.hdr span{color:var(--dim);letter-spacing:.08em}
-.crow{display:grid;grid-template-columns:34px 1fr 74px 92px 108px;gap:12px;
-  padding:11px 14px;border-top:1px solid var(--line);align-items:baseline}
-.crow .rk{font-family:var(--mono);font-size:17px;color:var(--house)}
-.crow .nm{font-size:15px}
-.crow .mv,.crow .mc,.crow .vl{font-family:var(--mono);font-size:13px;
-  text-align:right}
-.crow .mv{color:var(--money)}
+/* --- the board ----------------------------------------------------------- */
+.internal{border:1px solid var(--violet);margin-bottom:16px}
+.internal>.hdr{background:rgba(182,156,255,.14);padding:7px 13px;font-size:10px;
+  letter-spacing:.16em;text-transform:uppercase;color:var(--violet);
+  display:flex;gap:12px;justify-content:space-between;flex-wrap:wrap}
+.internal>.hdr b{font-weight:700}
+.internal>.hdr span{color:var(--faint);letter-spacing:.09em}
+.crow{display:grid;grid-template-columns:30px 1fr 66px 92px 100px;gap:12px;
+  padding:11px 13px;border-top:1px solid var(--rule);align-items:baseline}
+.crow .rk{font-size:17px;color:var(--violet)}
+.crow .nm{font-size:16px;color:var(--white)}
+.crow .mv,.crow .mc,.crow .vl{font-size:13px;text-align:right}
+.crow .mv{color:var(--amber)}
 .crow .mc,.crow .vl{color:var(--dim)}
-.crow .why{grid-column:2/-1;color:var(--dim);font-size:13px;margin-top:5px;
-  line-height:1.45}
-.crow .src{grid-column:2/-1;margin-top:7px;display:flex;gap:7px;flex-wrap:wrap}
-.crow .src a{font-family:var(--mono);font-size:10.5px;color:var(--faint);
-  border:1px solid var(--line);border-radius:3px;padding:2px 7px;
-  text-decoration:none;max-width:250px;overflow:hidden;text-overflow:ellipsis;
-  white-space:nowrap}
-.crow .src a:hover{color:var(--house);border-color:var(--house)}
-@media(max-width:900px){
-  .crow{grid-template-columns:28px 1fr 60px}
-  .crow .mc,.crow .vl{display:none}
-}
-.refused{padding:10px 14px;border-top:1px solid var(--line);
-  color:var(--deny);font-size:12.5px;font-family:var(--mono)}
+.crow .why{grid-column:2/-1;color:var(--white);font-size:14.5px;margin-top:6px;
+  line-height:1.45;font-family:var(--serif)}
+.crow .src{grid-column:2/-1;margin-top:8px;display:flex;gap:5px;flex-wrap:wrap}
+.crow .src a{font-size:10px;color:var(--faint);border:1px solid var(--rule);
+  padding:2px 7px;text-decoration:none;max-width:230px;overflow:hidden;
+  text-overflow:ellipsis;white-space:nowrap}
+.crow .src a:hover{color:var(--violet);border-color:var(--violet)}
+@media(max-width:1000px){
+  .crow{grid-template-columns:24px 1fr 56px}
+  .crow .mc,.crow .vl{display:none}}
+.refused{padding:9px 13px;border-top:1px solid var(--rule);color:var(--red);
+  font-size:12.5px}
 
-/* --- the shop ------------------------------------------------------------ */
-.ask{display:flex;gap:9px;margin-bottom:16px;max-width:660px}
-.ask input{flex:1;background:var(--panel);border:1px solid var(--line);
-  border-radius:4px;color:var(--text);font-family:var(--sans);font-size:15px;
-  padding:11px 14px}
-.ask input:focus{outline:none;border-color:var(--money)}
-.ask button{background:var(--money);border:0;border-radius:4px;
-  color:var(--ink);font-family:var(--mono);font-size:12px;font-weight:600;
-  letter-spacing:.1em;text-transform:uppercase;padding:0 20px;cursor:pointer}
-#sc-shop .body{min-height:168px}
-.hit{display:grid;grid-template-columns:1fr auto auto;gap:14px;padding:8px 0;
-  border-bottom:1px solid var(--line);font-size:13.5px;align-items:baseline}
-.hit .sl{font-family:var(--mono);font-size:11px;color:var(--dim)}
-.hit .pr{font-family:var(--mono);color:var(--money)}
+/* --- the gate screen ----------------------------------------------------- */
+.lock{position:fixed;inset:0;background:var(--bg);z-index:50;display:flex;
+  align-items:center;justify-content:center;padding:24px;overflow:auto}
+.lock[data-open]{display:none}
+.lock .card{max-width:470px;width:100%;border:1px solid var(--rule);
+  background:var(--panel)}
+.lock .top{background:var(--violet);color:#000;padding:8px 14px;font-size:11px;
+  letter-spacing:.16em;text-transform:uppercase;font-weight:700}
+.lock .in{padding:24px}
+.lock h1{font-family:var(--serif);font-size:26px;font-weight:400;margin:0 0 8px;
+  color:var(--white)}
+.lock p{color:var(--dim);font-size:13px;margin:0 0 18px;line-height:1.6}
+.lock .row{display:flex;gap:8px}
+.lock input{flex:1;background:var(--bg);border:1px solid var(--edge);
+  color:var(--white);font-family:var(--mono);font-size:15px;padding:10px 12px;
+  letter-spacing:.14em}
+.lock input:focus{outline:none;border-color:var(--violet)}
+.lock button{background:var(--violet);border:0;color:#000;
+  font-family:var(--mono);font-size:11px;font-weight:700;letter-spacing:.14em;
+  text-transform:uppercase;padding:0 20px;cursor:pointer}
+.lock .warn{margin:18px 0 0;padding-top:14px;border-top:1px solid var(--rule);
+  color:var(--faint);font-size:12px;line-height:1.6}
+.lock .warn b{color:var(--amber);font-weight:600}
+.lock .bad{color:var(--red);font-size:12px;margin-top:10px;min-height:16px}
 
-/* --- memory -------------------------------------------------------------- */
-.q{background:var(--panel);border-left:2px solid var(--line);
-  padding:11px 15px;margin-bottom:9px;font-size:14px;line-height:1.5}
-.q .by{font-family:var(--mono);font-size:10.5px;color:var(--faint);
-  margin-top:7px;letter-spacing:.06em;text-transform:uppercase}
-.q.reliability{border-left-color:var(--deny)}
-.q.behavioural{border-left-color:var(--dim)}
+/* --- try it -------------------------------------------------------------- */
+.ask{display:flex;gap:8px;margin-bottom:14px;max-width:640px}
+.ask input{flex:1;background:var(--panel);border:1px solid var(--rule);
+  color:var(--white);font-family:var(--serif);font-size:16px;padding:10px 13px}
+.ask input:focus{outline:none;border-color:var(--amber)}
+.ask button{background:var(--amber);border:0;color:#000;font-family:var(--mono);
+  font-size:11px;font-weight:700;letter-spacing:.13em;text-transform:uppercase;
+  padding:0 20px;cursor:pointer}
+#hits{min-height:132px}
+.hit{display:grid;grid-template-columns:1fr auto auto;gap:14px;padding:7px 0;
+  border-bottom:1px solid var(--rule);align-items:baseline}
+.hit .tt{font-family:var(--serif);font-size:15px}
+.hit .sl{font-size:11px;color:var(--dim)}
+.hit .pr{color:var(--amber)}
 
 /* --- shared -------------------------------------------------------------- */
-.empty{color:var(--faint);font-size:13px;padding:14px 0;font-style:italic}
-.note{color:var(--dim);font-size:13px;border-left:2px solid var(--line);
-  padding-left:13px;margin:16px 0}
-details.raw{margin-top:18px;border-top:1px solid var(--line);padding-top:12px}
-details.raw>summary{cursor:pointer;font-family:var(--mono);font-size:11px;
-  letter-spacing:.1em;text-transform:uppercase;color:var(--faint)}
-details.raw>summary:hover{color:var(--dim)}
-details.raw .body{max-height:340px;padding:12px 0 0}
-.tag{display:inline-block;font-family:var(--mono);font-size:10.5px;
-  letter-spacing:.06em;padding:2px 8px;border:1px solid var(--line);
-  border-radius:3px;color:var(--dim);margin-left:6px}
-.tag.ok{color:var(--allow);border-color:var(--allow)}
-.tag.no{color:var(--deny);border-color:var(--deny)}
-footer{padding:14px 26px;border-top:1px solid var(--line);color:var(--faint);
-  font-size:11.5px;font-family:var(--mono);line-height:1.7;flex:none;
-  background:var(--panel)}
+h3.lede{font-family:var(--serif);font-size:23px;font-weight:400;margin:0 0 6px;
+  line-height:1.3;max-width:60ch;color:var(--white)}
+p.sub{margin:0 0 16px;color:var(--dim);font-size:13.5px;max-width:78ch;
+  line-height:1.6}
+table{width:100%;border-collapse:collapse;font-size:12.5px}
+th{text-align:left;font-size:10px;letter-spacing:.14em;text-transform:uppercase;
+  color:var(--blue);font-weight:500;padding:6px 10px 6px 0;
+  border-bottom:1px solid var(--rule)}
+td{padding:5px 10px 5px 0;border-bottom:1px solid var(--rule);
+  vertical-align:top}
+td.a{color:var(--dim);font-size:11.5px;white-space:nowrap}
+td.q{font-family:var(--serif);font-size:14px}
+.empty{color:var(--faint);font-size:13.5px;padding:12px 0;
+  font-family:var(--serif);font-style:italic}
+.note{color:var(--dim);font-size:14px;border-left:2px solid var(--rule);
+  padding-left:12px;margin:14px 0;font-family:var(--serif);line-height:1.55}
+.note b{color:var(--white);font-weight:600}
+footer{padding:10px 16px;border-top:1px solid var(--rule);color:var(--faint);
+  font-size:10.5px;line-height:1.7;flex:none;background:var(--panel)}
 a{color:var(--dim)}
+@media(prefers-reduced-motion:reduce){*{animation:none!important;
+  transition:none!important}}
+"""
+
+
+def _panel(title, body, note="", body_id="", flush=False) -> str:
+    ident = f' id="{body_id}"' if body_id else ""
+    klass = "body flush" if flush else "body"
+    return (f'<section class="panel"><div class="head">{esc(title)}'
+            f'<em>{esc(note)}</em></div>'
+            f'<div class="{klass}"{ident}>{body}</div></section>')
+
+
+def _stat(value, label, tone="") -> str:
+    """A head figure. `value` may be markup — the desk's counters are spans
+    the engine writes into, and every call site here supplies its own text."""
+    cls = f' class="{tone}"' if tone else ""
+    return f'<span class="stat"><b{cls}>{value}</b>{esc(label)}</span>'
+
+
+def _footer(db_path, summary) -> str:
+    generated = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
+    return (f'<footer>Generated {esc(generated)} from {summary.events} events '
+            f'in {esc(db_path)} &middot; gate {summary.gate_allow} allowed / '
+            f'{summary.gate_deny} refused &middot; {summary.completed} payments '
+            f'completed against real Razorpay test-mode orders.<br>'
+            f'Every station carries the event number it came from. Nothing was '
+            f'computed by the page &mdash; each figure is read from the log, or '
+            f'from the same projection the exchange runs on.</footer>')
+
+
+# --- the shared rail renderer ------------------------------------------------
+#
+# Both pages draw the same trail from the same data. The merchant's page draws
+# it once and leaves it still; the desk redraws it as the tape moves.
+
+RAIL_JS = r"""
+var CAPS={wants:'wants',picked:'picked',haggled:'haggled',gate:'the gate',
+  paid:'paid',broke:'books disagree',froze:'froze',repaired:'repaired',
+  remembered:'remembered'};
+var GLYPH={wants:'○',picked:'→',haggled:'⇄',gate:'✓',
+  paid:'₹',broke:'≠',froze:'⏸',repaired:'✓',
+  remembered:'★'};
+function glyph(s){
+  if(s.key==='gate')return s.tone==='deny'?'✕':
+    (s.tone==='mixed'?'✕→✓':'✓');
+  if(s.key==='haggled'&&s.tone==='deny')return '✕';
+  return GLYPH[s.key]||'';
+}
+function esc(t){var d=document.createElement('div');
+  d.textContent=t==null?'':t;return d.innerHTML}
+function drawRail(r,upto,ids){
+  var stations=r.stations.filter(function(s){return s.seq<=upto});
+  if(!stations.length)return false;
+  document.getElementById(ids.who).innerHTML=
+    '<span class="agent">'+esc(r.buyer)+'</span>'+
+    '<span class="verb">'+(r.human?'typed':'wants')+'</span>'+
+    '<span class="need">'+esc(r.need||'—')+'</span>'+
+    (r.human?'<span class="human-tag">a person typed this</span>':'')+
+    '<span class="cid">'+esc(r.corr)+'</span>';
+  document.getElementById(ids.rail).innerHTML=stations.map(function(s,n){
+    return '<div class="stn" data-tone="'+esc(s.tone||'')+'">'+
+      '<div class="gl">'+glyph(s)+'</div>'+
+      '<div class="cap"><b>'+(n+1)+'</b>'+esc(CAPS[s.key]||s.key)+'</div>'+
+      '<div class="seq">event '+s.seq+'</div>'+
+      '<div class="hd">'+esc(s.head)+'</div>'+
+      s.lines.map(function(l,k){
+        return '<div class="ln'+(k?' mono':'')+'">'+esc(l)+'</div>'}).join('')+
+      '</div>'}).join('');
+  if(ids.talk){
+    document.getElementById(ids.talk).innerHTML=r.talk.length?
+      r.talk.map(function(t){
+        return '<div class="said"><span class="w">'+esc(t.who)+
+          '</span><span class="p">'+esc(t.price)+'</span><span class="m">'+
+          esc(t.said)+'</span></div>'}).join('')
+      :'<div class="empty">No offers on this thread — the match cleared '+
+       'at the asking price.</div>';
+  }
+  return true;
+}
+function wireViews(){
+  [].forEach.call(document.querySelectorAll('.nav[data-view]'),function(v){
+    v.addEventListener('click',function(){
+      [].forEach.call(document.querySelectorAll('.nav[data-view]'),
+        function(o){
+          var on=o===v;
+          o.setAttribute('aria-selected',on?'true':'false');
+          var p=document.getElementById('vw-'+o.dataset.view);
+          if(!p)return;
+          if(on){p.setAttribute('data-on','');p.scrollTop=0}
+          else p.removeAttribute('data-on')})})});
+}
+"""
+
+
+def _cases(rail_map):
+    """The four trades worth naming, found in the log rather than chosen.
+
+    Found by shape so the pages still work against a different run — a
+    hard-coded correlation id would make this a slideshow of one recording.
+    """
+    def has(rail, key, tone=None):
+        return any(s["key"] == key and (tone is None or s["tone"] == tone)
+                   for s in rail["stations"])
+
+    values = list(rail_map.values())
+    broke = next((r for r in values if has(r, "repaired")), None)
+    capped = next((r for r in values
+                   if has(r, "gate", "mixed") and has(r, "paid")), None)
+    # A trade with nothing unusual about it. Asking for one with no drift AND
+    # no capped gate AND a lesson finds nothing in some logs, and a missing
+    # button is worse than a slightly less pristine example: the plain case is
+    # the baseline every other button is read against.
+    def clean(r):
+        return (has(r, "paid") and not has(r, "broke")
+                and not has(r, "gate", "mixed"))
+
+    plain = (next((r for r in values if clean(r) and has(r, "remembered")),
+                  None)
+             or next((r for r in values if clean(r)), None)
+             or next((r for r in values
+                      if has(r, "paid") and not has(r, "broke")), None))
+    human = (next((r for r in values if r["human"] and has(r, "paid")), None)
+             or next((r for r in values if r["human"]), None))
+
+    return [(plain, "a trade that just worked"),
+            (capped, "a stranger, capped"),
+            (broke, "the one that broke"),
+            (human, "the one a person typed")]
+
+
+# =============================================================================
+#  PAGE ONE — the merchant's own dashboard
+# =============================================================================
+#
+# A DIFFERENT WORLD ON PURPOSE. The desk is a black terminal because the people
+# reading it stare at it all day and want density. A merchant opens this once a
+# week to answer one question — what did my agents do with my money — and a
+# trading terminal is the wrong instrument for that. So this page is light,
+# roomy, and organised around the four parts of your broker rather than around
+# the market.
+#
+# What survives from the terminal is the rule that matters: mono for what the
+# system recorded, serif for what somebody said, and an event number beside
+# every claim.
+
+LIGHT_CSS = """
+:root{
+  --paper:#F2F5FA; --card:#FFF; --line:#E1E7F2; --edge:#CFD8E8;
+  --ink:#111826; --body:#3D4759; --mute:#6B7A94; --pale:#93A0B6;
+  --brand:#2B5CE6; --brandsoft:#EAF0FE;
+  --money:#0B7A57; --moneysoft:#E6F5EF;
+  --warn:#C2410C; --warnsoft:#FDF0E7;
+  --stop:#CE3226; --stopsoft:#FCEDEB;
+  --violet:#6D5BD0; --violetsoft:#F0EDFB;
+  --mono:ui-monospace,SFMono-Regular,"SF Mono",Menlo,Consolas,monospace;
+  --sans:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",
+    sans-serif;
+  --serif:"Iowan Old Style","Palatino Linotype",Palatino,Georgia,serif;
+  --shadow:0 1px 2px rgba(17,24,38,.05),0 4px 14px rgba(17,24,38,.05);
+}
+*{box-sizing:border-box}
+html,body{margin:0}
+body{background:var(--paper);color:var(--ink);font-family:var(--sans);
+  font-size:15px;line-height:1.55;-webkit-font-smoothing:antialiased}
+
+/* --- header -------------------------------------------------------------- */
+.top{background:var(--card);border-bottom:1px solid var(--line)}
+.top .in{max-width:1240px;margin:0 auto;padding:16px 22px;display:flex;
+  align-items:center;gap:14px;flex-wrap:wrap}
+.avatar{width:38px;height:38px;border-radius:9px;background:var(--brand);
+  color:#fff;display:grid;place-items:center;font-weight:700;font-size:15px;
+  flex:none}
+.whoami h1{margin:0;font-size:19px;font-weight:650;letter-spacing:-.01em;
+  text-transform:capitalize}
+.whoami p{margin:0;color:var(--mute);font-size:12.5px}
+.switch{margin-left:auto;display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+select.sw{appearance:none;background:var(--card);border:1px solid var(--edge);
+  border-radius:8px;color:var(--body);font-family:var(--sans);font-size:13px;
+  padding:8px 30px 8px 12px;cursor:pointer;max-width:250px;
+  background-image:linear-gradient(45deg,transparent 50%,var(--mute) 50%),
+    linear-gradient(135deg,var(--mute) 50%,transparent 50%);
+  background-position:calc(100% - 16px) 50%,calc(100% - 11px) 50%;
+  background-size:5px 5px,5px 5px;background-repeat:no-repeat}
+select.sw:focus{outline:2px solid var(--brand);outline-offset:1px}
+.deskbtn{background:var(--violet);color:#fff;border-radius:8px;padding:8px 14px;
+  font-size:12.5px;font-weight:600;text-decoration:none;white-space:nowrap}
+.deskbtn:hover{filter:brightness(1.08)}
+
+/* --- the four figures ---------------------------------------------------- */
+.figures{max-width:1240px;margin:0 auto;padding:20px 22px 0;display:grid;
+  grid-template-columns:repeat(auto-fit,minmax(158px,1fr));gap:12px}
+.fig{background:var(--card);border:1px solid var(--line);border-radius:12px;
+  padding:14px 16px;box-shadow:var(--shadow)}
+.fig .v{font-family:var(--mono);font-size:25px;letter-spacing:-.02em;
+  line-height:1.15;color:var(--ink)}
+.fig.money .v{color:var(--money)}
+.fig.warn .v{color:var(--warn)}
+.fig.brand .v{color:var(--brand)}
+.fig .l{font-size:12px;color:var(--mute);margin-top:4px}
+
+/* --- tabs ---------------------------------------------------------------- */
+.tabs{max-width:1240px;margin:20px auto 0;padding:0 22px;display:flex;gap:4px;
+  border-bottom:1px solid var(--line);flex-wrap:wrap}
+.tab{appearance:none;background:none;border:0;border-bottom:2px solid
+  transparent;color:var(--mute);font-family:var(--sans);font-size:14px;
+  font-weight:600;padding:11px 14px;cursor:pointer;margin-bottom:-1px}
+.tab:hover{color:var(--ink)}
+.tab[aria-selected=true]{color:var(--brand);border-bottom-color:var(--brand)}
+.tab:focus-visible{outline:2px solid var(--brand);outline-offset:-2px;
+  border-radius:6px}
+
+.wrap{max-width:1240px;margin:0 auto;padding:22px}
+.pane{display:none}
+.pane[data-on]{display:block}
+h2.sec{font-size:13px;font-weight:700;letter-spacing:.05em;
+  text-transform:uppercase;color:var(--pale);margin:0 0 12px}
+p.lede{font-size:15px;color:var(--body);margin:0 0 20px;max-width:74ch}
+
+/* --- THE CREW: the signature -----------------------------------------------
+   Your broker is not one agent, it is four parts with separate memories, and
+   this is the only place a merchant ever sees that. Each card names the part,
+   says in one plain line what it is for, shows what it last did IN ITS OWN
+   WORDS, and ends with the one number that says whether it did its job.
+   The event types feeding each card are printed on it, so the attribution can
+   be checked rather than taken on trust. */
+.crew{display:grid;grid-template-columns:repeat(auto-fit,minmax(258px,1fr));
+  gap:14px;margin-bottom:26px}
+.role{background:var(--card);border:1px solid var(--line);border-radius:14px;
+  overflow:hidden;box-shadow:var(--shadow);display:flex;flex-direction:column}
+.role .rh{padding:13px 16px 11px;border-bottom:1px solid var(--line);
+  display:flex;align-items:center;gap:10px}
+.role .dot{width:30px;height:30px;border-radius:8px;display:grid;
+  place-items:center;font-size:14px;flex:none}
+.role h3{margin:0;font-size:15.5px;font-weight:650;text-transform:capitalize}
+.role .cnt{margin-left:auto;font-family:var(--mono);font-size:12px;
+  color:var(--mute)}
+.role .rb{padding:13px 16px;flex:1}
+.role .job{font-size:13.5px;color:var(--mute);margin:0 0 12px}
+.role .did{font-family:var(--serif);font-size:15px;color:var(--ink);
+  line-height:1.45;margin:0}
+.role .rf{padding:10px 16px;border-top:1px solid var(--line);
+  background:var(--paper);display:flex;justify-content:space-between;gap:10px;
+  align-items:center;flex-wrap:wrap}
+.role .res{font-weight:650;font-size:13.5px}
+.role .src{font-family:var(--mono);font-size:10px;color:var(--pale)}
+.role.trader .dot{background:var(--brandsoft);color:var(--brand)}
+.role.trader .res{color:var(--brand)}
+.role.scout .dot{background:var(--warnsoft);color:var(--warn)}
+.role.scout .res{color:var(--warn)}
+.role.diplomat .dot{background:var(--moneysoft);color:var(--money)}
+.role.diplomat .res{color:var(--money)}
+.role.subconscious .dot{background:var(--violetsoft);color:var(--violet)}
+.role.subconscious .res{color:var(--violet)}
+
+/* --- two-up -------------------------------------------------------------- */
+.duo{display:grid;grid-template-columns:minmax(0,1.15fr) minmax(0,1fr);gap:16px}
+@media(max-width:940px){.duo{grid-template-columns:1fr}}
+.card{background:var(--card);border:1px solid var(--line);border-radius:14px;
+  box-shadow:var(--shadow);overflow:hidden}
+.card>.ch{padding:12px 16px;border-bottom:1px solid var(--line);display:flex;
+  justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap}
+.card>.ch h3{margin:0;font-size:14.5px;font-weight:650}
+.card>.ch .meta{font-size:12px;color:var(--pale)}
+.card>.cb{padding:14px 16px}
+.card>.cb.tight{padding:6px 16px 12px}
+
+/* --- messages ------------------------------------------------------------ */
+.msg{display:grid;grid-template-columns:auto 1fr;gap:11px;padding:11px 0;
+  border-bottom:1px solid var(--line);align-items:start}
+.msg:last-child{border-bottom:0}
+.msg .pip{width:8px;height:8px;border-radius:50%;background:var(--pale);
+  margin-top:7px}
+.msg.green .pip{background:var(--money)}
+.msg.red .pip{background:var(--stop)}
+.msg.amber .pip{background:var(--warn)}
+.msg>span:last-child{display:flex;flex-direction:column;min-width:0}
+.msg .kind{font-size:11px;font-weight:700;letter-spacing:.06em;
+  text-transform:uppercase;color:var(--pale)}
+.msg.green .kind{color:var(--money)}
+.msg.red .kind{color:var(--stop)}
+.msg.amber .kind{color:var(--warn)}
+.msg .txt{font-family:var(--serif);font-size:14.5px;color:var(--body);
+  margin-top:2px;overflow-wrap:anywhere}
+.msg .ev{font-family:var(--mono);font-size:10.5px;color:var(--pale);
+  margin-top:3px}
+.connect{margin-top:14px;padding:12px 14px;border:1px dashed var(--edge);
+  border-radius:10px;background:var(--paper);font-size:12.5px;color:var(--mute)}
+.connect b{color:var(--body)}
+.connect .chips{display:flex;gap:7px;margin-top:9px;flex-wrap:wrap}
+.chip{background:var(--card);border:1px solid var(--edge);border-radius:7px;
+  padding:5px 11px;font-size:12px;color:var(--pale);cursor:not-allowed}
+
+/* --- catalogue ----------------------------------------------------------- */
+.item{display:grid;grid-template-columns:1fr auto auto;gap:12px;padding:10px 0;
+  border-bottom:1px solid var(--line);align-items:baseline}
+.item:last-of-type{border-bottom:0}
+.item .t{font-size:14.5px}
+.item .q{font-family:var(--mono);font-size:12px;color:var(--mute)}
+.item .p{font-family:var(--mono);font-size:14px;color:var(--money);
+  font-weight:600}
+.item .mine{font-size:10.5px;background:var(--brandsoft);color:var(--brand);
+  border-radius:5px;padding:1px 7px;font-weight:700;margin-left:7px}
+.addrow{display:grid;grid-template-columns:1fr 88px 96px auto;gap:8px;
+  margin-top:14px}
+@media(max-width:640px){.addrow{grid-template-columns:1fr}}
+input.f,.ask input{font-family:var(--sans);font-size:14px;padding:9px 12px;
+  border:1px solid var(--edge);border-radius:9px;background:var(--card);
+  color:var(--ink);width:100%}
+input.f:focus,.ask input:focus{outline:2px solid var(--brand);
+  outline-offset:-1px;border-color:var(--brand)}
+button.go{background:var(--brand);color:#fff;border:0;border-radius:9px;
+  font-family:var(--sans);font-size:13.5px;font-weight:650;padding:9px 18px;
+  cursor:pointer;white-space:nowrap}
+button.go:hover{filter:brightness(1.07)}
+button.go:focus-visible{outline:2px solid var(--ink);outline-offset:2px}
+
+/* --- the money trail ----------------------------------------------------- */
+.picker{display:flex;gap:8px;align-items:center;flex-wrap:wrap;
+  margin-bottom:18px}
+.trade{appearance:none;background:var(--card);border:1px solid var(--edge);
+  border-radius:9px;color:var(--body);font-family:var(--sans);font-size:13px;
+  padding:8px 13px;cursor:pointer}
+.trade:hover{border-color:var(--brand);color:var(--brand)}
+.trade[aria-pressed=true]{background:var(--brand);border-color:var(--brand);
+  color:#fff;font-weight:600}
+.trade:focus-visible{outline:2px solid var(--brand);outline-offset:2px}
+.trade b{font-family:var(--mono);font-weight:600;margin-left:9px;
+  color:var(--money)}
+.trade[aria-pressed=true] b{color:#fff}
+
+.who{display:flex;align-items:baseline;gap:10px;flex-wrap:wrap;
+  margin-bottom:14px}
+.who .agent{font-family:var(--mono);font-size:13.5px;color:var(--brand)}
+.who .verb{font-size:11.5px;letter-spacing:.11em;text-transform:uppercase;
+  color:var(--pale)}
+.who .need{font-family:var(--serif);font-size:23px;line-height:1.2}
+.who .cid{font-family:var(--mono);font-size:10.5px;color:var(--pale)}
+.human-tag{background:var(--brand);color:#fff;font-size:10px;font-weight:700;
+  letter-spacing:.08em;text-transform:uppercase;padding:2px 8px;
+  border-radius:5px}
+
+.rail{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));
+  gap:12px}
+.stn{background:var(--card);border:1px solid var(--line);border-radius:12px;
+  border-top:3px solid var(--edge);padding:13px 15px 15px;position:relative;
+  box-shadow:var(--shadow)}
+.stn[data-tone=allow]{border-top-color:var(--money)}
+.stn[data-tone=deny]{border-top-color:var(--stop)}
+.stn[data-tone=mixed]{border-top-color:var(--warn)}
+.stn .gl{position:absolute;top:11px;right:14px;font-size:16px;color:var(--pale)}
+.stn[data-tone=allow] .gl{color:var(--money)}
+.stn[data-tone=deny] .gl{color:var(--stop)}
+.stn[data-tone=mixed] .gl{color:var(--warn)}
+.stn .cap{font-size:11px;font-weight:700;letter-spacing:.08em;
+  text-transform:uppercase;color:var(--pale)}
+.stn .cap b{background:var(--pale);color:#fff;border-radius:4px;padding:0 5px;
+  margin-right:7px;font-weight:700}
+/* The stamp: the event this station is accountable to. */
+.stn .seq{font-family:var(--mono);font-size:11px;color:var(--brand);
+  margin-top:4px}
+.stn .hd{font-family:var(--mono);font-size:17px;margin-top:9px;line-height:1.25}
+.stn[data-tone=allow] .hd{color:var(--money)}
+.stn[data-tone=deny] .hd{color:var(--stop)}
+.stn[data-tone=mixed] .hd{color:var(--warn)}
+.stn .ln{font-family:var(--serif);font-size:14px;color:var(--mute);
+  margin-top:7px;line-height:1.4;overflow-wrap:anywhere}
+.stn .ln.mono{font-family:var(--mono);font-size:11px;color:var(--pale)}
+
+.said{display:grid;grid-template-columns:160px 68px 1fr;gap:12px;padding:9px 0;
+  border-bottom:1px solid var(--line);align-items:baseline}
+.said:last-child{border-bottom:0}
+.said .w{font-family:var(--mono);font-size:11.5px;color:var(--pale)}
+.said .p{font-family:var(--mono);font-size:14px;color:var(--money);
+  text-align:right;font-weight:600}
+.said .m{font-family:var(--serif);font-size:15px;color:var(--body)}
+@media(max-width:820px){.said{grid-template-columns:1fr;gap:2px}}
+
+/* --- shared -------------------------------------------------------------- */
+.hit{display:grid;grid-template-columns:1fr auto auto;gap:14px;padding:10px 0;
+  border-bottom:1px solid var(--line);align-items:baseline}
+.hit:last-child{border-bottom:0}
+.hit .tt{font-family:var(--serif);font-size:15px}
+.hit .sl{font-family:var(--mono);font-size:11.5px;color:var(--mute)}
+.hit .pr{font-family:var(--mono);font-size:14px;color:var(--money);
+  font-weight:600}
+.ask{display:flex;gap:9px;margin-bottom:16px;max-width:660px}
+table{width:100%;border-collapse:collapse;font-size:13.5px}
+th{text-align:left;font-size:11px;letter-spacing:.06em;text-transform:uppercase;
+  color:var(--pale);font-weight:700;padding:7px 10px 7px 0;
+  border-bottom:1px solid var(--line)}
+td{padding:7px 10px 7px 0;border-bottom:1px solid var(--line);
+  vertical-align:top;color:var(--body)}
+td.a{font-family:var(--mono);font-size:11.5px;color:var(--mute);
+  white-space:nowrap}
+td.q{font-family:var(--serif);font-size:14.5px;color:var(--ink)}
+.empty{color:var(--pale);font-family:var(--serif);font-style:italic;
+  font-size:14.5px;padding:10px 0}
+.note{background:var(--brandsoft);border-radius:10px;padding:12px 15px;
+  font-size:13.5px;color:var(--body);margin:16px 0;line-height:1.55}
+.note b{color:var(--ink)}
+footer{max-width:1240px;margin:0 auto;padding:22px;color:var(--pale);
+  font-size:11.5px;font-family:var(--mono);line-height:1.75;
+  border-top:1px solid var(--line)}
+a{color:var(--brand)}
 @media(prefers-reduced-motion:reduce){*{transition:none!important}}
 """
 
 
-def _stat(value, label, tone: str = "", raw: bool = False) -> str:
-    """A big number and its caption.
-
-    `raw` exists for the two counters the engine writes into. Escaping is the
-    default because every other value here comes from the log, and a page
-    whose figures are merchant-authored text is a page with an injection
-    surface; the exception is spelled out at each call site.
-    """
-    shown = value if raw else esc(value)
-    return (f'<div class="stat {tone}"><div class="v">{shown}</div>'
-            f'<div class="l">{esc(label)}</div></div>')
-
-
-def _box(title, body, note="", body_id="", flush=False) -> str:
-    ident = f' id="{body_id}"' if body_id else ""
-    klass = "body flush" if flush else "body"
-    return (f'<section class="box"><h2>{esc(title)}'
-            f'<span>{esc(note)}</span></h2>'
-            f'<div class="{klass}"{ident}>{body}</div></section>')
-
-
-def _scene(key, title, sub, body, active=False) -> str:
-    flag = " data-active" if active else ""
-    return (f'<section class="scene" id="sc-{key}" role="tabpanel"{flag}>'
-            f'<h1 class="headline">{title}</h1>'
-            f'<p class="sub">{sub}</p>{body}</section>')
-
-
-def _detail(e) -> str:
-    p = e.payload
-    if e.type == "POLICY_DECIDED":
-        v = p.get("verdict", "")
-        css = "deny" if v != "ALLOW" else "allow"
-        return f'<span class="{css}">{esc(v)}</span> {esc(p.get("reason", ""))}'
-    if e.type == "NEGOTIATION_ENDED":
-        return ("agreed at " + esc(p.get("final_price"))
-                if p.get("agreed") else esc(p.get("reason", "")))
-    if e.type == "NEGOTIATION_ROUND":
-        return f'{esc(p.get("price"))} — {esc(str(p.get("message", "")).strip())}'
-    if e.type == "SETTLEMENT_INITIATED":
-        return f'{rupees(p.get("amount"))} · {esc(p.get("razorpay_order_id"))}'
-    if e.type == "SETTLEMENT_COMPLETED":
-        return esc(p.get("razorpay_payment_id"))
-    if e.type == "DRIFT_DETECTED":
-        return (f'local {esc(p.get("local_status"))} · '
-                f'remote {esc(p.get("remote_status"))}')
-    if e.type in ("ACTOR_FROZEN",):
-        return esc(p.get("reason"))
-    if e.type == "POINTS_MINTED":
-        return f'{esc(p.get("points"))} points'
-    return ""
-
-
-def _thread_table(thread) -> str:
-    rows = "".join(
-        f'<tr><td class="p">{e.seq}</td><td class="a">{esc(e.actor_id)}</td>'
-        f'<td class="t">{esc(e.type)}</td><td>{_detail(e)}</td></tr>'
-        for e in thread)
-    return f"<table>{rows}</table>"
-
-
-def _raw(summary_text, body) -> str:
-    return (f'<details class="raw"><summary>{esc(summary_text)}</summary>'
-            f'<div class="body">{body}</div></details>')
-
-
-# --- the engine --------------------------------------------------------------
-#
-# One clock, six readouts. `step()` advances the tape by a single real event
-# and hands it to whichever readouts care; scenes that are not on screen keep
-# updating, so switching tabs mid-run shows you the market as it is now rather
-# than as it was when you last looked.
-
-ENGINE = r"""<script>
+MERCHANT_JS = r"""<script>
 (function(){
 var M=JSON.parse(document.getElementById('mkt').textContent);
-var rows=M.rows,i=0,rate=4,timer=null,ga=0,gd=0;
-var $=function(id){return document.getElementById(id)};
-var reduce=matchMedia('(prefers-reduced-motion: reduce)').matches;
-function esc(t){var d=document.createElement('div');
-  d.textContent=t==null?'':t;return d.innerHTML}
+""" + RAIL_JS + r"""
+var IDS={who:'who',rail:'rail',talk:'talk'};
 
-/* --- scenes ---------------------------------------------------------- */
-var tabs=[].slice.call(document.querySelectorAll('.tab'));
-function show(key){
-  tabs.forEach(function(t){
-    var on=t.dataset.scene===key;
-    t.setAttribute('aria-selected',on?'true':'false');
-    t.tabIndex=on?0:-1;
-    var p=$('sc-'+t.dataset.scene);
-    if(!p)return;
-    /* Reset the scroll on entry. Scenes keep their scrollTop while hidden,
-       so arriving at one you had scrolled before dropped you into the
-       middle of it with the headline off screen — which is the one thing
-       a viewer needs to read first. */
-    if(on){p.setAttribute('data-active','');p.scrollTop=0}
-    else p.removeAttribute('data-active');
+/* --- tabs ------------------------------------------------------------- */
+[].forEach.call(document.querySelectorAll('.tab'),function(t){
+  t.addEventListener('click',function(){
+    [].forEach.call(document.querySelectorAll('.tab'),function(o){
+      var on=o===t;
+      o.setAttribute('aria-selected',on?'true':'false');
+      var p=document.getElementById('pn-'+o.dataset.pane);
+      if(!p)return;
+      if(on)p.setAttribute('data-on','');else p.removeAttribute('data-on')})})});
+
+/* --- the money trail -------------------------------------------------- */
+function show(corr){
+  if(!M.rails[corr])return;
+  drawRail(M.rails[corr],1e9,IDS);
+  [].forEach.call(document.querySelectorAll('.trade'),function(b){
+    b.setAttribute('aria-pressed',b.dataset.corr===corr?'true':'false')});
+}
+[].forEach.call(document.querySelectorAll('.trade'),function(b){
+  b.addEventListener('click',function(){show(b.dataset.corr)})});
+var first=document.querySelector('.trade');
+if(first)show(first.dataset.corr);
+
+/* --- switching merchant ------------------------------------------------
+   Each merchant is a separate generated page, so this is a plain
+   navigation. Nothing is filtered client-side, which means what you see
+   was scoped to your actor before it ever reached the browser. */
+var sw=document.getElementById('sw');
+if(sw)sw.addEventListener('change',function(){location.href=sw.value});
+
+/* --- ask for something ------------------------------------------------
+   Searches the REAL catalogue read out of the log. It does not pretend to
+   run an agent in the browser: the honest claim is that a person reaches
+   the same order book, and the evidence is the recorded thread below. */
+var q=document.getElementById('q'),hits=document.getElementById('hits');
+if(q){
+  var search=function(){
+    var terms=(q.value||q.placeholder).toLowerCase().split(/\s+/)
+      .filter(function(w){return w.length>3});
+    var found=M.cat.map(function(c){
+      var t=c.title.toLowerCase(),n=0;
+      terms.forEach(function(w){if(t.indexOf(w)>=0)n++});
+      return[c,n]}).filter(function(p){return p[1]>0})
+      .sort(function(a,b){return b[1]-a[1]}).slice(0,6);
+    hits.innerHTML=found.length?found.map(function(p){var c=p[0];
+      return '<div class="hit"><span class="tt">'+esc(c.title)+
+        '</span><span class="sl">'+esc(c.seller)+'</span><span class="pr">₹'+
+        (c.price/100).toFixed(2)+'</span></div>'}).join('')
+      :'<div class="empty">Nothing on the book matches that. The agents only '+
+       'stock what merchants have actually listed.</div>';
+  };
+  document.getElementById('go').addEventListener('click',search);
+  q.addEventListener('keydown',function(e){if(e.key==='Enter')search()});
+}
+
+/* --- your catalogue ---------------------------------------------------
+   Added items live in THIS BROWSER only, and the card says so. The event
+   log is sealed and read-only from here; a real listing posts an ASK to
+   the order book through the exchange, which a static page cannot do and
+   should not pretend to. */
+var KEY='catalogue:'+M.actor;
+function saved(){
+  try{return JSON.parse(localStorage.getItem(KEY)||'[]')}catch(e){return[]}
+}
+function store(rows){
+  try{localStorage.setItem(KEY,JSON.stringify(rows))}catch(e){}
+}
+function renderAdded(){
+  var box=document.getElementById('added');
+  if(!box)return;
+  var rows=saved();
+  box.innerHTML=rows.map(function(r,n){
+    return '<div class="item"><span class="t">'+esc(r.title)+
+      '<span class="mine">added by you</span></span>'+
+      '<span class="q">'+esc(r.qty)+' units</span>'+
+      '<span class="p">₹'+esc(r.price)+'</span></div>'}).join('');
+}
+var add=document.getElementById('add');
+if(add){
+  renderAdded();
+  add.addEventListener('click',function(){
+    var t=document.getElementById('i-title').value.trim();
+    var qy=document.getElementById('i-qty').value.trim();
+    var pr=document.getElementById('i-price').value.trim();
+    if(!t)return document.getElementById('i-title').focus();
+    var rows=saved();
+    rows.push({title:t,qty:qy||'—',price:pr||'—'});
+    store(rows); renderAdded();
+    document.getElementById('i-title').value='';
+    document.getElementById('i-qty').value='';
+    document.getElementById('i-price').value='';
   });
 }
-tabs.forEach(function(t,n){
-  t.addEventListener('click',function(){show(t.dataset.scene)});
-  t.addEventListener('keydown',function(e){
-    var d=e.key==='ArrowRight'?1:e.key==='ArrowLeft'?-1:0;
-    if(!d)return; e.preventDefault();
-    var nx=tabs[(n+d+tabs.length)%tabs.length];
-    show(nx.dataset.scene); nx.focus();
-  });
-});
-document.addEventListener('keydown',function(e){
-  if(/^(INPUT|TEXTAREA)$/.test((e.target.tagName||'')))return;
-  if(e.key>='1'&&e.key<='9'){var t=tabs[+e.key-1];if(t)show(t.dataset.scene)}
-  if(e.key===' '){e.preventDefault();toggle()}
-});
+})();
+</script>"""
 
-/* --- readouts -------------------------------------------------------- */
+
+def _crew(view) -> str:
+    marks = {"trader": "₹", "scout": "◎", "diplomat": "◇", "subconscious": "✦"}
+    out = ""
+    for role in ("trader", "scout", "diplomat", "subconscious"):
+        info = view["roles"][role]
+        out += (
+            f'<article class="role {role}"><div class="rh">'
+            f'<span class="dot">{marks[role]}</span>'
+            f"<h3>{esc(role)}</h3>"
+            f'<span class="cnt">{info["count"]} '
+            f'{"action" if info["count"] == 1 else "actions"}</span></div>'
+            f'<div class="rb"><p class="job">{esc(info["blurb"])}</p>'
+            f'<p class="did">{esc(info["last"])}</p></div>'
+            f'<div class="rf"><span class="res">{esc(info["result"])}</span>'
+            f'<span class="src">{esc(" ".join(info["types"][:3]))}</span>'
+            f"</div></article>")
+    return out
+
+
+def _messages(view) -> str:
+    if not view["messages"]:
+        return ('<div class="empty">Nothing to report yet. Your agents post '
+                'here when money moves, when the gate refuses something, and '
+                'when they learn something worth keeping.</div>')
+    return "".join(
+        f'<div class="msg {esc(m["tone"])}"><span class="pip"></span>'
+        f'<span><span class="kind">{esc(m["kind"])}</span>'
+        f'<span class="txt">{esc(m["text"])}</span>'
+        f'<span class="ev">event {m["seq"]} &middot; {esc(m["from"])}</span>'
+        f"</span></div>"
+        for m in view["messages"])
+
+
+def build_merchant(db_path: str, actor_id: str, roster) -> str:
+    summary, _trades, events = load(db_path)
+    rail_map = rails(events)
+    view = merchant_view(events, actor_id, rail_map)
+
+    mine = [rail_map[c] for c in view["corrs"] if c in rail_map]
+    payload = json.dumps({
+        "rails": {r["corr"]: r for r in mine},
+        "cat": catalogue(events),
+        "actor": actor_id,
+    }, separators=(",", ":"))
+
+    options = "".join(
+        f'<option value="{esc(_page_name(a))}"'
+        f'{" selected" if a == actor_id else ""}>'
+        f'{esc(a[2:].replace("_", " ").title())}</option>'
+        for a in roster)
+
+    # TWO TRADES FOR THE SAME THING NEED TELLING APART. Three buttons all
+    # reading "cold brew concentrate for a twelve store" name the need and
+    # hide the only thing that differs — what happened to the money.
+    mine = sorted(mine, key=lambda r: len(r["stations"]), reverse=True)
+    trades = "".join(
+        f'<button class="trade" data-corr="{esc(r["corr"])}" '
+        f'aria-pressed="false">{esc(_clip_words(r["need"], 34))}'
+        f'<b>{rupees(r["amount"]) if r.get("amount") else "no deal"}</b>'
+        f"</button>"
+        for r in mine)
+
+    initial = (view["name"][:1] or "?").upper()
+
+    figures = (
+        '<div class="figures">'
+        f'<div class="fig money"><div class="v">'
+        f'{rupees(view["spent_paise"])}</div>'
+        f'<div class="l">committed by your agents</div></div>'
+        f'<div class="fig"><div class="v">{len(mine)}</div>'
+        f'<div class="l">trades on your book</div></div>'
+        f'<div class="fig warn"><div class="v">{view["refused"]}</div>'
+        f'<div class="l">refused by the gate</div></div>'
+        f'<div class="fig brand"><div class="v">'
+        f'{view["points"]:,}</div><div class="l">points earned</div></div>'
+        "</div>")
+
+    agents_pane = (
+        '<p class="lede">Your broker is four parts with separate memories. '
+        'Three of them act; the fourth only watches and remembers. Each card '
+        'shows what that part last did, in its own words, and the event types '
+        'it was read from.</p>'
+        f'<div class="crew">{_crew(view)}</div>'
+        '<div class="duo">'
+        '<section class="card"><div class="ch"><h3>Messages</h3>'
+        f'<span class="meta">{len(view["messages"])} from your agents</span>'
+        '</div><div class="cb tight">'
+        + _messages(view)
+        + '<div class="connect"><b>Slack and Discord are not connected in this '
+          'build.</b> Outbound messaging was deliberately left out of scope, so '
+          'rather than show you invented chatter, this feed is built from what '
+          'your agents actually recorded &mdash; every line carries the event '
+          'number it came from.'
+          '<div class="chips"><span class="chip">Slack &mdash; not connected'
+          '</span><span class="chip">Discord &mdash; not connected</span>'
+          "</div></div></div></section>"
+        + _catalogue_card(view) + "</div>")
+
+    money_pane = (
+        '<p class="lede">Every trade your agents made, from what you needed to '
+        'the payment id Razorpay gave back. Each step carries the event number '
+        'it came from, so you can look any of it up in the log yourself.</p>'
+        f'<div class="picker">{trades}</div>'
+        '<div class="who" id="who"></div>'
+        '<div class="rail" id="rail"></div>'
+        '<div style="height:20px"></div>'
+        '<section class="card"><div class="ch"><h3>What they said to each '
+        'other</h3><span class="meta">every offer, quoted</span></div>'
+        '<div class="cb" id="talk"></div></section>'
+    ) if mine else (
+        '<div class="empty">This merchant has no trades on its book in this '
+        'run.</div>')
+
+    ask_pane = (
+        '<p class="lede">Type what you need in plain words. This writes a '
+        'descriptive bid to the same order book your agents use &mdash; you '
+        'approve it, and the gate still decides. A person saying yes is '
+        'consent, not permission, and it does not raise a spending cap.</p>'
+        '<div class="ask"><input id="q" type="text" class="f" '
+        'aria-label="what do you need" '
+        'placeholder="biodegradable mailers under 22 rupees a unit">'
+        '<button class="go" id="go">Search the book</button></div>'
+        '<section class="card"><div class="ch"><h3>What is actually on the '
+        'book</h3><span class="meta">read from the log</span></div>'
+        '<div class="cb" id="hits"><div class="empty">Type a need and press '
+        'search. This reads the real catalogue and refuses when nothing '
+        'matches.</div></div></section>'
+        '<div style="height:16px"></div>'
+        + _human_thread(events))
+
+    return (
+        '<!doctype html>\n<html lang="en"><head><meta charset="utf-8">'
+        '<meta name="viewport" content="width=device-width,initial-scale=1">'
+        f'<title>{esc(view["name"].title())} — your agents</title>'
+        f"<style>{LIGHT_CSS}</style></head><body>"
+
+        '<header class="top"><div class="in">'
+        f'<div class="avatar">{esc(initial)}</div>'
+        f'<div class="whoami"><h1>{esc(view["name"])}</h1>'
+        f'<p>{esc(actor_id)} &middot; {esc(view["plan"])} plan &middot; '
+        f'represented by four agents</p></div>'
+        '<div class="switch">'
+        f'<select class="sw" id="sw" aria-label="view another merchant">'
+        f"{options}</select>"
+        '<a class="deskbtn" href="desk.html">Razorpay desk &rarr;</a>'
+        "</div></div></header>"
+
+        + figures
+
+        + '<div class="tabs" role="tablist">'
+          '<button class="tab" data-pane="agents" aria-selected="true">'
+          'My agents</button>'
+          '<button class="tab" data-pane="money" aria-selected="false">'
+          'Where the money went</button>'
+          '<button class="tab" data-pane="ask" aria-selected="false">'
+          'Ask for something</button></div>'
+
+        + f'<div class="wrap">'
+          f'<section class="pane" id="pn-agents" data-on>{agents_pane}</section>'
+          f'<section class="pane" id="pn-money">{money_pane}</section>'
+          f'<section class="pane" id="pn-ask">{ask_pane}</section></div>'
+
+        + f'<footer>Read from {esc(db_path)} &middot; {summary.events} events '
+          f'&middot; generated '
+          f'{datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")}.<br>'
+          f'Every figure on this page is scoped to {esc(actor_id)} and read '
+          f'from the log. Nothing was computed by the page.</footer>'
+
+        + f'<script type="application/json" id="mkt">{payload}</script>'
+        + MERCHANT_JS + "</body></html>"
+    )
+
+
+def _catalogue_card(view) -> str:
+    rows = "".join(
+        f'<div class="item"><span class="t">{esc(row["title"])}</span>'
+        f'<span class="q">{esc(row.get("qty") or "—")} units</span>'
+        f'<span class="p">'
+        f'{rupees(row["price"]) if row.get("price") else "—"}</span></div>'
+        for row in view["catalogue"]) or (
+        '<div class="empty">You have nothing listed yet.</div>')
+
+    return (
+        '<section class="card"><div class="ch"><h3>Your catalogue</h3>'
+        f'<span class="meta">{len(view["catalogue"])} listed on the '
+        f'exchange</span></div><div class="cb tight">'
+        f"{rows}<div id=\"added\"></div>"
+        '<div class="addrow">'
+        '<input class="f" id="i-title" placeholder="what you sell" '
+        'aria-label="what you sell">'
+        '<input class="f" id="i-qty" placeholder="qty" aria-label="quantity" '
+        'inputmode="numeric">'
+        '<input class="f" id="i-price" placeholder="₹ / unit" '
+        'aria-label="price per unit" inputmode="numeric">'
+        '<button class="go" id="add">Add</button></div>'
+        '<div class="connect">Items you add are saved <b>in this browser '
+        'only</b>. The event log behind this page is sealed and read-only, so '
+        'a static page cannot post to the order book &mdash; in the running '
+        'exchange, adding a line here posts an ASK that other merchants&rsquo; '
+        'agents can find.</div>'
+        "</div></section>")
+
+
+def _human_thread(events) -> str:
+    rows = "".join(
+        f'<tr><td class="a">{r["seq"]}</td><td class="a">{esc(r["actor"])}</td>'
+        f'<td class="a">{esc(r["type"])}</td>'
+        f'<td class="q">{esc(r["says"])}</td></tr>'
+        for r in storefront(events)["rows"])
+    return (
+        '<section class="card"><div class="ch">'
+        '<h3>A purchase a person actually made</h3>'
+        '<span class="meta">the same events as an agent&rsquo;s trade</span>'
+        '</div><div class="cb">'
+        + (f"<table>{rows}</table>" if rows
+           else '<div class="empty">No human purchase in this log.</div>')
+        + "</div></section>")
+
+
+def _clip_words(text, limit):
+    text = str(text or "").strip() or "a purchase"
+    if len(text) <= limit:
+        return text
+    return text[:limit].rsplit(" ", 1)[0].rstrip(" ,;:") + "…"
+
+
+def _page_name(actor_id: str) -> str:
+    return f"m-{actor_id[2:].replace('_', '-')}.html"
+
+
+# =============================================================================
+#  PAGE TWO — Razorpay's own desk, behind a gate
+# =============================================================================
+
+DESK_JS = r"""<script>
+(function(){
+var M=JSON.parse(document.getElementById('mkt').textContent);
+""" + RAIL_JS + r"""
+var rows=M.rows,rails=M.rails,i=0,rate=4,timer=null,shown=null;
+var paid=0,money=0,ok=0,no=0,fixed=0;
+var $=function(id){return document.getElementById(id)};
+var reduce=matchMedia('(prefers-reduced-motion: reduce)').matches;
+var IDS={who:'who',rail:'rail'};
+wireViews();
+
+/* --- the floor ------------------------------------------------------- */
 function merchant(id,cls){
   var el=document.querySelector('[data-m="'+CSS.escape(id)+'"]');
   if(!el)return;
-  el.classList.remove('act','frz');
-  if(cls)el.classList.add(cls);
-  if(cls==='act')setTimeout(function(){el.classList.remove('act')},2600);
+  el.classList.remove('act','frz','buy');
+  el.classList.add(cls);
+  if(cls!=='frz')setTimeout(function(){el.classList.remove(cls)},2400);
 }
-function gateRow(r){
-  var g=$('gate'),e0=g.querySelector('.empty'); if(e0)e0.remove();
-  var ok=/^ALLOW/.test(r.detail);
-  ok?ga++:gd++;
-  $('ga').textContent=ga; $('gd').textContent=gd;
-  var d=document.createElement('div'); d.className='grow';
-  d.innerHTML='<span class="verdict '+(ok?'allow':'deny')+'">'+
-    (ok?'ALLOW':'DENY')+'</span><span class="msg">'+
-    esc(r.detail.replace(/^(ALLOW|DENY)\s*—\s*/,''))+'</span>';
-  g.insertBefore(d,g.firstChild);
-  while(g.children.length>60)g.removeChild(g.lastChild);
-}
-function negoRow(r){
-  var n=$('nego'),e0=n.querySelector('.empty'); if(e0)e0.remove();
-  var parts=String(r.detail).split(' — ');
-  var d=document.createElement('div'); d.className='nline';
-  d.innerHTML='<span class="who">'+esc(r.actor)+'</span><span class="px">'+
-    esc(parts[0])+'</span><span class="msg">'+
-    esc(parts.slice(1).join(' — '))+'</span>';
-  n.appendChild(d); n.scrollTop=n.scrollHeight;
-  $('negostate').textContent='talking';
-  while(n.children.length>16)n.removeChild(n.firstChild);
-}
-function bidRow(r,win){
-  var b=$('bids'),e0=b.querySelector('.empty'); if(e0)e0.remove();
-  var d=document.createElement('div'); d.className='grow';
-  d.innerHTML='<span class="'+(win?'allow':'')+'">'+(win?'WON':'bid')+
-    '</span><span class="msg">'+esc(r.actor)+' — '+esc(r.detail)+'</span>';
-  b.appendChild(d);
-}
-
 function step(){
-  if(i>=rows.length){stop();setLabel('replay',false);return}
+  if(i>=rows.length){stop();label('replay',false);return}
   var r=rows[i++];
-  var t=$('tape');
+  var l=$('ledger');
   var el=document.createElement('div');
-  el.className='row '+(r.tone||'')+' new';
-  el.innerHTML='<span class="s">'+r.seq+'</span><span class="w">'+
-    esc(r.actor)+'</span><span class="x"><b>'+esc(r.says)+'</b> '+
+  el.className='lrow '+(r.tone||'')+' new';
+  el.innerHTML='<span class="s">'+r.seq+'</span><span class="a">'+
+    esc(r.actor)+'</span><span class="d"><b>'+esc(r.says)+'</b> '+
     esc(r.detail)+'</span>';
-  t.appendChild(el);
-  setTimeout(function(){el.classList.remove('new')},420);
-  while(t.children.length>140)t.removeChild(t.firstChild);
-  t.scrollTop=t.scrollHeight;
-
+  l.appendChild(el);
+  setTimeout(function(){el.classList.remove('new')},480);
+  while(l.children.length>160)l.removeChild(l.firstChild);
+  l.scrollTop=l.scrollHeight;
   $('seq').textContent=i;
   $('bar').style.width=(100*i/rows.length).toFixed(2)+'%';
 
-  if(r.type==='POLICY_DECIDED')gateRow(r);
-  else if(r.type==='NEGOTIATION_ROUND')negoRow(r);
-  else if(r.type==='NEGOTIATION_ENDED')
-    $('negostate').textContent=/agreed/.test(r.detail)?'agreed':'no deal';
-  else if(r.type==='ACTOR_FROZEN')merchant(r.actor,'frz');
-  else if(r.type==='ACTOR_RESUMED')merchant(r.actor,'act');
-  else if(r.type==='BID_PLACED')bidRow(r,false);
-  else if(r.type==='AUCTION_CLEARED')bidRow(r,true);
-  if(r.actor&&r.actor.indexOf('m_')===0)merchant(r.actor,'act');
-}
+  /* THE HEAD ADDS UP AS YOU WATCH. Every counter is a running total of
+     events already played, so it agrees with the ledger beside it at every
+     instant — not a final figure parked at the top pretending to be live. */
+  if(r.type==='SETTLEMENT_COMPLETED'){
+    paid++; $('n-paid').textContent=paid;
+    if(r.actor==='accountant'){fixed++;$('n-fixed').textContent=fixed}
+  }else if(r.type==='SETTLEMENT_INITIATED'){
+    var m=/^([\d,]+\.\d\d)/.exec(r.detail);
+    if(m){money+=parseFloat(m[1].replace(/,/g,''));
+      $('n-money').textContent='₹'+Math.round(money).toLocaleString()}
+  }else if(r.type==='POLICY_DECIDED'){
+    if(/^ALLOW/.test(r.detail)){ok++;$('n-ok').textContent=ok}
+    else{no++;$('n-no').textContent=no}
+  }
 
-/* --- transport ------------------------------------------------------- */
-function setLabel(text,pressed){
-  var pp=$('pp'); pp.textContent=text;
-  pp.setAttribute('aria-pressed',pressed?'true':'false');
+  if(r.type==='ACTOR_FROZEN')merchant(r.actor,'frz');
+  else if(r.actor&&r.actor.indexOf('m_')===0)merchant(r.actor,'act');
+
+  /* The rail follows the tape: it shows whichever trade is happening now. */
+  var rl=rails[r.corr];
+  if(rl){
+    var key=r.corr+':'+r.seq;
+    if(key!==shown&&drawRail(rl,r.seq,IDS)){
+      shown=key;
+      if(rl.buyer)merchant(rl.buyer,'buy');
+    }
+  }
 }
+function label(t,p){var b=$('pp');b.textContent=t;
+  b.setAttribute('aria-pressed',p?'true':'false')}
 function play(){stop();timer=setInterval(step,Math.max(12,320/rate));
-  setLabel('pause',true)}
+  label('pause',true)}
 function stop(){if(timer)clearInterval(timer);timer=null}
-function toggle(){
-  if(timer){stop();setLabel('play',false)}
-  else if(i>=rows.length)restart();
-  else play();
-}
+function toggle(){if(timer){stop();label('play',false)}
+  else if(i>=rows.length)restart();else play()}
 function restart(){
-  stop();
-  ['tape','gate','nego','bids'].forEach(function(id){$(id).innerHTML=''});
-  ga=gd=0; $('ga').textContent=0; $('gd').textContent=0;
-  $('negostate').textContent='waiting';
-  i=0; $('seq').textContent=0; $('bar').style.width='0%';
-  play();
+  stop();$('ledger').innerHTML='';shown=null;
+  paid=money=ok=no=fixed=0;
+  ['n-paid','n-ok','n-no','n-fixed'].forEach(function(k){
+    $(k).textContent='0'});
+  $('n-money').textContent='₹0';
+  i=0;$('seq').textContent=0;$('bar').style.width='0%';play();
 }
 $('pp').addEventListener('click',toggle);
 $('rs').addEventListener('click',restart);
@@ -537,301 +1176,138 @@ $('rs').addEventListener('click',restart);
     rate=+b.dataset.rate;
     [].forEach.call(document.querySelectorAll('[data-rate]'),function(o){
       o.setAttribute('aria-pressed',o===b?'true':'false')});
-    if(timer)play();
-  });
-});
+    if(timer)play()})});
+document.addEventListener('keydown',function(e){
+  if(/^(INPUT|TEXTAREA)$/.test(e.target.tagName||''))return;
+  if(e.key===' '){e.preventDefault();toggle()}});
 
-/* --- the storefront ---------------------------------------------------
-   Searches the REAL catalogue read out of the log, then shows the purchase
-   a person actually made. It does not pretend to run an agent in the
-   browser: the honest claim is that a person reaches the same order book,
-   and the evidence is the recorded thread. */
-var q=$('q'),hits=$('hits');
-function search(){
-  var terms=(q.value||q.placeholder).toLowerCase().split(/\s+/)
-    .filter(function(w){return w.length>3});
-  var found=M.cat.map(function(c){
-    var t=c.title.toLowerCase(),n=0;
-    terms.forEach(function(w){if(t.indexOf(w)>=0)n++});
-    return[c,n]}).filter(function(p){return p[1]>0})
-    .sort(function(a,b){return b[1]-a[1]}).slice(0,6);
-  if(!found.length){
-    hits.innerHTML='<div class="empty">Nothing on the book matches that. '+
-      'The agents only stock what merchants actually listed.</div>';
+/* --- the gate ---------------------------------------------------------
+   A stage prop, and the screen says so. These are static files; a
+   client-side check is not access control, and dressing one up as if it
+   were would be the only dishonest thing on the page. */
+var opened=false;
+function unlock(e){
+  if(e&&e.isTrusted===false)return;
+  if($('code').value.trim().toLowerCase()!=='razorpay'){
+    $('bad').textContent='Not that one. The passcode is on this screen.';
     return;
   }
-  hits.innerHTML=found.map(function(p){var c=p[0];
-    return '<div class="hit"><span>'+esc(c.title)+'</span><span class="sl">'+
-      esc(c.seller)+'</span><span class="pr">'+(c.price/100).toFixed(2)+
-      '</span></div>'}).join('');
+  if(opened)return;
+  opened=true;
+  $('lock').setAttribute('data-open','');
+  if(reduce){while(i<rows.length)step();stop();label('replay',false)}
+  else play();
 }
-$('go').addEventListener('click',search);
-q.addEventListener('keydown',function(e){if(e.key==='Enter')search()});
-
-/* Reduced motion: fast-forward to the end rather than animate, so the page
-   is complete and readable without any movement at all. */
-if(reduce){while(i<rows.length)step();stop();setLabel('replay',false)}
-else{play()}
+$('enter').addEventListener('click',unlock);
+$('code').addEventListener('keydown',function(e){
+  if(e.key==='Enter'&&e.isTrusted!==false)unlock(e)});
 })();
 </script>"""
 
 
-def build(db_path: str) -> str:
-    summary, trades, events = load(db_path)
-    settled = [t for t in trades if t.outcome == "settled"]
-    trials = [t for t in trades if t.was_refused_then_allowed]
-    failures = failure_threads(events)
-    sale = auction(events)
-    learned = lessons(events, limit=8)
-    desk = board(events)
+def build_desk(db_path: str) -> str:
+    summary, _trades, events = load(db_path)
+    rail_map = rails(events)
     merchants = sorted(state_actors(events))
+    rows = tape(events)
 
-    payload = json.dumps({
-        "rows": tape(events),
-        "cat": catalogue(events),
-        "shop": storefront(events),
-    }, separators=(",", ":"))
+    payload = json.dumps({"rows": rows, "rails": rail_map},
+                         separators=(",", ":"))
 
-    # The trade to lead with: a real haggle the gate refused once and then
-    # allowed smaller. One thread carrying discovery, reasoning, the cap
-    # binding, and money moving.
-    lead = next((t for t in trials
-                 if len([e for e in t.events
-                         if e.type == "NEGOTIATION_ROUND"]) >= 3), None)
-    lead = lead or (trials[0] if trials else (settled[0] if settled else None))
-
-    # --- 1. the floor -------------------------------------------------------
-    mgrid = "".join(f'<div class="m" data-m="{esc(m)}"><i></i>'
-                    f'{esc(m[2:])}</div>' for m in merchants)
-    floor = (
-        '<div class="stats">'
-        + _stat(summary.merchants, "agents trading")
-        + _stat(f"{summary.agreed} / {summary.walked}", "agreed / walked away")
-        + _stat(summary.completed, "payments completed", "allow")
-        + _stat(rupees(summary.value_paise), "moved through Razorpay", "money")
-        + _stat(summary.events, "events recorded")
-        + "</div>"
-        '<div class="cols c-floor">'
-        + _box("the tape", "", note="every event, in order",
-               body_id="tape", flush=True).replace(
-                   'class="body flush" id="tape"',
-                   'class="body flush tape" id="tape"')
-        + '<div class="stack">'
-        + _box("who is acting", f'<div class="mgrid">{mgrid}</div>',
-               note=f"{summary.merchants} agents")
-        + _box("what they are saying",
-               '<div class="empty">Waiting for the first offer.</div>',
-               note="live", body_id="nego").replace(
-                   '<span>live</span>', '<span id="negostate">waiting</span>')
-        + "</div></div>")
-
-    # --- 2. the gate --------------------------------------------------------
-    trial_body = (
-        _thread_table([e for e in lead.events
-                       if e.type in ("ORDER_POSTED", "COUNTERPARTY_CHOSEN",
-                                     "NEGOTIATION_ENDED", "POLICY_DECIDED",
-                                     "SETTLEMENT_INITIATED",
-                                     "SETTLEMENT_COMPLETED")])
-        if lead else '<div class="empty">No completed trade.</div>')
-    gate = (
-        '<div class="stats">'
-        + _stat('<span id="ga">0</span>', "allowed", "allow", raw=True)
-        + _stat('<span id="gd">0</span>', "refused", "deny", raw=True)
-        + _stat(len(trials), "refused, then retried smaller")
-        + "</div>"
-        '<div class="cols c-gate">'
-        + _box("every ruling, as it happens",
-               '<div class="empty">Waiting for the first money action.</div>',
-               note="live", body_id="gate")
-        + _box("one refusal, in full",
-               trial_body,
-               note=esc(lead.correlation_id[:38]) if lead else "")
+    mgrid = "".join(f'<div class="m" data-m="{esc(m)}"><i></i>{esc(m[2:])}</div>'
+                    for m in merchants)
+    live = (
+        '<div class="trans">'
+        '<button class="pick" id="pp" aria-pressed="true">pause</button>'
+        '<button class="pick" id="rs">restart</button>'
+        '<button class="pick" data-rate="1" aria-pressed="false">1&times;</button>'
+        '<button class="pick" data-rate="4" aria-pressed="true">4&times;</button>'
+        '<button class="pick" data-rate="20" aria-pressed="false">20&times;'
+        "</button>"
+        f'<span class="clock">event <b id="seq">0</b> of {len(rows)}</span>'
+        "</div>"
+        '<div class="progress"><i id="bar"></i></div>'
+        '<div class="who" id="who"></div>'
+        '<div class="rail" id="rail"></div>'
+        '<div style="height:12px"></div>'
+        '<div class="floor">'
+        + _panel("the agents", f'<div class="mgrid">{mgrid}</div>',
+                 note=f"{summary.merchants} trading")
+        + _panel("the ledger", "", note="every event, in order",
+                 body_id="ledger", flush=True)
         + "</div>")
 
-    # --- 3. the break -------------------------------------------------------
-    if failures:
-        # PICK THE THREAD THAT TELLS THE WHOLE STORY, not the first one.
-        # Most drifts are caught and repaired by an ordinary reconciliation
-        # sweep with no freeze involved — which is correct behaviour and a
-        # bad demonstration. Taking failures[0] put "not in this thread"
-        # against the freeze and the resume, which is precisely the pair the
-        # track asks to see.
-        arc = ("SETTLEMENT_INITIATED", "DRIFT_DETECTED", "ACTOR_FROZEN",
-               "SETTLEMENT_COMPLETED", "ACTOR_RESUMED")
-        threads = {c: [e for e in events if e.correlation_id == c]
-                   for c in failures}
-        chosen = max(failures,
-                     key=lambda c: len(arc_seen(threads[c], arc)))
-        thread = threads[chosen]
-        seen = {e.type for e in thread}
-        first_seq = {t: next((e.seq for e in thread if e.type == t), None)
-                     for t in arc}
-        steps = [
-            ("01", "SETTLEMENT_INITIATED", "money committed",
-             "The agent asked Razorpay for a payment link and recorded the "
-             "settlement as pending.", ""),
-            ("02", "DRIFT_DETECTED", "the books disagree",
-             "Razorpay says captured. Our books say pending. Nobody was "
-             "watching — the accountant found it on a routine sweep.", "bad"),
-            ("03", "ACTOR_FROZEN", "trading stopped",
-             "That one merchant, not the market. A disagreement about one "
-             "payment must not halt everybody else.", "bad"),
-            ("04", "SETTLEMENT_COMPLETED", "repaired from the log",
-             "The real payment id came back from Razorpay, not from us. A "
-             "repair that invents an id asserts payments that never "
-             "happened.", "good"),
-            ("05", "ACTOR_RESUMED", "trading resumed",
-             "A freeze that never lifts is a ban, not a hold.", "good"),
-        ]
-        stepper = "".join(
-            f'<div class="step {tone if t in seen else ""}">'
-            f'<div class="n">{n} · '
-            f'{"event " + str(first_seq[t]) if t in seen else "not recorded"}'
-            f'</div><div class="t">{esc(label)}</div>'
-            f'<div class="d">{esc(why)}</div></div>'
-            for n, t, label, why, tone in steps)
-        break_body = (
-            f'<div class="steps">{stepper}</div>'
-            + _box("the whole failure on one correlation id",
-                   _thread_table(thread), note=esc(chosen[:44]))
-            + f'<p class="note">Not injected. A payment link paid after the '
-              f'settlement returned PENDING produces exactly this, and that '
-              f'is how it happened — {len(failures)} times in this log.</p>')
-        break_sub = (f"{len(failures)} drifts caught and repaired without a "
-                     f"human. Here is one, start to finish.")
-    else:
-        break_body = ('<div class="empty">No drift here yet: a settlement can '
-                      'only drift once its payment link has been paid.</div>')
-        break_sub = "No drift in this log."
+    boardv = (
+        '<h3 class="lede">Only the payment processor sees the whole book.</h3>'
+        '<p class="sub">A merchant knows its own sales. Razorpay knows which '
+        'campaigns are climbing across every client, and can rank them before '
+        'any one client could. The ranking is arithmetic over this log; the '
+        'sentence under each row comes from the press and carries its '
+        'source.</p>'
+        + _board_html(board(events), auction(events), summary))
 
-    # --- 4. the desk --------------------------------------------------------
-    desk_body = _desk_html(desk, sale, summary)
-
-    # --- 5. memory ----------------------------------------------------------
-    lesson_html = "".join(
-        f'<div class="q {esc(e.payload.get("kind", ""))}">'
-        f'{esc(str(e.payload.get("text", ""))[:230])}'
-        f'<div class="by">{esc(e.actor_id)} on '
-        f'{esc(e.payload.get("counterparty_id"))} · '
-        f'{esc(e.payload.get("kind"))}</div></div>'
-        for e in learned) or '<div class="empty">No lessons yet.</div>'
-    memory = (
-        '<div class="stats">'
-        + _stat(summary.lessons, "lessons kept")
-        + _stat(summary.points_minted, "points minted", "money")
-        + "</div>" + lesson_html
-        + '<p class="note">A lesson is typed by what it is allowed to move. '
-          'A <b>reliability</b> lesson can change a counterparty&rsquo;s '
-          'standing and therefore its spending cap. A <b>behavioural</b> one '
-          'never can — otherwise an agent that haggles hard would be treated '
-          'the same as one that did not deliver.</p>')
-
-    # --- 6. the shop --------------------------------------------------------
-    shop_rows = "".join(
-        f'<tr><td class="p">{r["seq"]}</td><td class="a">{esc(r["actor"])}</td>'
-        f'<td class="t">{esc(r["type"])}</td><td>{esc(r["says"])}</td></tr>'
-        for r in storefront(events)["rows"])
-    shop = (
-        '<div class="ask">'
-        '<input id="q" type="text" aria-label="what do you need"'
-        ' placeholder="biodegradable mailers under 22 rupees a unit">'
-        '<button id="go" class="tbtn">search</button></div>'
-        + _box("what is actually on the book",
-               '<div class="empty">Type a need and press search. This reads '
-               'the real catalogue from the log — it will refuse if nothing '
-               'matches.</div>', note="live", body_id="hits")
-        + '<div style="height:16px"></div>'
-        + _box("the purchase a person actually made",
-               f"<table>{shop_rows}</table>" if shop_rows
-               else '<div class="empty">No human purchase in this log.</div>',
-               note="same events as an agent's trade"))
-
-    scenes = "".join([
-        _scene("floor",
-               f"{summary.merchants} agents traded with each other.",
-               f"{summary.walked} of {summary.negotiations} negotiations ended "
-               f"without a deal. That is not a failure rate — agents decline, "
-               f"and a market where every deal closes is not a market.",
-               floor, active=True),
-        _scene("gate", "Before any money moves, the gate rules.",
-               "It records the ruling <em>even when the answer is yes</em>. "
-               "The most common story in this log is a stranger refused at "
-               "full size and allowed at a smaller one — the cap on unknown "
-               "counterparties, visible inside a single trade.",
-               gate),
-        _scene("break", "Razorpay said paid. Our books said pending.",
-               break_sub, break_body),
-        _scene("desk", "Only the payment processor sees the whole book.",
-               "A merchant knows its own sales. Razorpay knows which "
-               "campaigns are climbing across every client — and can rank "
-               "them before any one client could.", desk_body),
-        _scene("memory", "Each agent keeps what it learned.",
-               "A whole trade compressed into one durable sentence, recalled "
-               "before the next deal with the same counterparty.", memory),
-        _scene("shop", "Same machinery, with a person driving.",
-               "One input box writing a descriptive bid to the same order "
-               "book the agents use. The human approves; the gate still "
-               "decides.", shop),
-    ])
-
-    tabs = "".join(
-        f'<button class="tab" data-scene="{key}" role="tab" '
-        f'aria-selected="{"true" if n == 0 else "false"}" '
-        f'tabindex="{0 if n == 0 else -1}"><b>{n + 1}</b>{esc(label)}</button>'
-        for n, (key, label) in enumerate([
-            ("floor", "the floor"), ("gate", "the gate"),
-            ("break", "the break"), ("desk", "the desk"),
-            ("memory", "memory"), ("shop", "the shop"),
-        ]))
-
-    generated = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
-    total = len(tape(events))
+    lock = (
+        '<div class="lock" id="lock"><div class="card">'
+        '<div class="top">Razorpay internal &middot; staff only</div>'
+        '<div class="in">'
+        "<h1>The desk</h1>"
+        '<p>The live floor and the campaign board. Neither is a '
+        'merchant&rsquo;s to see: the board ranks what is climbing across the '
+        'whole client base, which is the one thing only the payment processor '
+        'can know.</p>'
+        '<div class="row">'
+        '<input id="code" type="text" aria-label="passcode" '
+        'placeholder="razorpay" autocomplete="off" spellcheck="false" '
+        'data-lpignore="true" data-1p-ignore data-form-type="other">'
+        '<button id="enter">enter</button></div>'
+        '<div class="bad" id="bad"></div>'
+        '<p class="warn">This gate is a <b>stage prop</b>. The page is a '
+        'static file and the check runs in your browser, so anyone can read '
+        'past it with the developer tools &mdash; it marks an audience, it '
+        'does not enforce one. Real access control belongs on a server, and '
+        'saying so is cheaper than pretending otherwise on a page whose whole '
+        'claim is that you can check it.<br><br>'
+        'The passcode is <b>razorpay</b>.</p>'
+        "</div></div></div>")
 
     return (
         '<!doctype html>\n<html lang="en"><head><meta charset="utf-8">'
         '<meta name="viewport" content="width=device-width,initial-scale=1">'
-        '<title>Agent Exchange — market replay</title>'
+        '<title>Razorpay desk — internal</title>'
         f"<style>{CSS}</style></head><body>"
 
-        '<div class="bar"><span class="mark">AGENT EXCHANGE</span>'
-        f'<span class="sep">/</span><span>{esc(db_path)}</span>'
-        f'<span class="sep">/</span><span>{summary.events} events</span>'
-        f'<span class="sep">/</span><span>{summary.merchants} merchants</span>'
-        '<span class="sealed"><i></i>log sealed &middot; read only</span></div>'
+        + lock
 
-        f'<div class="scenes" role="tablist">{tabs}</div>'
+        + '<div class="bar"><span class="mark">RAZORPAY DESK</span>'
+        + _stat(summary.merchants, "agents")
+        + _stat('<span id="n-paid">0</span>', "confirmed", "green")
+        + _stat('<span id="n-money">₹0</span>', "committed", "amber")
+        + _stat('<span id="n-ok">0</span>', "allowed", "green")
+        + _stat('<span id="n-no">0</span>', "refused", "red")
+        + _stat('<span id="n-fixed">0</span>', "repaired")
+        + '<span class="navs">'
+          '<button class="nav" data-view="live" aria-selected="true">'
+          'live floor</button>'
+          '<button class="nav house" data-view="board" aria-selected="false">'
+          'the board</button>'
+          '<a class="nav" href="replay.html">&larr; exchange</a>'
+          "</span></div>"
 
-        '<div class="transport">'
-        '<button class="tbtn" id="pp" aria-pressed="true">pause</button>'
-        '<button class="tbtn" id="rs">restart</button>'
-        '<button class="tbtn" data-rate="1" aria-pressed="false">1&times;</button>'
-        '<button class="tbtn" data-rate="4" aria-pressed="true">4&times;</button>'
-        '<button class="tbtn" data-rate="20" aria-pressed="false">20&times;</button>'
-        f'<span class="clock">event <b id="seq">0</b> of {total}</span></div>'
-        '<div class="progress"><i id="bar"></i></div>'
+        + f'<main><section class="vw" id="vw-live" data-on>{live}</section>'
+          f'<section class="vw" id="vw-board">{boardv}</section></main>'
 
-        f"<main>{scenes}</main>"
-
-        f'<footer>Generated {esc(generated)} from {esc(summary.events)} events '
-        f'in {esc(db_path)} &middot; gate {summary.gate_allow} allowed / '
-        f'{summary.gate_deny} refused &middot; {summary.completed} payments '
-        f'completed against real Razorpay test-mode orders.<br>'
-        f'Nothing on this page was computed by the page. Every figure is read '
-        f'from the log, or from the same projection the exchange itself runs '
-        f'on. Press 1&ndash;6 to switch, space to pause.</footer>'
-
-        f'<script type="application/json" id="mkt">{payload}</script>'
-        f"{ENGINE}</body></html>"
+        + _footer(db_path, summary)
+        + f'<script type="application/json" id="mkt">{payload}</script>'
+        + DESK_JS + "</body></html>"
     )
 
 
-def _desk_html(desk, sale, summary) -> str:
+def _board_html(desk, sale, summary) -> str:
     """Razorpay's internal board, then the auction that sells a piece of it.
 
-    Walled off on purpose. Violet appears nowhere else on the page, and the
-    header says who may read this, because the separation between what the
-    house sees and what a merchant may buy is the product — not a detail of
-    the presentation.
+    Violet appears on no other surface, and the header says who may read
+    this, because the separation between what the house sees and what a
+    merchant may buy is the product — not a detail of the presentation.
     """
     if desk:
         rows = ""
@@ -852,65 +1328,76 @@ def _desk_html(desk, sale, summary) -> str:
                 f'<div class="src">{sources}</div></div>')
         refused = desk["refused"]
         refusal = (
-            f'<div class="refused">{len(refused)} campaigns refused a place '
-            f'on this board — fewer distinct merchants than the floor of '
+            f'<div class="refused">{len(refused)} campaigns refused a place on '
+            f'this board — fewer distinct merchants than the floor of '
             f'{refused[0].get("floor")} allows. A floor nobody can see is '
             f'indistinguishable from no floor.</div>') if refused else ""
         board_html = (
             '<div class="internal"><div class="hdr">'
-            '<b>Razorpay internal &middot; not visible to merchants</b>'
+            "<b>Trending client campaigns</b>"
             '<span>ranking computed from the log &middot; '
             'explanations sourced from the public press</span></div>'
-            f'{rows}{refusal}</div>')
+            f"{rows}{refusal}</div>")
     else:
         board_html = ('<div class="empty">No campaign board published. Run '
-                      '<code>scripts.market.research</code> over this '
-                      'log.</div>')
+                      'scripts.market.research over this log.</div>')
 
     if sale:
         bids = "".join(
             f'<tr><td class="a">{esc(e.actor_id)}</td>'
-            f'<td class="mono">{esc(e.payload.get("amount"))}</td>'
-            f'<td>{esc(str(e.payload.get("reason", ""))[:120])}</td></tr>'
+            f'<td>{esc(e.payload.get("amount"))}</td>'
+            f'<td class="q">{esc(str(e.payload.get("reason", ""))[:130])}</td>'
+            f"</tr>"
             for e in sale["bids"])
         paid = (sale["royalties"][0].payload.get("amount")
                 if sale["royalties"] else 0)
-        auction_html = (
-            _box("the lot that went to auction",
-                 f'<p style="margin:0 0 12px;font-size:16px">'
-                 f'&ldquo;{esc(sale["headline"])}&rdquo;</p>'
-                 f'<table><tr><th>bidder</th><th>points</th>'
-                 f'<th>why they valued it there</th></tr>{bids}</table>'
-                 f'<p class="note" style="margin-bottom:0">'
-                 f'<b>{esc(sale["winner"])}</b> won and paid '
-                 f'<b>{esc(sale["price"])}</b> points &mdash; the '
-                 f'runner-up&rsquo;s bid, not its own. '
-                 f'{len(sale["royalties"])} contributing merchants each '
-                 f'earned <b>{esc(paid)}</b> points from a win they did not '
-                 f'know was being sold.</p>',
-                 note="sealed bids, second price",
-                 body_id="bidsbox").replace(
-                     'id="bidsbox"', 'id="bidsbox"') +
-            '<div id="bids" hidden></div>')
-    else:
-        auction_html = (
-            f'<div class="note">The privacy floor refused: only '
-            f'{summary.distinct_traders} merchants contributed. A floor that '
-            f'refuses is the control working.</div><div id="bids" hidden></div>')
+        return board_html + _panel(
+            "the lot that went to auction",
+            f'<p style="margin:0 0 13px;font-family:var(--serif);'
+            f'font-size:17px">&ldquo;{esc(sale["headline"])}&rdquo;</p>'
+            f'<table><tr><th>bidder</th><th>points</th>'
+            f'<th>why they valued it there</th></tr>{bids}</table>'
+            f'<p class="note" style="margin-bottom:0">'
+            f'<b>{esc(sale["winner"])}</b> won and paid '
+            f'<b>{esc(sale["price"])}</b> points — the runner-up&rsquo;s bid, '
+            f'not its own. {len(sale["royalties"])} contributing merchants each '
+            f'earned <b>{esc(paid)}</b> points from a win they did not know was '
+            f'being sold.</p>',
+            note="sealed bids, second price")
 
-    return board_html + auction_html
+    return board_html + (
+        f'<div class="note">The privacy floor refused: only '
+        f'{summary.distinct_traders} merchants contributed. A floor that '
+        f'refuses is the control working.</div>')
 
 
 def main(argv=None) -> int:
     args = list(argv if argv is not None else sys.argv[1:])
     db = args[0] if args else "runs/market.db"
-    out = args[1] if len(args) > 1 else "docs/replay.html"
-    page = build(db)
-    import pathlib
-    path = pathlib.Path(out)
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(page, encoding="utf-8")
-    print(f"wrote {out}  ({len(page):,} bytes) from {db}")
+    out = pathlib.Path(args[1] if len(args) > 1 else "docs")
+    if out.suffix == ".html":  # a path to a page still names its directory
+        out = out.parent
+    out.mkdir(parents=True, exist_ok=True)
+
+    _summary, _trades, events = load(db)
+    roster = sorted(state_actors(events))
+
+    written = 0
+    for actor in roster:
+        page = build_merchant(db, actor, roster)
+        (out / _page_name(actor)).write_text(page, encoding="utf-8")
+        written += 1
+
+    # `replay.html` stays the entry point every earlier note and command
+    # refers to. It is the first merchant's page, so an old link still opens
+    # something meaningful rather than a 404.
+    first = build_merchant(db, roster[0], roster)
+    (out / "replay.html").write_text(first, encoding="utf-8")
+
+    desk = build_desk(db)
+    (out / "desk.html").write_text(desk, encoding="utf-8")
+
+    print(f"wrote {written} merchant pages + replay.html + desk.html to {out}/")
     return 0
 
 
