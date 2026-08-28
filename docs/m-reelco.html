@@ -1,13 +1,22 @@
 <!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Reelco — your agents</title><style>
 :root{
-  --paper:#F2F5FA; --card:#FFF; --line:#E1E7F2; --edge:#CFD8E8;
-  --ink:#111826; --body:#3D4759; --mute:#6B7A94; --pale:#93A0B6;
-  --brand:#2B5CE6; --brandsoft:#EAF0FE;
-  --money:#0B7A57; --moneysoft:#E6F5EF;
-  --warn:#C2410C; --warnsoft:#FDF0E7;
-  --stop:#CE3226; --stopsoft:#FCEDEB;
-  --violet:#6D5BD0; --violetsoft:#F0EDFB;
+  /* Same OKLCH system as the front door, one world apart in lightness.
+     Every soft tint is mixed from its own signal rather than eyeballed. */
+  --paper:oklch(97.5% .003 255); --card:#fff;
+  --line:oklch(92% .007 268); --edge:oklch(86% .01 268);
+  --ink:oklch(20% .014 255); --body:oklch(42% .014 255);
+  --mute:oklch(56% .022 268); --pale:oklch(68% .02 268);
+  --brand:oklch(52% .17 250);
+  --brandsoft:color-mix(in oklab,var(--brand) 9%,#fff);
+  --money:oklch(52% .13 165);
+  --moneysoft:color-mix(in oklab,var(--money) 9%,#fff);
+  --warn:oklch(58% .16 55);
+  --warnsoft:color-mix(in oklab,var(--warn) 9%,#fff);
+  --stop:oklch(56% .19 25);
+  --stopsoft:color-mix(in oklab,var(--stop) 9%,#fff);
+  --violet:oklch(58% .14 78);
+  --violetsoft:color-mix(in oklab,var(--violet) 9%,#fff);
   --mono:ui-monospace,SFMono-Regular,"SF Mono",Menlo,Consolas,monospace;
   --sans:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",
     sans-serif;

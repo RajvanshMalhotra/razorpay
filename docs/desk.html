@@ -3,7 +3,8 @@
 :root{
   --bg:#000; --panel:#0A0A0A; --lift:#161616; --rule:#282828; --edge:#3A3A3A;
   --amber:#FFA028; --white:#EDEDED; --dim:#8E8E8E; --faint:#5C5C5C;
-  --blue:#4D9EFF; --green:#26D07C; --red:#FF4B3E; --violet:#B69CFF;
+  --blue:#4D9EFF; --green:#26D07C; --red:#FF4B3E;
+  --violet:oklch(80% .145 80);
   --mono:ui-monospace,SFMono-Regular,"SF Mono",Menlo,Consolas,monospace;
   --serif:"Iowan Old Style","Palatino Linotype",Palatino,Georgia,serif;
 }
@@ -170,7 +171,7 @@ select.pick{max-width:330px}
 
 /* --- the board ----------------------------------------------------------- */
 .internal{border:1px solid var(--violet);margin-bottom:16px}
-.internal>.hdr{background:rgba(182,156,255,.14);padding:7px 13px;font-size:10px;
+.internal>.hdr{background:color-mix(in oklab,var(--violet) 15%,transparent);padding:7px 13px;font-size:10px;
   letter-spacing:.16em;text-transform:uppercase;color:var(--violet);
   display:flex;gap:12px;justify-content:space-between;flex-wrap:wrap}
 .internal>.hdr b{font-weight:700}

@@ -100,7 +100,8 @@ CSS = """
 :root{
   --bg:#000; --panel:#0A0A0A; --lift:#161616; --rule:#282828; --edge:#3A3A3A;
   --amber:#FFA028; --white:#EDEDED; --dim:#8E8E8E; --faint:#5C5C5C;
-  --blue:#4D9EFF; --green:#26D07C; --red:#FF4B3E; --violet:#B69CFF;
+  --blue:#4D9EFF; --green:#26D07C; --red:#FF4B3E;
+  --violet:oklch(80% .145 80);
   --mono:ui-monospace,SFMono-Regular,"SF Mono",Menlo,Consolas,monospace;
   --serif:"Iowan Old Style","Palatino Linotype",Palatino,Georgia,serif;
 }
@@ -267,7 +268,7 @@ select.pick{max-width:330px}
 
 /* --- the board ----------------------------------------------------------- */
 .internal{border:1px solid var(--violet);margin-bottom:16px}
-.internal>.hdr{background:rgba(182,156,255,.14);padding:7px 13px;font-size:10px;
+.internal>.hdr{background:color-mix(in oklab,var(--violet) 15%,transparent);padding:7px 13px;font-size:10px;
   letter-spacing:.16em;text-transform:uppercase;color:var(--violet);
   display:flex;gap:12px;justify-content:space-between;flex-wrap:wrap}
 .internal>.hdr b{font-weight:700}
@@ -505,13 +506,22 @@ def _cases(rail_map):
 
 LIGHT_CSS = """
 :root{
-  --paper:#F2F5FA; --card:#FFF; --line:#E1E7F2; --edge:#CFD8E8;
-  --ink:#111826; --body:#3D4759; --mute:#6B7A94; --pale:#93A0B6;
-  --brand:#2B5CE6; --brandsoft:#EAF0FE;
-  --money:#0B7A57; --moneysoft:#E6F5EF;
-  --warn:#C2410C; --warnsoft:#FDF0E7;
-  --stop:#CE3226; --stopsoft:#FCEDEB;
-  --violet:#6D5BD0; --violetsoft:#F0EDFB;
+  /* Same OKLCH system as the front door, one world apart in lightness.
+     Every soft tint is mixed from its own signal rather than eyeballed. */
+  --paper:oklch(97.5% .003 255); --card:#fff;
+  --line:oklch(92% .007 268); --edge:oklch(86% .01 268);
+  --ink:oklch(20% .014 255); --body:oklch(42% .014 255);
+  --mute:oklch(56% .022 268); --pale:oklch(68% .02 268);
+  --brand:oklch(52% .17 250);
+  --brandsoft:color-mix(in oklab,var(--brand) 9%,#fff);
+  --money:oklch(52% .13 165);
+  --moneysoft:color-mix(in oklab,var(--money) 9%,#fff);
+  --warn:oklch(58% .16 55);
+  --warnsoft:color-mix(in oklab,var(--warn) 9%,#fff);
+  --stop:oklch(56% .19 25);
+  --stopsoft:color-mix(in oklab,var(--stop) 9%,#fff);
+  --violet:oklch(58% .14 78);
+  --violetsoft:color-mix(in oklab,var(--violet) 9%,#fff);
   --mono:ui-monospace,SFMono-Regular,"SF Mono",Menlo,Consolas,monospace;
   --sans:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",
     sans-serif;
@@ -1630,15 +1640,15 @@ NET_CSS = """
   gap:clamp(20px,3vw,44px);align-items:center}
 @media(max-width:900px){.net{grid-template-columns:1fr}}
 .graph{width:100%;height:auto;overflow:visible}
-.graph .lk{fill:none;stroke:#2A2E38;stroke-width:1;
-  transition:stroke .3s,stroke-width .3s,opacity .3s}
+.graph .lk{fill:none;stroke:oklch(31% .017 255);stroke-width:1;
+  transition:stroke .17s,stroke-width .17s,opacity .17s}
 .graph.on .lk{opacity:.28}
 .graph .lk.hot{stroke:var(--ember);stroke-width:1.7;opacity:1}
-.graph .nd circle{fill:#3B404C;transition:fill .3s,r .3s}
+.graph .nd circle{fill:oklch(42% .018 255);transition:fill .17s,r .17s}
 .graph .nd .hit{fill:transparent;cursor:pointer}
-.graph .nd text{font-family:var(--mono);font-size:9.6px;fill:#98A1B2;
-  transition:fill .3s;pointer-events:none}
-.graph.on .nd{opacity:.4;transition:opacity .3s}
+.graph .nd text{font-family:var(--mono);font-size:9.6px;fill:oklch(70% .015 255);
+  transition:fill .17s;pointer-events:none}
+.graph.on .nd{opacity:.38;transition:opacity .17s}
 .graph .nd.hot,.graph .nd.near{opacity:1}
 .graph .nd.hot circle{fill:var(--ember)}
 .graph .nd.hot text{fill:var(--bright)}
@@ -1672,7 +1682,7 @@ NET_CSS = """
   gap:clamp(20px,3vw,40px);align-items:start}
 @media(max-width:900px){.auction{grid-template-columns:1fr}}
 .lot{border:1px solid var(--iris);border-radius:13px;padding:20px 22px 22px;
-  background:rgba(156,140,255,.05)}
+  background:var(--iris-wash)}
 .lot .lb{font-family:var(--mono);font-size:10px;letter-spacing:.16em;
   text-transform:uppercase;color:var(--iris)}
 .lot p{font-family:var(--disp);font-size:20px;line-height:1.32;margin:12px 0 0;
@@ -1685,7 +1695,7 @@ NET_CSS = """
   border-radius:10px;color:var(--bright);font-family:var(--mono);font-size:17px;
   padding:12px 14px;min-width:0}
 .bidrow input:focus{outline:none;border-color:var(--iris)}
-.bidrow button{background:var(--iris);border:0;border-radius:10px;color:#0B0C10;
+.bidrow button{background:var(--iris);border:0;border-radius:10px;color:var(--void);
   font-family:var(--sans);font-size:14px;font-weight:650;padding:0 20px;
   cursor:pointer;white-space:nowrap;
   transition:transform .2s cubic-bezier(.16,1,.3,1),filter .2s}
@@ -1708,14 +1718,14 @@ NET_CSS = """
 .env .ba{color:var(--bright);font-variant-numeric:tabular-nums}
 .env.open .bw,.env.open .ba{opacity:1}
 .env.open .seal{background:var(--low)}
-.env.won{background:rgba(52,226,160,.09)}
+.env.won{background:var(--mint-wash)}
 .env.won .seal{background:var(--mint)}
 .env.won .ba{color:var(--mint)}
-.env.mine{background:rgba(156,140,255,.11)}
+.env.mine{background:var(--iris-wash)}
 .env.mine .seal{background:var(--iris)}
 .env.mine .bw{color:var(--iris)}
-.env.mine.won{background:linear-gradient(90deg,rgba(156,140,255,.13),
-  rgba(52,226,160,.12))}
+.env.mine.won{background:linear-gradient(90deg,var(--iris-wash),
+  var(--mint-wash))}
 .env.mine.won .ba{color:var(--mint)}
 @media(prefers-reduced-motion:reduce){
   .env .bw,.env .ba,.graph .lk,.graph .nd{transition-duration:.01ms!important}}
@@ -1784,7 +1794,7 @@ if(graph){
       tour=setInterval(function(){
         if(taken||document.hidden)return;
         focusOn(linked[k++%linked.length].id);
-      },2100);
+      },1150);
     };
     var seen=new IntersectionObserver(function(es){
       es.forEach(function(e){if(e.isIntersecting){start();seen.disconnect()}})
@@ -1848,11 +1858,30 @@ LANDING_CSS = """
   font-weight:400 900;font-style:normal;font-display:swap;
 }
 :root{
-  --void:#0B0C10; --deep:#131519; --line:#23262E; --edge:#343945;
-  --paper:#F4F2ED; --card:#FFF; --pline:#E3E0D8;
-  --bright:#F7F8FA; --mid:#9BA3B4; --low:#828B9C;
-  --ink:#14161B; --body:#404757; --soft:#6E7686;
-  --ember:#FF8A3D; --mint:#34E2A0; --flare:#FF4D5E; --iris:#9C8CFF;
+  /* OKLCH, so every step is perceptually even and a tint is a calculation
+     rather than a guess. The ground is navy-tinted rather than neutral
+     black: pure black belongs to the terminal, and a payments product is
+     allowed a colour of its own.
+
+     THREE SIGNALS, NOT FOUR. Iris is the brand and carries money. Mint means
+     agreed, settled, won. Rose means refused or broken. Nothing else is
+     coloured, which is why the coloured things read. */
+  --void:oklch(15% .012 255); --deep:oklch(20% .015 255);
+  --line:oklch(27% .015 255); --edge:oklch(37% .017 255);
+  --bright:oklch(97% .004 255); --mid:oklch(74% .014 255);
+  --low:oklch(62% .016 255);
+  /* Cool paper, not cream. */
+  --paper:oklch(97.5% .003 255); --card:#fff; --pline:oklch(92% .005 255);
+  --ink:oklch(20% .014 255); --body:oklch(42% .014 255);
+  --soft:oklch(56% .014 255);
+  /* Azure is the brand and carries money. It is Razorpay's own colour and
+     the one nobody mistakes for a generated palette. Gold marks what is
+     internal — privileged, not decorative. Green settles, red refuses. */
+  --ember:oklch(70% .165 248); --mint:oklch(78% .15 165);
+  --flare:oklch(67% .20 24); --iris:oklch(79% .148 78);
+  /* Tints derived from the signals rather than hand-picked. */
+  --iris-wash:color-mix(in oklab,var(--iris) 12%,transparent);
+  --mint-wash:color-mix(in oklab,var(--mint) 11%,transparent);
   --disp:'Fraunces Display',"Iowan Old Style",Georgia,serif;
   --sans:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
   --mono:ui-monospace,SFMono-Regular,"SF Mono",Menlo,Consolas,monospace;
@@ -1916,10 +1945,10 @@ h1,h2,h3{font-family:var(--disp);font-weight:600;letter-spacing:-.028em;
   font-family:var(--mono)}
 .spread .lab{font-size:10px;letter-spacing:.15em;text-transform:uppercase;
   color:var(--low)}
-.spread .track{height:3px;background:#20242C;border-radius:2px;
+.spread .track{height:3px;background:oklch(25% .015 255);border-radius:2px;
   overflow:hidden;position:relative}
 .spread .track i{position:absolute;inset:0 auto 0 0;width:100%;display:block;
-  background:linear-gradient(90deg,var(--flare),var(--ember));
+  background:linear-gradient(90deg,var(--flare),var(--iris));
   transition:width .62s cubic-bezier(.16,1,.3,1),background .4s}
 .spread.closed .track i{background:var(--mint)}
 .spread .val{font-size:14px;color:var(--ember);min-width:5.4ch;
@@ -1928,9 +1957,9 @@ h1,h2,h3{font-family:var(--disp);font-weight:600;letter-spacing:-.028em;
 .feed{padding:14px 16px;height:clamp(288px,40vh,364px);display:flex;
   flex-direction:column;gap:9px;justify-content:flex-end;overflow:hidden}
 .line{display:grid;grid-template-columns:1fr auto;gap:14px;align-items:baseline;
-  padding:9px 12px;border-radius:9px;background:#191C22;
+  padding:9px 12px;border-radius:9px;background:oklch(23% .015 255);
   border:1px solid transparent}
-.line.b{background:#171A20}
+.line.b{background:oklch(21.5% .015 255)}
 .line .who{font-family:var(--mono);font-size:10.5px;color:var(--low);
   display:block;margin-bottom:3px}
 .line .said{font-size:13.5px;color:var(--mid);line-height:1.42;
@@ -1938,7 +1967,7 @@ h1,h2,h3{font-family:var(--disp);font-weight:600;letter-spacing:-.028em;
   overflow:hidden}
 .line .px{font-family:var(--mono);font-size:19px;color:var(--bright);
   font-variant-numeric:tabular-nums;white-space:nowrap}
-.line.deal-done{border-color:var(--mint);background:rgba(52,226,160,.07)}
+.line.deal-done{border-color:var(--mint);background:var(--mint-wash)}
 .line.deal-done .px{color:var(--mint)}
 .stamp{display:grid;grid-template-columns:1fr auto;gap:14px;align-items:center;
   padding:11px 12px;border-radius:9px;border:1px solid var(--line)}
@@ -1946,9 +1975,9 @@ h1,h2,h3{font-family:var(--disp);font-weight:600;letter-spacing:-.028em;
   text-transform:uppercase;color:var(--low)}
 .stamp .vl{font-family:var(--mono);font-size:13px;color:var(--mid);
   overflow-wrap:anywhere}
-.stamp.gate{border-color:rgba(52,226,160,.34)}
+.stamp.gate{border-color:color-mix(in oklab,var(--mint) 42%,transparent)}
 .stamp.gate .vl{color:var(--mint)}
-.stamp.paid{border-color:rgba(255,138,61,.34)}
+.stamp.paid{border-color:color-mix(in oklab,var(--ember) 42%,transparent)}
 .stamp.paid .vl{color:var(--ember);font-size:15px}
 @media(prefers-reduced-motion:no-preference){
   .line,.stamp{animation:step .5s cubic-bezier(.16,1,.3,1) both}
@@ -1998,8 +2027,8 @@ h1,h2,h3{font-family:var(--disp);font-weight:600;letter-spacing:-.028em;
 /* --- proof panels --------------------------------------------------------- */
 .proof{border-radius:13px;overflow:hidden;font-family:var(--mono)}
 .light .proof{background:var(--card);border:1px solid var(--pline);
-  box-shadow:0 1px 2px rgba(20,22,27,.05),0 14px 34px -20px rgba(20,22,27,.28)}
-.dark .proof{background:#000;border:1px solid var(--line)}
+  box-shadow:0 1px 2px color-mix(in oklab,var(--ink) 6%,transparent),0 14px 34px -20px color-mix(in oklab,var(--ink) 26%,transparent)}
+.dark .proof{background:oklch(11% .01 255);border:1px solid var(--line)}
 .proof .ph{padding:9px 14px;font-size:10px;letter-spacing:.15em;
   text-transform:uppercase}
 .light .proof .ph{color:var(--soft);border-bottom:1px solid var(--pline)}
@@ -2059,11 +2088,11 @@ h1,h2,h3{font-family:var(--disp);font-weight:600;letter-spacing:-.028em;
 .enter:hover .ic{transform:translateX(4px)}
 .enter:active{transform:translateY(0) scale(.985);transition-duration:.09s}
 .light .enter{background:var(--ink);color:var(--paper);
-  box-shadow:0 12px 26px -12px rgba(20,22,27,.6)}
+  box-shadow:0 12px 26px -12px color-mix(in oklab,var(--ink) 55%,transparent)}
 .light .enter:hover{transform:translateY(-2px)}
-.light .enter:active{box-shadow:0 6px 14px -10px rgba(20,22,27,.6)}
-.dark .enter{background:var(--iris);color:#0B0C10;
-  box-shadow:0 14px 34px -14px rgba(156,140,255,.7)}
+.light .enter:active{box-shadow:0 6px 14px -10px color-mix(in oklab,var(--ink) 55%,transparent)}
+.dark .enter{background:var(--iris);color:var(--void);
+  box-shadow:0 14px 34px -14px color-mix(in oklab,var(--iris) 70%,transparent)}
 .dark .enter:hover{transform:translateY(-2px)}
 
 footer{padding:26px clamp(20px,5vw,64px);border-top:1px solid var(--line);
