@@ -1879,10 +1879,13 @@ LANDING_CSS = """
 
      Ground is ledger paper with a blue cast, not cream. Ink is a
      fountain-pen blue-black, not neutral charcoal. */
-  --paper:oklch(96.5% .008 230); --card:#fff;
-  --pline:oklch(90.5% .012 240); --pedge:oklch(84% .016 240);
-  --ink:oklch(24% .04 250); --body:oklch(43% .026 248);
-  --soft:oklch(50% .024 246); --faint:oklch(57% .022 245);
+  /* Manila notepad. Warm, slightly uneven, with the grain of real stock
+     rather than a flat wash — the texture is generated, so the page still
+     opens from disk with nothing to fetch. */
+  --paper:oklch(92.4% .014 84); --card:oklch(96% .009 86);
+  --pline:oklch(86% .016 82); --pedge:oklch(78% .02 80);
+  --ink:oklch(22% .014 72); --body:oklch(41% .017 76);
+  --soft:oklch(50% .019 78); --faint:oklch(58% .021 80);
 
   /* Four signals and no decoration. Blue works, green settles, red
      refuses, gold marks what is internal. */
@@ -1899,7 +1902,7 @@ LANDING_CSS = """
   --flare:oklch(70% .19 25); --iris:oklch(86% .16 92);
 
   /* Graph paper, and the one thing yellow genuinely does on paper. */
-  --dot:color-mix(in oklab,var(--ink) 13%,transparent);
+  --dot:color-mix(in oklab,var(--ink) 17%,transparent);
   --hi:oklch(89% .17 96);
   --iris-wash:color-mix(in oklab,var(--iris) 14%,transparent);
   --mint-wash:color-mix(in oklab,var(--mint) 13%,transparent);
@@ -1917,9 +1920,13 @@ html{scroll-behavior:smooth}
 body{margin:0;color:var(--ink);font-family:var(--sans);font-size:16px;
   line-height:1.6;-webkit-font-smoothing:antialiased;
   background-color:var(--paper);
-  background-image:radial-gradient(circle at 1px 1px,var(--dot) 1px,
-    transparent 0);
-  background-size:24px 24px;background-attachment:fixed}
+  background-image:
+    radial-gradient(circle at 1px 1px,var(--dot) 1px,transparent 0),
+    url("data:image/svg+xml,%3Csvg%20xmlns%3D%27http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%27%20width%3D%27220%27%20height%3D%27220%27%3E%3Cfilter%20id%3D%27f%27%3E%3CfeTurbulence%20type%3D%27fractalNoise%27%20baseFrequency%3D%27.9%27%20numOctaves%3D%273%27%20stitchTiles%3D%27stitch%27%2F%3E%3CfeColorMatrix%20type%3D%27saturate%27%20values%3D%270%27%2F%3E%3C%2Ffilter%3E%3Crect%20width%3D%27220%27%20height%3D%27220%27%20filter%3D%27url%28%2523f%29%27%20opacity%3D%27.38%27%2F%3E%3C%2Fsvg%3E"),
+    url("data:image/svg+xml,%3Csvg%20xmlns%3D%27http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%27%20width%3D%27840%27%20height%3D%27840%27%3E%3Cfilter%20id%3D%27c%27%3E%3CfeTurbulence%20type%3D%27fractalNoise%27%20baseFrequency%3D%27.006%20.011%27%20numOctaves%3D%275%27%20seed%3D%2711%27%20stitchTiles%3D%27stitch%27%2F%3E%3CfeColorMatrix%20type%3D%27saturate%27%20values%3D%270%27%2F%3E%3C%2Ffilter%3E%3Crect%20width%3D%27840%27%20height%3D%27840%27%20filter%3D%27url%28%2523c%29%27%20opacity%3D%27.62%27%2F%3E%3C%2Fsvg%3E");
+  background-size:26px 26px,220px 220px,840px 840px;
+  background-blend-mode:normal,soft-light,soft-light;
+  background-attachment:fixed}
 /* The white bands are sheets laid on the grid, so the page has a floor and
    the content has somewhere to sit. */
 .light{box-shadow:0 1px 0 var(--pline) inset}
@@ -1934,8 +1941,9 @@ h1,h2,h3{font-family:var(--disp);font-weight:600;letter-spacing:-.028em;
 .band{padding:clamp(60px,8vw,110px) clamp(20px,5vw,64px)}
 .in{max-width:1180px;margin:0 auto}
 .dark{background:transparent;color:var(--ink)}
-.light{background:var(--card);color:var(--ink);
-  border-block:1px solid var(--pline)}
+.light{background:color-mix(in oklab,var(--card) 88%,transparent);
+  color:var(--ink);border-block:1px solid var(--pline);
+  backdrop-filter:saturate(112%)}
 
 /* --- hero ----------------------------------------------------------------- */
 .hero{display:grid;grid-template-columns:minmax(0,1.05fr) minmax(0,.95fr);
@@ -2076,7 +2084,8 @@ h1,h2,h3{font-family:var(--disp);font-weight:600;letter-spacing:-.028em;
 /* --- the six steps -------------------------------------------------------- */
 .steps{display:grid;grid-template-columns:repeat(6,1fr);
   border-block:1px solid var(--pline)}
-@media(max-width:860px){.steps{grid-template-columns:repeat(2,1fr)}}
+.steps-5{grid-template-columns:repeat(5,1fr)}
+@media(max-width:960px){.steps,.steps-5{grid-template-columns:repeat(2,1fr)}}
 .st{padding:22px 20px 26px;border-left:1px solid var(--pline)}
 .st:first-child{border-left:0}
 @media(max-width:860px){.st:nth-child(odd){border-left:0}}
@@ -2090,6 +2099,75 @@ h1,h2,h3{font-family:var(--disp);font-weight:600;letter-spacing:-.028em;
 .js .steps.in,.js .pr.in,.js .jobs.in,.js .wheel.in{opacity:1;transform:none;
   transition:opacity .5s cubic-bezier(.16,1,.3,1),
              transform .5s cubic-bezier(.16,1,.3,1)}
+
+/* --- what a business types ------------------------------------------------ */
+.asks{display:grid;grid-template-columns:repeat(auto-fit,minmax(272px,1fr));
+  gap:14px}
+.ask-q{margin:0;font-family:var(--disp);font-size:19px;line-height:1.34;
+  letter-spacing:-.015em;color:var(--ink);background:var(--card);
+  border:1px solid var(--pline);border-radius:13px;padding:20px 22px;
+  position:relative}
+.ask-q::before{content:'\201C';position:absolute;top:6px;left:11px;
+  font-size:36px;color:var(--hi);line-height:1}
+
+/* --- how it behaves -------------------------------------------------------- */
+.modes{display:grid;grid-template-columns:repeat(auto-fit,minmax(238px,1fr));
+  gap:1px;background:var(--pline);border:1px solid var(--pline);
+  border-radius:15px;overflow:hidden}
+.mode{background:var(--card);padding:24px 22px 26px}
+.mode h3{font-size:20px;letter-spacing:-.02em}
+.mode p{margin:9px 0 0;color:var(--soft);font-size:14.5px;line-height:1.55}
+.mode:nth-child(1) h3{color:var(--red)}
+.mode:nth-child(2) h3{color:var(--blue)}
+.mode:nth-child(3) h3{color:var(--green)}
+.modes-note{margin:18px 0 0;color:var(--soft);font-size:14.5px;max-width:58ch}
+
+/* --- conversation to transaction ------------------------------------------- */
+.flow{display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));
+  gap:12px}
+.fl{background:var(--card);border:1px solid var(--pline);border-radius:13px;
+  padding:20px;position:relative}
+.fl h3{font-size:17px;letter-spacing:-.018em}
+.fl p{margin:8px 0 0;color:var(--soft);font-size:14px;line-height:1.5}
+.fl+.fl::before{content:'';position:absolute;left:-13px;top:50%;width:14px;
+  height:1px;background:var(--pedge)}
+@media(max-width:860px){.fl+.fl::before{display:none}}
+
+.parallel{display:grid;grid-template-columns:minmax(0,1.15fr) minmax(0,1fr);
+  gap:clamp(20px,3vw,40px);align-items:center}
+@media(max-width:900px){.parallel{grid-template-columns:1fr}}
+.parallel h3{font-family:var(--disp);font-size:clamp(23px,2.7vw,31px);
+  line-height:1.2;letter-spacing:-.024em}
+.parallel p{color:var(--body);font-size:16px;margin:14px 0 0;max-width:46ch}
+.par-close{font-family:var(--disp);font-size:20px;line-height:1.4;
+  color:var(--ink)}
+.par-close b{font-weight:600}
+
+/* --- the audit trail ------------------------------------------------------- */
+.audit{display:grid;grid-template-columns:repeat(auto-fit,minmax(292px,1fr));
+  gap:1px;background:var(--pline);border:1px solid var(--pline);
+  border-radius:15px;overflow:hidden}
+.au{background:var(--card);padding:22px 22px 24px}
+.au h3{font-size:16.5px;letter-spacing:-.015em;line-height:1.3}
+.au p{margin:8px 0 0;color:var(--soft);font-size:14px;line-height:1.5}
+
+/* --- the terminal's five views --------------------------------------------- */
+.areas{display:grid;grid-template-columns:repeat(auto-fit,minmax(232px,1fr));
+  gap:1px;background:var(--line);border:1px solid var(--line);
+  border-radius:15px;overflow:hidden}
+.ar{background:var(--void);padding:22px 20px 24px}
+.ar h3{font-size:11px;letter-spacing:.15em;text-transform:uppercase;
+  color:var(--iris);font-family:var(--mono);font-weight:500}
+.ar p{margin:11px 0 0;color:var(--mid);font-size:14px;line-height:1.52}
+
+/* --- the closing vision ---------------------------------------------------- */
+.vision{background:var(--void);border:1px solid var(--line);border-radius:15px;
+  padding:26px 26px 28px}
+.vision p{margin:0 0 14px;color:var(--mid);font-size:15.5px;line-height:1.6}
+.vision b{color:var(--bright);font-weight:600}
+.v-close{font-family:var(--disp);font-size:21px;line-height:1.42;
+  color:var(--bright);margin-bottom:0!important;padding-top:16px;
+  border-top:1px solid var(--line)}
 
 /* --- the doors ------------------------------------------------------------ */
 .door{display:grid;grid-template-columns:minmax(0,1.25fr) minmax(0,1fr);
@@ -2197,6 +2275,17 @@ if(!('IntersectionObserver' in window)){
 
 
 def build_landing(db_path: str, roster) -> str:
+    """The front door, following the product narrative end to end.
+
+    THE ARGUMENT, IN THE CLIENT'S OWN WORDS. Razorpay already moves money
+    between millions of businesses; the network exists and nobody has switched
+    it on. Give every business an agent that can reach it and payments become
+    partnerships.
+
+    THE FIGURES ARE STILL COUNTED FROM THE LOG. Every number on this page is
+    read at build time from the same events the audit trail is made of. The
+    copy makes the claim; the log is why you can believe it.
+    """
     from exchange.books import entries_for
 
     summary, _trades, events = load(db_path)
@@ -2206,8 +2295,6 @@ def build_landing(db_path: str, roster) -> str:
     rail_map = rails(events)
     first = _page_name(roster[0])
 
-    # Every figure below is counted from the log at build time. Nothing on
-    # this page is illustrative.
     relationships = len({(r["buyer"], s["head"])
                          for r in rail_map.values()
                          for s in r["stations"]
@@ -2221,105 +2308,148 @@ def build_landing(db_path: str, roster) -> str:
     return (
         '<!doctype html>\n<html lang="en"><head><meta charset="utf-8">'
         '<meta name="viewport" content="width=device-width,initial-scale=1">'
-        '<meta name="color-scheme" content="dark light">'
-        '<meta name="description" content="Every business on Razorpay gets an '
-        'agent that buys, sells, keeps the books, and bids for what is working '
-        'across the network.">'
-        '<title>Agent Exchange</title>'
+        '<meta name="color-scheme" content="light">'
+        '<meta name="description" content="An intelligent business network '
+        'where AI agents discover opportunities, negotiate deals, execute '
+        'transactions, and continuously learn from the market.">'
+        '<title>Agent Exchange &mdash; the agentic business network</title>'
         f'<style>{LANDING_CSS.replace("__FONT__", _font_data_uri())}</style>'
         "</head><body>"
 
-        # ---- hero: the hook ------------------------------------------------
+        # ---- 1. the hook ---------------------------------------------------
         + '<section class="band dark"><div class="in hero"><div>'
-        + "<h1>Your Razorpay account is now <em>a seat on the "
-          "exchange</em>.</h1>"
-        + '<p class="say">The best campaign in your category is already for '
-          'sale on it, and your agent is bidding. It also buys your supplies, '
-          'argues down your prices and keeps your books &mdash; and <b>when '
-          'your own win is the thing being sold, you are paid for it.</b></p>'
+        + "<h1>One business. <em>Two workforces</em>.</h1>"
+        + '<p class="say">Razorpay already powers transactions between '
+          'millions of businesses. We turn that network into something more '
+          'powerful: <b>an intelligent business network where AI agents '
+          'discover opportunities, negotiate deals, execute transactions, and '
+          'keep learning from the market.</b></p>'
         + f'<div class="tape">'
           f'<span><b class="m num">{rupees(summary.value_paise)}</b> settled '
           f'between agents</span>'
-          f'<span><b class="num">{summary.merchants}</b> merchants</span>'
-          f'<span><b class="num">{relationships}</b> trading relationships '
-          f'formed</span>'
+          f'<span><b class="num">{summary.merchants}</b> businesses</span>'
+          f'<span><b class="num">{relationships}</b> partnerships formed</span>'
           f'<span><b class="num">{summary.gate_allow + summary.gate_deny}</b> '
-          f'rulings recorded</span></div>'
+          f'decisions recorded</span></div>'
         + f"</div>{_deal_card(hero)}</div></section>"
 
-        # ---- the leverage --------------------------------------------------
+        # ---- 2. payments to partnerships -----------------------------------
         + '<section class="band dark" style="padding-top:0"><div class="in">'
-        + '<div class="lead"><h2>One shop sees its own sales. '
-          '<em>A network sees the market.</em></h2>'
-          '<p>Every line here is a trade that happened. Nobody made an '
-          'introduction &mdash; the agents found each other. Touch any '
-          'merchant to see who its agent reached and what it paid.</p></div>'
+        + '<div class="lead"><h2>From payments to <em>partnerships</em>.</h2>'
+          '<p>Today, businesses use Razorpay to receive and send money. '
+          'Tomorrow they can use it to find who they should be doing business '
+          'with. Every line below is a partnership that formed on its own — '
+          'touch any business to see who its agent reached.</p></div>'
         + _network_html(net)
-        + '<div style="height:clamp(46px,6vw,78px)"></div>'
+        + '<div style="height:clamp(44px,6vw,74px)"></div>'
         + _steps_html()
         + "</div></section>"
 
-        # ---- what your agent does (merchant world) -------------------------
+        # ---- 3. the representative -----------------------------------------
         + '<section class="band light"><div class="in">'
-        + '<div class="lead"><h2>Four jobs your agent takes off your desk.</h2>'
-          '<p>Your broker is four parts, each with its own memory. Three of '
-          'them act on your behalf. The fourth watches every deal and keeps '
-          'what is worth remembering.</p></div>'
-        + _jobs_html(summary, relationships, book_entries, sale)
+        + '<div class="lead"><h2>Give your business an '
+          '<em>AI representative</em>.</h2>'
+          '<p>Your agent understands your goals and acts for you. Tell it what '
+          'you want in plain words; it searches the network, finds the right '
+          'businesses, opens the conversation, and negotiates inside your '
+          'rules.</p></div>'
+        + _asks_html()
+        + '<div style="height:clamp(30px,4vw,52px)"></div>'
+        + '<div class="lead" style="max-width:46ch;margin-bottom:22px">'
+          '<h2 style="font-size:clamp(24px,2.8vw,32px)">You decide how it '
+          'behaves.</h2></div>'
+        + _styles_html()
         + "</div></section>"
 
-        # ---- the flywheel --------------------------------------------------
+        # ---- 4. conversation to transaction --------------------------------
         + '<section class="band dark"><div class="in">'
-        + '<div class="lead"><h2>Try winning one.</h2>'
-          '<p>Eight agents bid on this lot in sealed envelopes. Put your own '
-          'number in and open them &mdash; your bid gets the same rule '
-          'theirs did.</p></div>'
+        + '<div class="lead"><h2>From conversation to '
+          '<em>transaction</em>.</h2>'
+          '<p>Business should not stop at a conversation. Once terms are '
+          'agreed, the whole workflow connects to the systems you already run '
+          '— products, inventory, pricing and orders stay in step through '
+          'tools like Google Sheets.</p></div>'
+        + _flow_html(summary, book_entries)
+        + '<div style="height:clamp(38px,5vw,62px)"></div>'
+        + '<div class="parallel"><div>'
+          '<h3>You can only be in one meeting at a time.</h3>'
+          '<p>Your agent does not have that limitation. While you meet a '
+          'customer it can be finding suppliers. While you negotiate one deal '
+          'it can negotiate another.</p>'
+          '<p class="par-close">You work offline. Your agent works online. '
+          '<b>Together, you work in parallel.</b></p></div>'
+          f'{_books_proof(events, roster)}</div>'
+        + "</div></section>"
+
+        # ---- 5. the audit trail --------------------------------------------
+        + '<section class="band light"><div class="in">'
+        + '<div class="lead"><h2>Every decision. <em>Fully auditable</em>.</h2>'
+          '<p>AI should never be a black box when it is making business '
+          'decisions. Every action is traceable and every decision is '
+          'accountable, down to the numbered event it came from.</p></div>'
+        + _audit_html(summary, len(failures))
+        + "</div></section>"
+
+        # ---- 6. the terminal -----------------------------------------------
+        + '<section class="band dark"><div class="in">'
+        + '<div class="lead"><h2>The Razorpay '
+          '<em>Intelligence Terminal</em>.</h2>'
+          '<p>While businesses get their own AI workforce, the Razorpay team '
+          'gets a live intelligence layer across the network — a Bloomberg '
+          'terminal for the business ecosystem. It surfaces market '
+          'intelligence, never confidential business information or trade '
+          'secrets.</p></div>'
+        + _terminal_html()
+        + "</div></section>"
+
+        # ---- 7. the living leaderboard -------------------------------------
+        + '<section class="band light"><div class="in">'
+        + '<div class="lead"><h2>A living leaderboard of '
+          '<em>what is working</em>.</h2>'
+          '<p>A campaign nobody noticed yesterday can be the strategy everyone '
+          'copies tomorrow. Instead of asking what is working in the market, '
+          'you get a continuously evolving answer — and agents bid for the '
+          'detail in sealed envelopes. Put your own number in.</p></div>'
         + _auction_html(sale)
-        + '<div style="height:clamp(52px,7vw,90px)"></div>'
+        + '<div style="height:clamp(44px,6vw,76px)"></div>'
         + '<div class="lead"><h2>And you are paid when your win '
           '<em>is the thing being sold</em>.</h2>'
-          '<p>Razorpay can see what is working across the whole client base — '
-          'no single merchant can. It sells that as market intelligence, in '
-          'points rather than cash, by sealed auction. The merchants whose '
-          'trading produced the insight take a share of what it fetches, '
-          'without ever being named.</p></div>'
+          '<p>The businesses whose trading produced an insight take a share of '
+          'what it fetches, without ever being named.</p></div>'
         + _flywheel_html(sale)
         + "</div></section>"
 
-        # ---- the merchant door ---------------------------------------------
-        + '<section class="band light"><div class="in door"><div class="sell">'
-        + "<h2>Your agents, and your books.</h2>"
-        + "<p>See what your broker did with your money, then check any of it "
-          "against the payment ids Razorpay returned. Every figure carries the "
-          "number of the event it came from.</p>"
+        # ---- 8. two sides --------------------------------------------------
+        + '<section class="band dark"><div class="in door"><div class="sell">'
+        + "<h2>Your AI business agent.</h2>"
+        + "<p>Discover partners. Build relationships. Negotiate deals. Execute "
+          "workflows. Track performance. Maintain accounts.</p>"
         + '<ul class="pts">'
-          f'<li>{_icon("chart")}<span>What each of your four agents did, in '
-          f'its own words</span></li>'
-          f'<li>{_icon("ledger")}<span>Every buy and sell, kept as books that '
-          f'sync to a Google Sheet</span></li>'
+          f'<li>{_icon("chart")}<span>What each part of your agent did, in its '
+          f'own words</span></li>'
+          f'<li>{_icon("ledger")}<span>Every deal, kept as books that sync to '
+          f'your Google Sheet</span></li>'
           f'<li>{_icon("shield")}<span>Your catalogue, and one box to ask for '
           f'anything</span></li></ul>'
         + f'<a class="enter" href="{esc(first)}">Open your dashboard'
           f'{_icon("arrow", 18)}</a>'
-        + f"</div>{_books_proof(events, roster)}</div></section>"
+        + f'</div>{_board_proof(desk)}</div></section>'
 
-        # ---- the house door ------------------------------------------------
-        + '<section class="band dark"><div class="in door"><div class="sell">'
-        + "<h2>The desk.</h2>"
-        + "<p>The live floor, and the board that ranks which campaigns are "
-          "climbing across the whole client base. Staff only \u2014 seeing "
-          "every client at once is what makes that ranking worth bidding "
-          "for.</p>"
+        + '<section class="band light"><div class="in door"><div class="sell">'
+        + "<h2>Your network intelligence terminal.</h2>"
+        + "<p>Monitor activity. Track market movements. Discover successful "
+          "campaigns. Surface ecosystem insights. Identify emerging "
+          "opportunities. Razorpay staff only.</p>"
         + '<ul class="pts">'
-          f'<li>{_icon("chart")}<span>Every agent and every ruling, as it '
+          f'<li>{_icon("chart")}<span>Every agent and every decision, as it '
           f'happens</span></li>'
           f'<li>{_icon("ledger")}<span>Trending client campaigns, ranked from '
-          f'the whole book</span></li>'
+          f'the whole network</span></li>'
           f'<li>{_icon("gavel")}<span>The sealed-bid auction that sells '
           f'them</span></li></ul>'
-        + f'<a class="enter" href="desk.html">Enter the desk'
+        + f'<a class="enter" href="desk.html">Enter the terminal'
           f'{_icon("arrow", 18)}</a>'
-        + f"</div>{_board_proof(desk)}</div></section>"
+        + f'</div>{_vision_html()}</div></section>'
 
         + f'<footer>{summary.gate_allow} money actions allowed, '
           f'{summary.gate_deny} refused, {len(failures)} payment mismatches '
@@ -2332,6 +2462,108 @@ def build_landing(db_path: str, roster) -> str:
           f'{json.dumps(net, separators=(",", ":"))}</script>'
         + LANDING_JS + "</body></html>"
     )
+
+
+def _asks_html() -> str:
+    """What a business actually types. Quoted as speech, because it is."""
+    asks = (
+        "Find me reliable suppliers for 10,000 units.",
+        "Find businesses that could use our logistics service.",
+        "Negotiate the best possible price.",
+        "Maintain my existing business relationships.",
+    )
+    return '<div class="asks">' + "".join(
+        f'<blockquote class="ask-q">{esc(a)}</blockquote>' for a in asks
+    ) + "</div>"
+
+
+def _styles_html() -> str:
+    """The three strategies, which are real settings rather than a brochure.
+
+    These map onto the mandate keywords a merchant actually writes into its
+    agent's brief, so the page is describing a control that exists.
+    """
+    modes = (
+        ("Aggressive", "Push for the best price. Negotiate harder. "
+                       "Maximise margins."),
+        ("Balanced", "Optimise for both price and long-term relationships."),
+        ("Polite", "Prioritise relationships, trust, and sustainable "
+                   "partnerships."),
+    )
+    cards = "".join(
+        f'<article class="mode"><h3>{esc(name)}</h3><p>{esc(body)}</p>'
+        f"</article>" for name, body in modes)
+    return (f'<div class="modes">{cards}</div>'
+            '<p class="modes-note">You set the strategy and the agent executes '
+            'it &mdash; or leave it on the default and it will behave '
+            'sensibly.</p>')
+
+
+def _flow_html(summary, book_entries) -> str:
+    steps = (
+        ("AI agent", "Finds the counterparty and opens the conversation."),
+        ("Deal", "Terms agreed inside the rules you set."),
+        ("Business workflow", "Inventory, pricing and orders stay in step."),
+        ("Transaction", f"Settled on Razorpay — {summary.completed} payments "
+                        f"confirmed in this run."),
+    )
+    return '<div class="flow">' + "".join(
+        f'<div class="fl"><h3>{esc(t)}</h3><p>{esc(d)}</p></div>'
+        for t, d in steps) + "</div>"
+
+
+def _audit_html(summary, repaired) -> str:
+    """The audit trail, as the questions it can answer."""
+    rows = (
+        ("What the agent was asked to achieve",
+         "The need, in the words the business typed."),
+        ("Which businesses it identified",
+         "The full shortlist, not only the winner."),
+        ("Why it chose a particular opportunity",
+         "The agent's own reasoning, quoted."),
+        ("How it negotiated", "Every offer, in order, with the price."),
+        ("What decisions were made",
+         f"{summary.gate_allow + summary.gate_deny} rulings recorded before "
+         f"money moved, including {summary.gate_deny} refusals."),
+        ("What happened after the transaction",
+         f"{repaired} mismatches with Razorpay caught and repaired by the "
+         f"system itself."),
+    )
+    return '<div class="audit">' + "".join(
+        f'<div class="au"><h3>{esc(q)}</h3><p>{esc(a)}</p></div>'
+        for q, a in rows) + "</div>"
+
+
+def _terminal_html() -> str:
+    areas = (
+        ("Live activity",
+         "Business activity and transactions across the network, as they "
+         "happen."),
+        ("Market intelligence",
+         "Emerging trends, categories, demand signals and shifts in activity."),
+        ("Campaign leaderboard",
+         "The advertising campaigns and creative strategies gaining traction "
+         "right now."),
+        ("Business performance",
+         "Which strategies are helping businesses perform better."),
+        ("Emerging opportunities",
+         "Patterns across the ecosystem that could become something."),
+    )
+    return '<div class="areas">' + "".join(
+        f'<div class="ar"><h3>{esc(t)}</h3><p>{esc(d)}</p></div>'
+        for t, d in areas) + "</div>"
+
+
+def _vision_html() -> str:
+    return (
+        '<div class="vision">'
+        '<p>Payments tell you <b>that a transaction happened</b>.</p>'
+        '<p>This tells you who could do business together, why they should, '
+        'what they should trade, how they should negotiate, and what the '
+        'market is doing around them.</p>'
+        '<p class="v-close">Payments enabled commerce.<br>'
+        '<b>Agents can enable the commerce itself.</b></p>'
+        "</div>")
 
 
 def _hero_deal(rail_map):
@@ -2467,18 +2699,19 @@ def _flywheel_html(sale) -> str:
 
 
 def _steps_html() -> str:
+    """Discover, connect, negotiate, transact, maintain — the arc a
+    relationship actually travels, and the order carries the information."""
     steps = (
-        ("wants", "You need something, in plain words."),
-        ("picks", "Three sellers surface; your agent argues for one."),
-        ("negotiates", "Offers go back and forth until somebody yields."),
-        ("the gate", "The ruling is recorded before any money moves."),
-        ("pays", "A real Razorpay order, and a real payment id back."),
-        ("remembers", "One sentence kept, read before the next deal."),
+        ("Discover", "It finds businesses on the network worth talking to."),
+        ("Connect", "It opens the conversation and reads the counterparty."),
+        ("Negotiate", "Offers go back and forth inside the rules you set."),
+        ("Transact", "A real Razorpay order, and a real payment id back."),
+        ("Maintain", "It keeps the relationship, and what it learned from it."),
     )
-    return '<div class="steps">' + "".join(
+    return ('<div class="steps steps-5">' + "".join(
         f'<div class="st"><div class="n">{n + 1}</div>'
         f'<div class="t">{esc(name)}</div><div class="d">{esc(why)}</div></div>'
-        for n, (name, why) in enumerate(steps)) + "</div>"
+        for n, (name, why) in enumerate(steps)) + "</div>")
 
 
 def _books_proof(events, roster) -> str:
