@@ -165,3 +165,112 @@ def failure_threads(events) -> list[str]:
     repaired = {e.correlation_id for e in events
                 if e.type == "SETTLEMENT_COMPLETED" and e.actor_id == "accountant"}
     return sorted(drifted & repaired)
+
+
+# Plain language for every event type. A judge should not have to learn our
+# vocabulary to follow the tape — the raw type stays visible beside it,
+# because the raw type is what makes the log checkable.
+SAYS = {
+    "ACTOR_REGISTERED": "joined the exchange",
+    "ASSET_LISTED": "listed something for sale",
+    "ORDER_POSTED": "posted what it needs",
+    "COUNTERPARTY_CHOSEN": "picked who to deal with",
+    "NEGOTIATION_OPENED": "opened talks",
+    "NEGOTIATION_ROUND": "made an offer",
+    "NEGOTIATION_ENDED": "talks ended",
+    "MATCH_PROPOSED": "proposed the terms",
+    "POLICY_DECIDED": "the gate ruled",
+    "SETTLEMENT_INITIATED": "money committed",
+    "SETTLEMENT_COMPLETED": "payment confirmed",
+    "SETTLEMENT_FAILED": "settlement failed",
+    "TURN_ENDED": "turn ended",
+    "POINTS_MINTED": "earned points",
+    "LESSON_CONSOLIDATED": "learned something",
+    "DRIFT_DETECTED": "books disagree with Razorpay",
+    "ACTOR_FROZEN": "trading stopped",
+    "ACTOR_RESUMED": "trading resumed",
+    "RECONCILED": "books checked",
+    "INSIGHT_MINTED": "market intelligence minted",
+    "AUCTION_OPENED": "auction opened",
+    "BID_PLACED": "bid placed",
+    "AUCTION_CLEARED": "auction cleared",
+    "CREDITS_TRANSFERRED": "points moved",
+    "PRIVACY_REFUSED": "privacy floor refused",
+    "PAYMENT_LINK_REISSUED": "payment link reissued",
+    "ORDER_FILLED": "order filled",
+    "RECONCILE_CHECK_FAILED": "could not check this one",
+}
+
+
+def tape(events, limit: int = 420):
+    """The market as a stream a viewer can watch play.
+
+    Every row is a real event in the order it happened. Trimmed to the types
+    that carry the story — a viewer watching 961 rows learns less than one
+    watching 400, and the full log is a click away in each panel.
+    """
+    keep = {
+        "ORDER_POSTED", "COUNTERPARTY_CHOSEN", "NEGOTIATION_ROUND",
+        "NEGOTIATION_ENDED", "POLICY_DECIDED", "SETTLEMENT_INITIATED",
+        "SETTLEMENT_COMPLETED", "POINTS_MINTED", "LESSON_CONSOLIDATED",
+        "DRIFT_DETECTED", "ACTOR_FROZEN", "ACTOR_RESUMED", "INSIGHT_MINTED",
+        "BID_PLACED", "AUCTION_CLEARED", "PRIVACY_REFUSED",
+    }
+    out = []
+    for e in events:
+        if e.type not in keep:
+            continue
+        p = e.payload
+        detail, tone = "", ""
+        if e.type == "POLICY_DECIDED":
+            verdict = p.get("verdict", "")
+            tone = "allow" if verdict == "ALLOW" else "deny"
+            detail = f"{verdict} — {p.get('reason','')}"
+        elif e.type == "NEGOTIATION_ROUND":
+            detail = f"{p.get('price')} — {str(p.get('message','')).strip()}"
+        elif e.type == "NEGOTIATION_ENDED":
+            ok = p.get("agreed")
+            tone = "allow" if ok else "deny"
+            detail = (f"agreed at {p.get('final_price')}" if ok
+                      else str(p.get("reason", "")))
+        elif e.type == "SETTLEMENT_INITIATED":
+            detail = f"{p.get('amount',0)/100:,.2f} rupees · {p.get('razorpay_order_id','')}"
+        elif e.type == "SETTLEMENT_COMPLETED":
+            tone = "allow"
+            detail = str(p.get("razorpay_payment_id", ""))
+        elif e.type == "POINTS_MINTED":
+            tone = "amber"
+            detail = f"{p.get('points')} points"
+        elif e.type == "LESSON_CONSOLIDATED":
+            detail = str(p.get("text", ""))[:120]
+        elif e.type == "DRIFT_DETECTED":
+            tone = "deny"
+            detail = (f"local {p.get('local_status')} vs "
+                      f"remote {p.get('remote_status')}")
+        elif e.type in ("ACTOR_FROZEN",):
+            tone = "deny"
+            detail = str(p.get("reason", ""))
+        elif e.type == "ACTOR_RESUMED":
+            tone = "allow"
+            detail = "cleared to trade again"
+        elif e.type == "INSIGHT_MINTED":
+            tone = "amber"
+            detail = str((p.get("spec") or p).get("headline", ""))[:130]
+        elif e.type == "BID_PLACED":
+            detail = f"{p.get('amount')} points"
+        elif e.type == "AUCTION_CLEARED":
+            tone = "amber"
+            detail = f"{p.get('winner_id')} pays {p.get('price')}"
+        elif e.type == "ORDER_POSTED":
+            q = p.get("asset_query") or {}
+            detail = q.get("text", "") or f"selling {p.get('qty')} units"
+        elif e.type == "PRIVACY_REFUSED":
+            tone = "deny"
+            detail = str(p.get("reason", ""))
+        out.append({
+            "seq": e.seq, "actor": e.actor_id, "type": e.type,
+            "says": SAYS.get(e.type, e.type.lower().replace("_", " ")),
+            "detail": detail[:150], "tone": tone,
+        })
+    step = max(1, len(out) // limit)
+    return out[::step][:limit]

@@ -18,7 +18,7 @@ import html
 import sys
 from datetime import datetime, timezone
 
-from scripts.replay.read import auction, failure_threads, lessons, load
+from scripts.replay.read import auction, failure_threads, lessons, load, tape
 
 CSS = """
 /* A TERMINAL, not a document. The content is a market log: thousands of
@@ -77,7 +77,15 @@ body{margin:0;background:var(--bg);color:var(--ink);
 .phead .note{margin-left:auto;color:var(--faint);font-size:11px;
   letter-spacing:.05em;text-transform:uppercase}
 .pbody{padding:13px}
-.lede{color:var(--dim);margin:0 0 12px;max-width:76ch;line-height:1.62}
+/* Prose gets a humanist sans; every FIGURE stays mono. Monospace
+   paragraphs are punishing to read, and the brief asked for user-friendly —
+   the terminal register lives in the data, not in the sentences. */
+.lede{color:var(--dim);margin:0 0 12px;max-width:68ch;line-height:1.68;
+  font-family:ui-sans-serif,-apple-system,"Segoe UI",Roboto,sans-serif;
+  font-size:13.5px}
+.q{font-family:ui-sans-serif,-apple-system,"Segoe UI",Roboto,sans-serif;
+  font-size:13.5px}
+.big{font-family:ui-sans-serif,-apple-system,"Segoe UI",Roboto,sans-serif}
 
 /* --- readouts --------------------------------------------------------- */
 .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(132px,1fr));
@@ -131,6 +139,45 @@ summary:focus-visible{outline:1px solid var(--amber);outline-offset:2px}
 footer{border-top:1px solid var(--line);margin-top:18px;padding:12px 2px;
   color:var(--faint);font-size:11px;letter-spacing:.04em;line-height:1.7}
 @media(prefers-reduced-motion:reduce){*{transition-duration:.01ms!important}}
+
+/* --- THE TAPE: the page's one signature ------------------------------- */
+/* A terminal's identity is the stream, and "watch the agents run" IS the
+   stream. It plays real recorded events in real order; it does not run a
+   market. That distinction is the whole reason it can be trusted: a replay
+   cannot fail on camera, and every row is checkable against the log. */
+.tape{border:1px solid var(--line);background:var(--panel);margin-bottom:14px}
+.tape .ctl{display:flex;gap:10px;align-items:center;padding:9px 13px;
+  border-bottom:1px solid var(--line);background:var(--raised);flex-wrap:wrap}
+.tape button{font:inherit;font-size:11px;letter-spacing:.09em;
+  text-transform:uppercase;color:var(--ink);background:transparent;
+  border:1px solid var(--line);padding:5px 11px;cursor:pointer;
+  transition:border-color 120ms ease,color 120ms ease}
+.tape button:hover{border-color:var(--amber);color:var(--amber)}
+.tape button:focus-visible{outline:1px solid var(--amber);outline-offset:2px}
+.tape button[aria-pressed="true"]{border-color:var(--amber);color:var(--amber)}
+.tape .count{margin-left:auto;color:var(--faint);font-size:11px;
+  letter-spacing:.06em}
+.tape .stream{height:290px;overflow-y:auto;padding:4px 0;scroll-behavior:smooth}
+@media(prefers-reduced-motion:reduce){.tape .stream{scroll-behavior:auto}}
+.row{display:grid;grid-template-columns:52px 150px 165px 1fr;gap:12px;
+  padding:4px 13px;font-size:12px;line-height:1.5;border-left:2px solid transparent}
+.row .s{color:var(--faint);text-align:right}
+.row .w{color:var(--blue);white-space:nowrap;overflow:hidden;
+  text-overflow:ellipsis}
+.row .d{color:var(--dim)}
+.row .x{color:var(--dim);white-space:nowrap;overflow:hidden;
+  text-overflow:ellipsis}
+.row.allow{border-left-color:var(--green)} .row.allow .d{color:var(--green)}
+.row.deny{border-left-color:var(--red)} .row.deny .d{color:var(--red)}
+.row.amber{border-left-color:var(--amber)} .row.amber .d{color:var(--amber)}
+.row.new{background:rgba(240,168,40,.07)}
+@media(max-width:760px){.row{grid-template-columns:40px 1fr;gap:6px}
+  .row .x,.row .d{grid-column:2}}
+.legend{display:flex;gap:16px;flex-wrap:wrap;padding:8px 13px;
+  border-top:1px solid var(--line);font-size:10.5px;letter-spacing:.06em;
+  text-transform:uppercase;color:var(--faint)}
+.legend i{font-style:normal;display:inline-flex;gap:6px;align-items:center}
+.legend b{width:8px;height:8px;display:inline-block}
 @media(max-width:640px){.bar{font-size:10.5px;gap:10px}.wrap{padding:14px 10px 50px}}
 """
 
@@ -147,6 +194,83 @@ def _stat(value, label, tone: str = "") -> str:
     cls = f"stat {tone}".strip()
     return (f'<div class="{cls}"><b>{esc(value)}</b>'
             f'<span>{esc(label)}</span></div>')
+
+
+def _tape(rows) -> str:
+    """The stream, plus the controls a viewer actually needs.
+
+    Play/pause and speed, not a scrubber: the point is to watch it run, and a
+    scrubber invites fiddling during a take. It autoplays because a page that
+    waits to be told to start looks broken on a video.
+    """
+    import json
+
+    data = json.dumps(rows, separators=(",", ":"))
+    return f"""<section class="tape">
+  <div class="ctl">
+    <button id="pp" aria-pressed="true">pause</button>
+    <button data-rate="1">1&times;</button>
+    <button data-rate="4" aria-pressed="true">4&times;</button>
+    <button data-rate="20">20&times;</button>
+    <button id="rs">restart</button>
+    <span class="count"><span id="ct">0</span> / {len(rows)} events</span>
+  </div>
+  <div class="stream" id="st" role="log" aria-live="polite"
+       aria-label="Market events, playing in the order they happened"></div>
+  <div class="legend">
+    <i><b style="background:var(--green)"></b>allowed / agreed</i>
+    <i><b style="background:var(--red)"></b>refused / disagreed</i>
+    <i><b style="background:var(--amber)"></b>money or intelligence moved</i>
+    <i><b style="background:var(--blue)"></b>the merchant acting</i>
+  </div>
+</section>
+<script>
+(function(){{
+  var rows={data},i=0,rate=4,timer=null,
+      st=document.getElementById('st'),ct=document.getElementById('ct'),
+      pp=document.getElementById('pp'),rs=document.getElementById('rs');
+  var reduce=matchMedia('(prefers-reduced-motion: reduce)').matches;
+  function esc(t){{var d=document.createElement('div');d.textContent=t;return d.innerHTML}}
+  function step(){{
+    if(i>=rows.length){{stop();pp.textContent='replay';pp.setAttribute('aria-pressed','false');return}}
+    var r=rows[i++],el=document.createElement('div');
+    el.className='row '+(r.tone||'')+' new';
+    el.innerHTML='<span class="s">'+r.seq+'</span>'+
+      '<span class="w">'+esc(r.actor)+'</span>'+
+      '<span class="x">'+esc(r.says)+'</span>'+
+      '<span class="d">'+esc(r.detail)+'</span>';
+    st.appendChild(el);
+    setTimeout(function(){{el.classList.remove('new')}},420);
+    while(st.children.length>160)st.removeChild(st.firstChild);
+    st.scrollTop=st.scrollHeight;
+    ct.textContent=i;
+  }}
+  function play(){{stop();timer=setInterval(step,Math.max(16,320/rate))}}
+  function stop(){{if(timer)clearInterval(timer);timer=null}}
+  pp.addEventListener('click',function(){{
+    if(timer){{stop();pp.textContent='play';pp.setAttribute('aria-pressed','false')}}
+    else{{if(i>=rows.length)restart();else play();
+      pp.textContent='pause';pp.setAttribute('aria-pressed','true')}}
+  }});
+  function restart(){{stop();st.innerHTML='';i=0;ct.textContent=0;play();
+    pp.textContent='pause';pp.setAttribute('aria-pressed','true')}}
+  rs.addEventListener('click',restart);
+  Array.prototype.forEach.call(document.querySelectorAll('[data-rate]'),function(b){{
+    b.addEventListener('click',function(){{
+      rate=+b.dataset.rate;
+      Array.prototype.forEach.call(document.querySelectorAll('[data-rate]'),
+        function(o){{o.setAttribute('aria-pressed',o===b?'true':'false')}});
+      if(timer)play();
+    }});
+  }});
+  if(reduce){{
+    // Someone who has asked for less motion still gets the whole log,
+    // all at once, rather than a stream they cannot follow.
+    while(i<rows.length)step();
+    stop();pp.textContent='replay';pp.setAttribute('aria-pressed','false');
+  }} else {{play()}}
+}})();
+</script>"""
 
 
 def _panel(idx: str, title: str, body: str, note: str = "") -> str:
@@ -327,6 +451,7 @@ def build(db_path: str) -> str:
         for e in learned[:4])
 
     generated = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
+    tape_html = _tape(tape(events))
 
     beat1 = (f'<div class="grid">{stats}</div>'
              f'<p class="lede" style="margin-top:12px">{summary.walked} of '
@@ -369,7 +494,7 @@ def build(db_path: str) -> str:
         f'<span class="sep">/</span><span>{summary.events} events</span>'
         f'<span class="sep">/</span><span>{summary.merchants} merchants</span>'
         '<span class="live"><span class="dot"></span>log sealed</span></div>'
-        f'<div class="wrap">{panels}'
+        f'<div class="wrap">{tape_html}{panels}'
         f'<footer>Generated {esc(generated)} from {esc(summary.events)} events '
         f'in {esc(db_path)} &middot; gate {summary.gate_allow} allowed / '
         f'{summary.gate_deny} refused &middot; {summary.completed} payments '
