@@ -192,7 +192,7 @@ select.pick{max-width:330px}
 
 .rail{display:flex;gap:1px;flex-wrap:wrap;background:var(--rule);
   border:1px solid var(--rule)}
-.stn{flex:1 1 148px;min-width:148px;background:var(--panel);
+.stn{flex:1 1 148px;min-width:148px;max-width:260px;background:var(--panel);
   border-top:3px solid var(--edge);padding:9px 12px 13px;position:relative}
 .stn[data-tone=allow]{border-top-color:var(--green)}
 .stn[data-tone=deny]{border-top-color:var(--red)}
@@ -228,10 +228,11 @@ select.pick{max-width:330px}
 .floor{display:grid;grid-template-columns:minmax(215px,1fr) minmax(0,2.1fr);
   gap:12px;flex:1;min-height:0}
 @media(max-width:1000px){.floor{grid-template-columns:1fr}}
-.mgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(98px,1fr));
+.mgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(116px,1fr));
   gap:1px}
 .m{font-size:10.5px;color:var(--faint);padding:3px 5px;display:flex;gap:6px;
-  align-items:center;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
+  align-items:center;overflow:hidden;white-space:nowrap}
+.m b{font-weight:inherit;min-width:0;overflow:hidden;text-overflow:ellipsis}
 .m i{width:5px;height:5px;background:var(--rule);flex:none}
 .m.act{color:var(--white);background:var(--lift)}
 .m.act i{background:var(--green)}
@@ -1275,7 +1276,7 @@ def build_desk(db_path: str) -> str:
     payload = json.dumps({"rows": rows, "rails": rail_map},
                          separators=(",", ":"))
 
-    mgrid = "".join(f'<div class="m" data-m="{esc(m)}"><i></i>{esc(m[2:])}</div>'
+    mgrid = "".join(f'<div class="m" data-m="{esc(m)}"><i></i><b>{esc(m[2:])}</b></div>'
                     for m in merchants)
     live = (
         '<div class="trans">'
@@ -2028,9 +2029,9 @@ h1,h2,h3{font-family:var(--disp);font-weight:600;letter-spacing:-.028em;
 
 /* --- what your agent does ------------------------------------------------- */
 .jobs{display:grid;grid-template-columns:repeat(auto-fit,minmax(258px,1fr));
-  gap:1px;background:var(--pline);border:1px solid var(--pline);
-  border-radius:15px;overflow:hidden}
-.job{background:var(--paper);padding:26px 24px 24px}
+  gap:12px}
+.job{background:var(--card);border:1px solid var(--pline);border-radius:13px;
+  padding:24px 22px 22px}
 .job .ic{color:var(--blue)}
 .job h3{font-size:21px;margin:16px 0 0;letter-spacing:-.022em}
 .job p{margin:10px 0 0;color:var(--soft);font-size:14.5px;line-height:1.55}
@@ -2041,11 +2042,10 @@ h1,h2,h3{font-family:var(--disp);font-weight:600;letter-spacing:-.028em;
 .job .ev span{color:var(--soft)}
 
 /* --- the flywheel --------------------------------------------------------- */
-.wheel{display:grid;grid-template-columns:repeat(4,1fr);gap:1px;
-  background:var(--line);border:1px solid var(--line);border-radius:14px;
-  overflow:hidden;margin-bottom:28px}
+.wheel{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;
+  margin-bottom:26px}
 @media(max-width:860px){.wheel{grid-template-columns:repeat(2,1fr)}}
-.wf{background:var(--deep);padding:22px 20px 24px}
+.wf{background:var(--void);border:1px solid var(--line);border-radius:13px;padding:20px 20px 22px}
 .wf .n{font-family:var(--mono);font-size:10.5px;color:var(--iris);
   letter-spacing:.12em}
 .wf h3{font-size:18px;margin:9px 0 0;letter-spacing:-.02em}
@@ -2098,16 +2098,19 @@ h1,h2,h3{font-family:var(--disp);font-weight:600;letter-spacing:-.028em;
   gap:14px}
 .ask-q{margin:0;font-family:var(--disp);font-size:19px;line-height:1.34;
   letter-spacing:-.015em;color:var(--ink);background:var(--card);
-  border:1px solid var(--pline);border-radius:13px;padding:20px 22px;
-  position:relative}
-.ask-q::before{content:'\201C';position:absolute;top:6px;left:11px;
-  font-size:36px;color:var(--hi);line-height:1}
+  border:1px solid var(--pline);border-radius:13px;
+  padding:20px 22px 22px 26px;position:relative;overflow:hidden}
+/* A ruled edge marks it as something the business said. The quote glyph it
+   replaces was a unicode character used as an ornament, and it landed on
+   top of the first line of every card. */
+.ask-q::before{content:'';position:absolute;left:0;top:14px;bottom:14px;
+  width:3px;background:var(--hi)}
 
 /* --- how it behaves -------------------------------------------------------- */
 .modes{display:grid;grid-template-columns:repeat(auto-fit,minmax(238px,1fr));
-  gap:1px;background:var(--pline);border:1px solid var(--pline);
-  border-radius:15px;overflow:hidden}
-.mode{background:var(--card);padding:24px 22px 26px}
+  gap:12px}
+.mode{background:var(--card);border:1px solid var(--pline);border-radius:13px;
+  padding:22px 22px 24px}
 .mode h3{font-size:20px;letter-spacing:-.02em}
 .mode p{margin:9px 0 0;color:var(--soft);font-size:14.5px;line-height:1.55}
 .mode:nth-child(1) h3{color:var(--red)}
@@ -2137,18 +2140,18 @@ h1,h2,h3{font-family:var(--disp);font-weight:600;letter-spacing:-.028em;
 .par-close b{font-weight:600}
 
 /* --- the audit trail ------------------------------------------------------- */
-.audit{display:grid;grid-template-columns:repeat(auto-fit,minmax(292px,1fr));
-  gap:1px;background:var(--pline);border:1px solid var(--pline);
-  border-radius:15px;overflow:hidden}
-.au{background:var(--card);padding:22px 22px 24px}
+.audit{display:grid;grid-template-columns:repeat(auto-fit,minmax(286px,1fr));
+  gap:12px}
+.au{background:var(--card);border:1px solid var(--pline);border-radius:13px;
+  padding:20px 22px 22px}
 .au h3{font-size:16.5px;letter-spacing:-.015em;line-height:1.3}
 .au p{margin:8px 0 0;color:var(--soft);font-size:14px;line-height:1.5}
 
 /* --- the terminal's five views --------------------------------------------- */
 .areas{display:grid;grid-template-columns:repeat(auto-fit,minmax(232px,1fr));
-  gap:1px;background:var(--line);border:1px solid var(--line);
-  border-radius:15px;overflow:hidden}
-.ar{background:var(--void);padding:22px 20px 24px}
+  gap:12px}
+.ar{background:var(--void);border:1px solid var(--line);border-radius:13px;
+  padding:20px 20px 22px}
 .ar h3{font-size:11px;letter-spacing:.15em;text-transform:uppercase;
   color:var(--iris);font-family:var(--mono);font-weight:500}
 .ar p{margin:11px 0 0;color:var(--mid);font-size:14px;line-height:1.52}
