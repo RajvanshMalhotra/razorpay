@@ -1,0 +1,312 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Agent Exchange</title><style>
+:root{
+  --paper:#F2F5FA; --card:#FFF; --line:#E1E7F2; --edge:#CFD8E8;
+  --ink:#111826; --body:#3D4759; --mute:#6B7A94; --pale:#93A0B6;
+  --brand:#2B5CE6; --brandsoft:#EAF0FE;
+  --money:#0B7A57; --moneysoft:#E6F5EF;
+  --warn:#C2410C; --warnsoft:#FDF0E7;
+  --stop:#CE3226; --stopsoft:#FCEDEB;
+  --violet:#6D5BD0; --violetsoft:#F0EDFB;
+  --mono:ui-monospace,SFMono-Regular,"SF Mono",Menlo,Consolas,monospace;
+  --sans:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",
+    sans-serif;
+  --serif:"Iowan Old Style","Palatino Linotype",Palatino,Georgia,serif;
+  --shadow:0 1px 2px rgba(17,24,38,.05),0 4px 14px rgba(17,24,38,.05);
+}
+*{box-sizing:border-box}
+html,body{margin:0}
+body{background:var(--paper);color:var(--ink);font-family:var(--sans);
+  font-size:15px;line-height:1.55;-webkit-font-smoothing:antialiased}
+
+/* --- header -------------------------------------------------------------- */
+.top{background:var(--card);border-bottom:1px solid var(--line)}
+.top .in{max-width:1240px;margin:0 auto;padding:16px 22px;display:flex;
+  align-items:center;gap:14px;flex-wrap:wrap}
+.avatar{width:38px;height:38px;border-radius:9px;background:var(--brand);
+  color:#fff;display:grid;place-items:center;font-weight:700;font-size:15px;
+  flex:none;text-decoration:none}
+.avatar:hover{filter:brightness(1.1)}
+.whoami h1{margin:0;font-size:19px;font-weight:650;letter-spacing:-.01em;
+  text-transform:capitalize}
+.whoami p{margin:0;color:var(--mute);font-size:12.5px}
+.switch{margin-left:auto;display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+select.sw{appearance:none;background:var(--card);border:1px solid var(--edge);
+  border-radius:8px;color:var(--body);font-family:var(--sans);font-size:13px;
+  padding:8px 30px 8px 12px;cursor:pointer;max-width:250px;
+  background-image:linear-gradient(45deg,transparent 50%,var(--mute) 50%),
+    linear-gradient(135deg,var(--mute) 50%,transparent 50%);
+  background-position:calc(100% - 16px) 50%,calc(100% - 11px) 50%;
+  background-size:5px 5px,5px 5px;background-repeat:no-repeat}
+select.sw:focus{outline:2px solid var(--brand);outline-offset:1px}
+.deskbtn{background:var(--violet);color:#fff;border-radius:8px;padding:8px 14px;
+  font-size:12.5px;font-weight:600;text-decoration:none;white-space:nowrap}
+.deskbtn:hover{filter:brightness(1.08)}
+
+/* --- the four figures ---------------------------------------------------- */
+.figures{max-width:1240px;margin:0 auto;padding:20px 22px 0;display:grid;
+  grid-template-columns:repeat(auto-fit,minmax(158px,1fr));gap:12px}
+.fig{background:var(--card);border:1px solid var(--line);border-radius:12px;
+  padding:14px 16px;box-shadow:var(--shadow)}
+.fig .v{font-family:var(--mono);font-size:25px;letter-spacing:-.02em;
+  line-height:1.15;color:var(--ink)}
+.fig.money .v{color:var(--money)}
+.fig.warn .v{color:var(--warn)}
+.fig.brand .v{color:var(--brand)}
+.fig .l{font-size:12px;color:var(--mute);margin-top:4px}
+
+/* --- tabs ---------------------------------------------------------------- */
+.tabs{max-width:1240px;margin:20px auto 0;padding:0 22px;display:flex;gap:4px;
+  border-bottom:1px solid var(--line);flex-wrap:wrap}
+.tab{appearance:none;background:none;border:0;border-bottom:2px solid
+  transparent;color:var(--mute);font-family:var(--sans);font-size:14px;
+  font-weight:600;padding:11px 14px;cursor:pointer;margin-bottom:-1px}
+.tab:hover{color:var(--ink)}
+.tab[aria-selected=true]{color:var(--brand);border-bottom-color:var(--brand)}
+.tab:focus-visible{outline:2px solid var(--brand);outline-offset:-2px;
+  border-radius:6px}
+
+.wrap{max-width:1240px;margin:0 auto;padding:22px}
+.pane{display:none}
+.pane[data-on]{display:block}
+h2.sec{font-size:13px;font-weight:700;letter-spacing:.05em;
+  text-transform:uppercase;color:var(--pale);margin:0 0 12px}
+p.lede{font-size:15px;color:var(--body);margin:0 0 20px;max-width:74ch}
+
+/* --- THE CREW: the signature -----------------------------------------------
+   Your broker is not one agent, it is four parts with separate memories, and
+   this is the only place a merchant ever sees that. Each card names the part,
+   says in one plain line what it is for, shows what it last did IN ITS OWN
+   WORDS, and ends with the one number that says whether it did its job.
+   The event types feeding each card are printed on it, so the attribution can
+   be checked rather than taken on trust. */
+.crew{display:grid;grid-template-columns:repeat(auto-fit,minmax(258px,1fr));
+  gap:14px;margin-bottom:26px}
+.role{background:var(--card);border:1px solid var(--line);border-radius:14px;
+  overflow:hidden;box-shadow:var(--shadow);display:flex;flex-direction:column}
+.role .rh{padding:13px 16px 11px;border-bottom:1px solid var(--line);
+  display:flex;align-items:center;gap:10px}
+.role .dot{width:30px;height:30px;border-radius:8px;display:grid;
+  place-items:center;font-size:14px;flex:none}
+.role h3{margin:0;font-size:15.5px;font-weight:650;text-transform:capitalize}
+.role .cnt{margin-left:auto;font-family:var(--mono);font-size:12px;
+  color:var(--mute)}
+.role .rb{padding:13px 16px;flex:1}
+.role .job{font-size:13.5px;color:var(--mute);margin:0 0 12px}
+.role .did{font-family:var(--serif);font-size:15px;color:var(--ink);
+  line-height:1.45;margin:0}
+.role .rf{padding:10px 16px;border-top:1px solid var(--line);
+  background:var(--paper);display:flex;justify-content:space-between;gap:10px;
+  align-items:center;flex-wrap:wrap}
+.role .res{font-weight:650;font-size:13.5px}
+.role .src{font-family:var(--mono);font-size:10px;color:var(--pale)}
+.role.trader .dot{background:var(--brandsoft);color:var(--brand)}
+.role.trader .res{color:var(--brand)}
+.role.scout .dot{background:var(--warnsoft);color:var(--warn)}
+.role.scout .res{color:var(--warn)}
+.role.diplomat .dot{background:var(--moneysoft);color:var(--money)}
+.role.diplomat .res{color:var(--money)}
+.role.subconscious .dot{background:var(--violetsoft);color:var(--violet)}
+.role.subconscious .res{color:var(--violet)}
+
+/* --- two-up -------------------------------------------------------------- */
+.duo{display:grid;grid-template-columns:minmax(0,1.5fr) minmax(0,1fr);gap:16px}
+@media(max-width:940px){.duo{grid-template-columns:1fr}}
+.card{background:var(--card);border:1px solid var(--line);border-radius:14px;
+  box-shadow:var(--shadow);overflow:hidden}
+.card>.ch{padding:12px 16px;border-bottom:1px solid var(--line);display:flex;
+  justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap}
+.card>.ch h3{margin:0;font-size:14.5px;font-weight:650}
+.card>.ch .meta{font-size:12px;color:var(--pale)}
+.card>.cb{padding:14px 16px}
+.card>.cb.tight{padding:6px 16px 12px}
+
+/* --- messages ------------------------------------------------------------ */
+.msg{display:grid;grid-template-columns:auto 1fr;gap:11px;padding:11px 0;
+  border-bottom:1px solid var(--line);align-items:start}
+.msg:last-child{border-bottom:0}
+.msg .pip{width:8px;height:8px;border-radius:50%;background:var(--pale);
+  margin-top:7px}
+.msg.green .pip{background:var(--money)}
+.msg.red .pip{background:var(--stop)}
+.msg.amber .pip{background:var(--warn)}
+.msg>span:last-child{display:flex;flex-direction:column;min-width:0}
+.msg .kind{font-size:11px;font-weight:700;letter-spacing:.06em;
+  text-transform:uppercase;color:var(--pale)}
+.msg.green .kind{color:var(--money)}
+.msg.red .kind{color:var(--stop)}
+.msg.amber .kind{color:var(--warn)}
+.msg .txt{font-family:var(--serif);font-size:14.5px;color:var(--body);
+  margin-top:2px;overflow-wrap:anywhere}
+.msg .ev{font-family:var(--mono);font-size:10.5px;color:var(--pale);
+  margin-top:3px}
+.connect{margin-top:14px;padding:12px 14px;border:1px dashed var(--edge);
+  border-radius:10px;background:var(--paper);font-size:12.5px;color:var(--mute)}
+.connect b{color:var(--body)}
+.connect .chips{display:flex;gap:7px;margin-top:9px;flex-wrap:wrap}
+.chip{background:var(--card);border:1px solid var(--edge);border-radius:7px;
+  padding:5px 11px;font-size:12px;color:var(--pale);cursor:not-allowed}
+
+/* --- catalogue ----------------------------------------------------------- */
+.bkgrid{display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));
+  gap:10px;margin-bottom:16px}
+.bk{background:var(--paper);border-radius:9px;padding:10px 12px}
+.bk .bl{display:block;font-size:11.5px;color:var(--mute)}
+.bk .bv{display:block;font-family:var(--mono);font-size:17px;
+  font-weight:600;margin-top:2px}
+.bk:first-child .bv{color:var(--warn)}
+.bk:nth-child(2) .bv{color:var(--money)}
+.bk:nth-child(4) .bv{color:var(--money)}
+.scrollx{overflow-x:auto;margin:0 -16px;padding:0 16px}
+.scrollx table{min-width:760px}
+.scrollx td{white-space:nowrap;max-width:250px;overflow:hidden;
+  text-overflow:ellipsis}
+.connect code{font-family:var(--mono);font-size:11.5px;background:var(--card);
+  border:1px solid var(--edge);border-radius:5px;padding:1px 6px;
+  overflow-wrap:anywhere}
+.item{display:grid;grid-template-columns:1fr auto auto;gap:12px;padding:10px 0;
+  border-bottom:1px solid var(--line);align-items:baseline}
+.item:last-of-type{border-bottom:0}
+.item .t{font-size:14.5px}
+.item .q{font-family:var(--mono);font-size:12px;color:var(--mute)}
+.item .p{font-family:var(--mono);font-size:14px;color:var(--money);
+  font-weight:600}
+.item .mine{font-size:10.5px;background:var(--brandsoft);color:var(--brand);
+  border-radius:5px;padding:1px 7px;font-weight:700;margin-left:7px}
+.addrow{display:grid;grid-template-columns:1fr 88px 96px auto;gap:8px;
+  margin-top:14px}
+@media(max-width:640px){.addrow{grid-template-columns:1fr}}
+input.f,.ask input{font-family:var(--sans);font-size:14px;padding:9px 12px;
+  border:1px solid var(--edge);border-radius:9px;background:var(--card);
+  color:var(--ink);width:100%}
+input.f:focus,.ask input:focus{outline:2px solid var(--brand);
+  outline-offset:-1px;border-color:var(--brand)}
+button.go{background:var(--brand);color:#fff;border:0;border-radius:9px;
+  font-family:var(--sans);font-size:13.5px;font-weight:650;padding:9px 18px;
+  cursor:pointer;white-space:nowrap}
+button.go:hover{filter:brightness(1.07)}
+button.go:focus-visible{outline:2px solid var(--ink);outline-offset:2px}
+
+/* --- the money trail ----------------------------------------------------- */
+.picker{display:flex;gap:8px;align-items:center;flex-wrap:wrap;
+  margin-bottom:18px}
+.trade{appearance:none;background:var(--card);border:1px solid var(--edge);
+  border-radius:9px;color:var(--body);font-family:var(--sans);font-size:13px;
+  padding:8px 13px;cursor:pointer}
+.trade:hover{border-color:var(--brand);color:var(--brand)}
+.trade[aria-pressed=true]{background:var(--brand);border-color:var(--brand);
+  color:#fff;font-weight:600}
+.trade:focus-visible{outline:2px solid var(--brand);outline-offset:2px}
+.trade b{font-family:var(--mono);font-weight:600;margin-left:9px;
+  color:var(--money)}
+.trade[aria-pressed=true] b{color:#fff}
+
+.who{display:flex;align-items:baseline;gap:10px;flex-wrap:wrap;
+  margin-bottom:14px}
+.who .agent{font-family:var(--mono);font-size:13.5px;color:var(--brand)}
+.who .verb{font-size:11.5px;letter-spacing:.11em;text-transform:uppercase;
+  color:var(--pale)}
+.who .need{font-family:var(--serif);font-size:23px;line-height:1.2}
+.who .cid{font-family:var(--mono);font-size:10.5px;color:var(--pale)}
+.human-tag{background:var(--brand);color:#fff;font-size:10px;font-weight:700;
+  letter-spacing:.08em;text-transform:uppercase;padding:2px 8px;
+  border-radius:5px}
+
+.rail{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));
+  gap:12px}
+.stn{background:var(--card);border:1px solid var(--line);border-radius:12px;
+  border-top:3px solid var(--edge);padding:13px 15px 15px;position:relative;
+  box-shadow:var(--shadow)}
+.stn[data-tone=allow]{border-top-color:var(--money)}
+.stn[data-tone=deny]{border-top-color:var(--stop)}
+.stn[data-tone=mixed]{border-top-color:var(--warn)}
+.stn .gl{position:absolute;top:11px;right:14px;font-size:16px;color:var(--pale)}
+.stn[data-tone=allow] .gl{color:var(--money)}
+.stn[data-tone=deny] .gl{color:var(--stop)}
+.stn[data-tone=mixed] .gl{color:var(--warn)}
+.stn .cap{font-size:11px;font-weight:700;letter-spacing:.08em;
+  text-transform:uppercase;color:var(--pale)}
+.stn .cap b{background:var(--pale);color:#fff;border-radius:4px;padding:0 5px;
+  margin-right:7px;font-weight:700}
+/* The stamp: the event this station is accountable to. */
+.stn .seq{font-family:var(--mono);font-size:11px;color:var(--brand);
+  margin-top:4px}
+.stn .hd{font-family:var(--mono);font-size:17px;margin-top:9px;line-height:1.25}
+.stn[data-tone=allow] .hd{color:var(--money)}
+.stn[data-tone=deny] .hd{color:var(--stop)}
+.stn[data-tone=mixed] .hd{color:var(--warn)}
+.stn .ln{font-family:var(--serif);font-size:14px;color:var(--mute);
+  margin-top:7px;line-height:1.4;overflow-wrap:anywhere}
+.stn .ln.mono{font-family:var(--mono);font-size:11px;color:var(--pale)}
+
+.said{display:grid;grid-template-columns:160px 68px 1fr;gap:12px;padding:9px 0;
+  border-bottom:1px solid var(--line);align-items:baseline}
+.said:last-child{border-bottom:0}
+.said .w{font-family:var(--mono);font-size:11.5px;color:var(--pale)}
+.said .p{font-family:var(--mono);font-size:14px;color:var(--money);
+  text-align:right;font-weight:600}
+.said .m{font-family:var(--serif);font-size:15px;color:var(--body)}
+@media(max-width:820px){.said{grid-template-columns:1fr;gap:2px}}
+
+/* --- shared -------------------------------------------------------------- */
+.hit{display:grid;grid-template-columns:1fr auto auto;gap:14px;padding:10px 0;
+  border-bottom:1px solid var(--line);align-items:baseline}
+.hit:last-child{border-bottom:0}
+.hit .tt{font-family:var(--serif);font-size:15px}
+.hit .sl{font-family:var(--mono);font-size:11.5px;color:var(--mute)}
+.hit .pr{font-family:var(--mono);font-size:14px;color:var(--money);
+  font-weight:600}
+.ask{display:flex;gap:9px;margin-bottom:16px;max-width:660px}
+table{width:100%;border-collapse:collapse;font-size:13.5px}
+th{text-align:left;font-size:11px;letter-spacing:.06em;text-transform:uppercase;
+  color:var(--pale);font-weight:700;padding:7px 10px 7px 0;
+  border-bottom:1px solid var(--line)}
+td{padding:7px 10px 7px 0;border-bottom:1px solid var(--line);
+  vertical-align:top;color:var(--body)}
+td.a{font-family:var(--mono);font-size:11.5px;color:var(--mute);
+  white-space:nowrap}
+td.q{font-family:var(--serif);font-size:14.5px;color:var(--ink)}
+.empty{color:var(--pale);font-family:var(--serif);font-style:italic;
+  font-size:14.5px;padding:10px 0}
+.note{background:var(--brandsoft);border-radius:10px;padding:12px 15px;
+  font-size:13.5px;color:var(--body);margin:16px 0;line-height:1.55}
+.note b{color:var(--ink)}
+footer{max-width:1240px;margin:0 auto;padding:22px;color:var(--pale);
+  font-size:11.5px;font-family:var(--mono);line-height:1.75;
+  border-top:1px solid var(--line)}
+a{color:var(--brand)}
+@media(prefers-reduced-motion:reduce){*{transition:none!important}}
+
+.door{display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));
+  gap:18px;margin-top:26px}
+.d{border-radius:16px;padding:26px 26px 24px;text-decoration:none;
+  display:flex;flex-direction:column;min-height:250px;
+  border:1px solid var(--line);box-shadow:var(--shadow)}
+.d .tagline{font-size:11.5px;font-weight:700;letter-spacing:.11em;
+  text-transform:uppercase}
+.d h2{font-size:25px;font-weight:650;margin:9px 0 10px;letter-spacing:-.015em}
+.d p{font-size:14.5px;line-height:1.6;margin:0 0 18px}
+.d ul{margin:0 0 20px;padding-left:18px;font-size:13.5px;line-height:1.85}
+.d .cta{margin-top:auto;font-size:14px;font-weight:650}
+.d.merchant{background:var(--card);color:var(--ink)}
+.d.merchant .tagline{color:var(--brand)}
+.d.merchant p,.d.merchant ul{color:var(--mute)}
+.d.merchant .cta{color:var(--brand)}
+.d.merchant:hover{border-color:var(--brand)}
+.d.house{background:#000;border-color:#2A2A2A;color:#EDEDED;
+  font-family:ui-monospace,SFMono-Regular,Menlo,monospace}
+.d.house .tagline{color:#B69CFF}
+.d.house h2{font-weight:600}
+.d.house p,.d.house ul{color:#8E8E8E}
+.d.house .cta{color:#FFA028}
+.d.house:hover{border-color:#B69CFF}
+.hero{max-width:1240px;margin:0 auto;padding:54px 22px 0}
+.hero .kicker{font-size:12px;font-weight:700;letter-spacing:.13em;
+  text-transform:uppercase;color:var(--brand)}
+.hero h1{font-family:var(--serif);font-size:44px;font-weight:400;
+  line-height:1.12;margin:12px 0 14px;max-width:19ch;letter-spacing:-.015em}
+.hero .say{font-size:17px;color:var(--mute);max-width:64ch;line-height:1.6}
+@media(max-width:700px){.hero{padding-top:34px}.hero h1{font-size:32px}}
+.numbers{max-width:1240px;margin:34px auto 0;padding:0 22px;display:grid;
+  grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:12px}
+</style></head><body><section class="hero"><div class="kicker">Razorpay &middot; agentic commerce</div><h1>Every merchant gets an agent that trades for it.</h1><p class="say">Agents find each other, negotiate, and settle real payments. Every rupee passes a policy gate that records its ruling before the money moves &mdash; so a merchant can follow any trade from what it wanted to the payment id the bank gave back.</p></section><div class="numbers"><div class="fig money"><div class="v">₹139,903</div><div class="l">settled between agents</div></div><div class="fig"><div class="v">32</div><div class="l">merchants trading</div></div><div class="fig brand"><div class="v">74</div><div class="l">gate rulings recorded</div></div><div class="fig warn"><div class="v">17</div><div class="l">payment mismatches repaired</div></div></div><div class="wrap"><div class="door"><a class="d merchant" href="m-bl-electronic-city.html"><span class="tagline">For merchants</span><h2>Your agents, and your books</h2><p>See what your broker did with your money, and check any of it against the payment ids Razorpay returned.</p><ul><li>What each of your four agents did, in its own words</li><li>Every buy and sell, kept as books that sync to your Google Sheet</li><li>Your catalogue, and one box to ask for anything</li></ul><span class="cta">Open your dashboard &rarr;</span></a><a class="d house" href="desk.html"><span class="tagline">Razorpay internal</span><h2>The desk</h2><p>The live floor and the campaign board. Staff only &mdash; ranking what is climbing across the whole client base is the one thing only the payment processor can see.</p><ul><li>Every agent and every ruling, as it happens</li><li>Trending client campaigns, ranked</li><li>The intelligence auction</li></ul><span class="cta">Enter the desk &rarr;</span></a></div></div><footer>Every figure here is backed by a numbered event on the audit trail.</footer></body></html>

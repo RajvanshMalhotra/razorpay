@@ -47,6 +47,7 @@ import pathlib
 import sys
 from datetime import datetime, timezone
 
+from exchange.books import COLUMNS, entries_for
 from scripts.replay.read import (
     auction,
     board,
@@ -367,14 +368,18 @@ def _stat(value, label, tone="") -> str:
 
 
 def _footer(db_path, summary) -> str:
-    generated = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
-    return (f'<footer>Generated {esc(generated)} from {summary.events} events '
-            f'in {esc(db_path)} &middot; gate {summary.gate_allow} allowed / '
-            f'{summary.gate_deny} refused &middot; {summary.completed} payments '
-            f'completed against real Razorpay test-mode orders.<br>'
-            f'Every station carries the event number it came from. Nothing was '
-            f'computed by the page &mdash; each figure is read from the log, or '
-            f'from the same projection the exchange runs on.</footer>')
+    """The desk footer. Names what the numbers are, not where they are stored.
+
+    It used to print the path to the SQLite file, which reads as a demo
+    artefact rather than a product — the audit claim is carried by the event
+    number on every row, and that is on screen everywhere already.
+    """
+    return (f'<footer>Gate {summary.gate_allow} allowed / '
+            f'{summary.gate_deny} refused &middot; {summary.completed} '
+            f'payments completed against Razorpay &middot; '
+            f'{summary.events} events on the audit trail.<br>'
+            f'Every row and every station carries the event number it came '
+            f'from.</footer>')
 
 
 # --- the shared rail renderer ------------------------------------------------
@@ -518,7 +523,8 @@ body{background:var(--paper);color:var(--ink);font-family:var(--sans);
   align-items:center;gap:14px;flex-wrap:wrap}
 .avatar{width:38px;height:38px;border-radius:9px;background:var(--brand);
   color:#fff;display:grid;place-items:center;font-weight:700;font-size:15px;
-  flex:none}
+  flex:none;text-decoration:none}
+.avatar:hover{filter:brightness(1.1)}
 .whoami h1{margin:0;font-size:19px;font-weight:650;letter-spacing:-.01em;
   text-transform:capitalize}
 .whoami p{margin:0;color:var(--mute);font-size:12.5px}
@@ -602,7 +608,7 @@ p.lede{font-size:15px;color:var(--body);margin:0 0 20px;max-width:74ch}
 .role.subconscious .res{color:var(--violet)}
 
 /* --- two-up -------------------------------------------------------------- */
-.duo{display:grid;grid-template-columns:minmax(0,1.15fr) minmax(0,1fr);gap:16px}
+.duo{display:grid;grid-template-columns:minmax(0,1.5fr) minmax(0,1fr);gap:16px}
 @media(max-width:940px){.duo{grid-template-columns:1fr}}
 .card{background:var(--card);border:1px solid var(--line);border-radius:14px;
   box-shadow:var(--shadow);overflow:hidden}
@@ -640,6 +646,22 @@ p.lede{font-size:15px;color:var(--body);margin:0 0 20px;max-width:74ch}
   padding:5px 11px;font-size:12px;color:var(--pale);cursor:not-allowed}
 
 /* --- catalogue ----------------------------------------------------------- */
+.bkgrid{display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));
+  gap:10px;margin-bottom:16px}
+.bk{background:var(--paper);border-radius:9px;padding:10px 12px}
+.bk .bl{display:block;font-size:11.5px;color:var(--mute)}
+.bk .bv{display:block;font-family:var(--mono);font-size:17px;
+  font-weight:600;margin-top:2px}
+.bk:first-child .bv{color:var(--warn)}
+.bk:nth-child(2) .bv{color:var(--money)}
+.bk:nth-child(4) .bv{color:var(--money)}
+.scrollx{overflow-x:auto;margin:0 -16px;padding:0 16px}
+.scrollx table{min-width:760px}
+.scrollx td{white-space:nowrap;max-width:250px;overflow:hidden;
+  text-overflow:ellipsis}
+.connect code{font-family:var(--mono);font-size:11.5px;background:var(--card);
+  border:1px solid var(--edge);border-radius:5px;padding:1px 6px;
+  overflow-wrap:anywhere}
 .item{display:grid;grid-template-columns:1fr auto auto;gap:12px;padding:10px 0;
   border-bottom:1px solid var(--line);align-items:baseline}
 .item:last-of-type{border-bottom:0}
@@ -876,24 +898,11 @@ def _crew(view) -> str:
     return out
 
 
-def _messages(view) -> str:
-    if not view["messages"]:
-        return ('<div class="empty">Nothing to report yet. Your agents post '
-                'here when money moves, when the gate refuses something, and '
-                'when they learn something worth keeping.</div>')
-    return "".join(
-        f'<div class="msg {esc(m["tone"])}"><span class="pip"></span>'
-        f'<span><span class="kind">{esc(m["kind"])}</span>'
-        f'<span class="txt">{esc(m["text"])}</span>'
-        f'<span class="ev">event {m["seq"]} &middot; {esc(m["from"])}</span>'
-        f"</span></div>"
-        for m in view["messages"])
-
-
 def build_merchant(db_path: str, actor_id: str, roster) -> str:
     summary, _trades, events = load(db_path)
     rail_map = rails(events)
     view = merchant_view(events, actor_id, rail_map)
+    books = entries_for(events, actor_id)
 
     mine = [rail_map[c] for c in view["corrs"] if c in rail_map]
     payload = json.dumps({
@@ -941,18 +950,7 @@ def build_merchant(db_path: str, actor_id: str, roster) -> str:
         'it was read from.</p>'
         f'<div class="crew">{_crew(view)}</div>'
         '<div class="duo">'
-        '<section class="card"><div class="ch"><h3>Messages</h3>'
-        f'<span class="meta">{len(view["messages"])} from your agents</span>'
-        '</div><div class="cb tight">'
-        + _messages(view)
-        + '<div class="connect"><b>Slack and Discord are not connected in this '
-          'build.</b> Outbound messaging was deliberately left out of scope, so '
-          'rather than show you invented chatter, this feed is built from what '
-          'your agents actually recorded &mdash; every line carries the event '
-          'number it came from.'
-          '<div class="chips"><span class="chip">Slack &mdash; not connected'
-          '</span><span class="chip">Discord &mdash; not connected</span>'
-          "</div></div></div></section>"
+        + _books_card(books)
         + _catalogue_card(view) + "</div>")
 
     money_pane = (
@@ -994,15 +992,14 @@ def build_merchant(db_path: str, actor_id: str, roster) -> str:
         f"<style>{LIGHT_CSS}</style></head><body>"
 
         '<header class="top"><div class="in">'
-        f'<div class="avatar">{esc(initial)}</div>'
+        f'<a class="avatar" href="index.html" '
+        f'aria-label="back to the front">{esc(initial)}</a>'
         f'<div class="whoami"><h1>{esc(view["name"])}</h1>'
         f'<p>{esc(actor_id)} &middot; {esc(view["plan"])} plan &middot; '
         f'represented by four agents</p></div>'
         '<div class="switch">'
         f'<select class="sw" id="sw" aria-label="view another merchant">'
-        f"{options}</select>"
-        '<a class="deskbtn" href="desk.html">Razorpay desk &rarr;</a>'
-        "</div></div></header>"
+        f"{options}</select></div></div></header>"
 
         + figures
 
@@ -1019,15 +1016,64 @@ def build_merchant(db_path: str, actor_id: str, roster) -> str:
           f'<section class="pane" id="pn-money">{money_pane}</section>'
           f'<section class="pane" id="pn-ask">{ask_pane}</section></div>'
 
-        + f'<footer>Read from {esc(db_path)} &middot; {summary.events} events '
-          f'&middot; generated '
-          f'{datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")}.<br>'
-          f'Every figure on this page is scoped to {esc(actor_id)} and read '
-          f'from the log. Nothing was computed by the page.</footer>'
+        + f'<footer>Every figure on this page belongs to '
+          f'{esc(view["name"])} alone, and carries the event number behind '
+          f'it. Your books sync to your own Google Sheet.</footer>'
 
         + f'<script type="application/json" id="mkt">{payload}</script>'
         + MERCHANT_JS + "</body></html>"
     )
+
+
+def _books_card(books) -> str:
+    """The books, kept automatically, in the columns an accountant reads.
+
+    This is the same grid `scripts.market.sheets` pushes to Google Sheets —
+    one function produces both, so the page and the spreadsheet can never
+    disagree about what a merchant bought.
+    """
+    # FORMATTED HERE AND NOWHERE ELSE. `summary()` yields real numbers
+    # because that is what a spreadsheet needs in a cell; a page that wants
+    # "11,570" must not push "11,570" into the sheet, where it stops being
+    # something you can sum.
+    def money(value):
+        if isinstance(value, (int, float)):
+            return f"{'-' if value < 0 else ''}₹{abs(value):,.0f}"
+        return str(value)
+
+    figures = "".join(
+        f'<div class="bk"><span class="bl">'
+        f'{esc(label.replace(" (₹)", ""))}</span>'
+        f'<span class="bv">{esc(money(value))}</span></div>'
+        for label, value in books.summary()[1:6])
+
+    if books.entries:
+        head = "".join(f"<th>{esc(c.replace('_inr', ' ₹').replace('_', ' '))}"
+                       f"</th>" for c in COLUMNS[:8])
+        rows = "".join(
+            "<tr>" + "".join(
+                f'<td class="{"a" if n in (0, 7) else ""}">{esc(cell)}</td>'
+                for n, cell in enumerate(entry.row()[:8]))
+            + "</tr>"
+            for entry in books.entries)
+        table = f'<div class="scrollx"><table><tr>{head}</tr>{rows}</table></div>'
+    else:
+        table = ('<div class="empty">No trades on your books yet. Every buy '
+                 'and sell your agents make lands here on its own.</div>')
+
+    return (
+        '<section class="card"><div class="ch"><h3>Your books</h3>'
+        f'<span class="meta">{len(books.entries)} entries &middot; kept '
+        f'automatically</span></div><div class="cb">'
+        f'<div class="bkgrid">{figures}</div>{table}'
+        '<div class="connect"><b>These books sync to a Google Sheet.</b> '
+        'The grid above is exactly what gets pushed &mdash; one tab per '
+        'merchant, replaced on every run, because the books are a projection '
+        'of a log that is the only thing allowed to accumulate. Run '
+        '<code>python -m scripts.market.sheets --sheet</code> '
+        'with a service-account key in <code>.env</code>; without one the same '
+        'command writes CSVs that open in Sheets as they are.</div>'
+        "</div></section>")
 
 
 def _catalogue_card(view) -> str:
@@ -1095,7 +1141,10 @@ DESK_JS = r"""<script>
 (function(){
 var M=JSON.parse(document.getElementById('mkt').textContent);
 """ + RAIL_JS + r"""
-var rows=M.rows,rails=M.rails,i=0,rate=4,timer=null,shown=null;
+/* ONE SPEED. The floor runs at the rate a person can actually read it;
+   a viewer fiddling with a multiplier is a viewer not watching the market. */
+var rows=M.rows,rails=M.rails,i=0,timer=null,shown=null;
+var TICK=320;
 var paid=0,money=0,ok=0,no=0,fixed=0;
 var $=function(id){return document.getElementById(id)};
 var reduce=matchMedia('(prefers-reduced-motion: reduce)').matches;
@@ -1156,8 +1205,7 @@ function step(){
 }
 function label(t,p){var b=$('pp');b.textContent=t;
   b.setAttribute('aria-pressed',p?'true':'false')}
-function play(){stop();timer=setInterval(step,Math.max(12,320/rate));
-  label('pause',true)}
+function play(){stop();timer=setInterval(step,TICK);label('pause',true)}
 function stop(){if(timer)clearInterval(timer);timer=null}
 function toggle(){if(timer){stop();label('play',false)}
   else if(i>=rows.length)restart();else play()}
@@ -1171,12 +1219,6 @@ function restart(){
 }
 $('pp').addEventListener('click',toggle);
 $('rs').addEventListener('click',restart);
-[].forEach.call(document.querySelectorAll('[data-rate]'),function(b){
-  b.addEventListener('click',function(){
-    rate=+b.dataset.rate;
-    [].forEach.call(document.querySelectorAll('[data-rate]'),function(o){
-      o.setAttribute('aria-pressed',o===b?'true':'false')});
-    if(timer)play()})});
 document.addEventListener('keydown',function(e){
   if(/^(INPUT|TEXTAREA)$/.test(e.target.tagName||''))return;
   if(e.key===' '){e.preventDefault();toggle()}});
@@ -1220,10 +1262,6 @@ def build_desk(db_path: str) -> str:
         '<div class="trans">'
         '<button class="pick" id="pp" aria-pressed="true">pause</button>'
         '<button class="pick" id="rs">restart</button>'
-        '<button class="pick" data-rate="1" aria-pressed="false">1&times;</button>'
-        '<button class="pick" data-rate="4" aria-pressed="true">4&times;</button>'
-        '<button class="pick" data-rate="20" aria-pressed="false">20&times;'
-        "</button>"
         f'<span class="clock">event <b id="seq">0</b> of {len(rows)}</span>'
         "</div>"
         '<div class="progress"><i id="bar"></i></div>'
@@ -1371,6 +1409,116 @@ def _board_html(desk, sale, summary) -> str:
         f'refuses is the control working.</div>')
 
 
+# =============================================================================
+#  THE FRONT DOOR
+# =============================================================================
+#
+# Two audiences, two doors, and the doors look like what is behind them: the
+# merchant card is light and the desk card is black, so a visitor knows which
+# world they are stepping into before they click. This is the only page where
+# the two worlds appear side by side, and it exists because a merchant should
+# never find a link to Razorpay's internal desk sitting on its own dashboard.
+
+LANDING_CSS = LIGHT_CSS + """
+.door{display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));
+  gap:18px;margin-top:26px}
+.d{border-radius:16px;padding:26px 26px 24px;text-decoration:none;
+  display:flex;flex-direction:column;min-height:250px;
+  border:1px solid var(--line);box-shadow:var(--shadow)}
+.d .tagline{font-size:11.5px;font-weight:700;letter-spacing:.11em;
+  text-transform:uppercase}
+.d h2{font-size:25px;font-weight:650;margin:9px 0 10px;letter-spacing:-.015em}
+.d p{font-size:14.5px;line-height:1.6;margin:0 0 18px}
+.d ul{margin:0 0 20px;padding-left:18px;font-size:13.5px;line-height:1.85}
+.d .cta{margin-top:auto;font-size:14px;font-weight:650}
+.d.merchant{background:var(--card);color:var(--ink)}
+.d.merchant .tagline{color:var(--brand)}
+.d.merchant p,.d.merchant ul{color:var(--mute)}
+.d.merchant .cta{color:var(--brand)}
+.d.merchant:hover{border-color:var(--brand)}
+.d.house{background:#000;border-color:#2A2A2A;color:#EDEDED;
+  font-family:ui-monospace,SFMono-Regular,Menlo,monospace}
+.d.house .tagline{color:#B69CFF}
+.d.house h2{font-weight:600}
+.d.house p,.d.house ul{color:#8E8E8E}
+.d.house .cta{color:#FFA028}
+.d.house:hover{border-color:#B69CFF}
+.hero{max-width:1240px;margin:0 auto;padding:54px 22px 0}
+.hero .kicker{font-size:12px;font-weight:700;letter-spacing:.13em;
+  text-transform:uppercase;color:var(--brand)}
+.hero h1{font-family:var(--serif);font-size:44px;font-weight:400;
+  line-height:1.12;margin:12px 0 14px;max-width:19ch;letter-spacing:-.015em}
+.hero .say{font-size:17px;color:var(--mute);max-width:64ch;line-height:1.6}
+@media(max-width:700px){.hero{padding-top:34px}.hero h1{font-size:32px}}
+.numbers{max-width:1240px;margin:34px auto 0;padding:0 22px;display:grid;
+  grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:12px}
+"""
+
+
+def build_landing(db_path: str, roster) -> str:
+    summary, _trades, events = load(db_path)
+    failures = failure_threads(events)
+    first = _page_name(roster[0])
+
+    return (
+        '<!doctype html>\n<html lang="en"><head><meta charset="utf-8">'
+        '<meta name="viewport" content="width=device-width,initial-scale=1">'
+        '<title>Agent Exchange</title>'
+        f"<style>{LANDING_CSS}</style></head><body>"
+
+        '<section class="hero">'
+        '<div class="kicker">Razorpay &middot; agentic commerce</div>'
+        "<h1>Every merchant gets an agent that trades for it.</h1>"
+        '<p class="say">Agents find each other, negotiate, and settle real '
+        'payments. Every rupee passes a policy gate that records its ruling '
+        'before the money moves &mdash; so a merchant can follow any trade '
+        'from what it wanted to the payment id the bank gave back.</p>'
+        "</section>"
+
+        + '<div class="numbers">'
+        + f'<div class="fig money"><div class="v">'
+          f'{rupees(summary.value_paise)}</div>'
+          f'<div class="l">settled between agents</div></div>'
+        + f'<div class="fig"><div class="v">{summary.merchants}</div>'
+          f'<div class="l">merchants trading</div></div>'
+        + f'<div class="fig brand"><div class="v">'
+          f'{summary.gate_allow + summary.gate_deny}</div>'
+          f'<div class="l">gate rulings recorded</div></div>'
+        + f'<div class="fig warn"><div class="v">{len(failures)}</div>'
+          f'<div class="l">payment mismatches repaired</div></div>'
+        + "</div>"
+
+        + '<div class="wrap"><div class="door">'
+
+        + f'<a class="d merchant" href="{esc(first)}">'
+          '<span class="tagline">For merchants</span>'
+          "<h2>Your agents, and your books</h2>"
+          "<p>See what your broker did with your money, and check any of it "
+          "against the payment ids Razorpay returned.</p>"
+          "<ul><li>What each of your four agents did, in its own words</li>"
+          "<li>Every buy and sell, kept as books that sync to your Google "
+          "Sheet</li>"
+          "<li>Your catalogue, and one box to ask for anything</li></ul>"
+          '<span class="cta">Open your dashboard &rarr;</span></a>'
+
+        + '<a class="d house" href="desk.html">'
+          '<span class="tagline">Razorpay internal</span>'
+          "<h2>The desk</h2>"
+          "<p>The live floor and the campaign board. Staff only &mdash; "
+          "ranking what is climbing across the whole client base is the one "
+          "thing only the payment processor can see.</p>"
+          "<ul><li>Every agent and every ruling, as it happens</li>"
+          "<li>Trending client campaigns, ranked</li>"
+          "<li>The intelligence auction</li></ul>"
+          '<span class="cta">Enter the desk &rarr;</span></a>'
+
+        + "</div></div>"
+
+        + '<footer>Every figure here is backed by a numbered event on the '
+          'audit trail.</footer></body></html>'
+    )
+
+
 def main(argv=None) -> int:
     args = list(argv if argv is not None else sys.argv[1:])
     db = args[0] if args else "runs/market.db"
@@ -1394,10 +1542,11 @@ def main(argv=None) -> int:
     first = build_merchant(db, roster[0], roster)
     (out / "replay.html").write_text(first, encoding="utf-8")
 
-    desk = build_desk(db)
-    (out / "desk.html").write_text(desk, encoding="utf-8")
+    (out / "desk.html").write_text(build_desk(db), encoding="utf-8")
+    (out / "index.html").write_text(build_landing(db, roster), encoding="utf-8")
 
-    print(f"wrote {written} merchant pages + replay.html + desk.html to {out}/")
+    print(f"wrote index.html + desk.html + {written} merchant pages "
+          f"(and replay.html) to {out}/")
     return 0
 
 

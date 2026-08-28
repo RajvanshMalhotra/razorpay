@@ -551,21 +551,6 @@ ROLE_BLURB = {
                     "remembering.",
 }
 
-# What a merchant would actually want pushed to it, in the words it would want.
-NOTIFY = {
-    "SETTLEMENT_COMPLETED": ("paid", "green"),
-    "SETTLEMENT_INITIATED": ("committed", ""),
-    "POLICY_DECIDED": ("gate", ""),
-    "DRIFT_DETECTED": ("books disagree", "red"),
-    "ACTOR_FROZEN": ("frozen", "red"),
-    "ACTOR_RESUMED": ("resumed", "green"),
-    "LESSON_CONSOLIDATED": ("learned", ""),
-    "POINTS_MINTED": ("points", "amber"),
-    "AUCTION_CLEARED": ("auction", "amber"),
-    "NEGOTIATION_ENDED": ("talks", ""),
-}
-
-
 def merchant_view(events, actor_id: str, rail_map=None):
     """Everything one merchant's own dashboard needs, scoped to that merchant."""
     rail_map = rail_map if rail_map is not None else rails(events)
@@ -616,24 +601,6 @@ def merchant_view(events, actor_id: str, rail_map=None):
         row["price"] = order.get("limit_price")
         row["qty"] = order.get("qty")
 
-    messages = []
-    for event in thread:
-        if event.type not in NOTIFY:
-            continue
-        if event.type == "POLICY_DECIDED" and \
-                event.payload.get("verdict") == "ALLOW":
-            continue  # an allow is not news; a refusal is
-        kind, tone = NOTIFY[event.type]
-        messages.append({
-            "seq": event.seq,
-            "kind": kind,
-            "tone": tone,
-            "from": event.actor_id,
-            "text": _notify_text(event),
-            "corr": event.correlation_id,
-        })
-    messages = list(reversed(messages))[:14]
-
     return {
         "actor_id": actor_id,
         "name": actor_id[2:].replace("_", " "),
@@ -646,7 +613,6 @@ def merchant_view(events, actor_id: str, rail_map=None):
         "points": points,
         "roles": roles,
         "catalogue": catalogue_rows,
-        "messages": messages,
         "corrs": sorted(mine_corrs),
     }
 
@@ -691,33 +657,3 @@ def _role_result(role, acted, thread, actor_id):
         lessons_kept = sum(1 for e in acted if e.type == "LESSON_CONSOLIDATED")
         return f"{lessons_kept} lessons kept"
     return ""
-
-
-def _notify_text(event):
-    payload = event.payload
-    if event.type == "SETTLEMENT_COMPLETED":
-        return f'Payment confirmed by Razorpay — {payload.get("razorpay_payment_id")}'
-    if event.type == "SETTLEMENT_INITIATED":
-        return (f'{(payload.get("amount") or 0) / 100:,.2f} rupees committed '
-                f'— {payload.get("razorpay_order_id")}')
-    if event.type == "POLICY_DECIDED":
-        return f'Refused: {payload.get("reason", "")}'
-    if event.type == "DRIFT_DETECTED":
-        return (f'Our books say {payload.get("local_status")}, Razorpay says '
-                f'{payload.get("remote_status")}. Checking.')
-    if event.type == "ACTOR_FROZEN":
-        return f'Trading paused: {payload.get("reason", "")}'
-    if event.type == "ACTOR_RESUMED":
-        return "Sorted. Trading resumed."
-    if event.type == "LESSON_CONSOLIDATED":
-        return _clip(payload.get("text"), 200)
-    if event.type == "POINTS_MINTED":
-        return f'{payload.get("points")} points earned'
-    if event.type == "AUCTION_CLEARED":
-        return (f'{payload.get("winner_id")} won the intelligence lot at '
-                f'{payload.get("price")} points')
-    if event.type == "NEGOTIATION_ENDED":
-        return ("Agreed at " + str(payload.get("final_price"))
-                if payload.get("agreed")
-                else f'No deal — {payload.get("reason", "")}')
-    return event.type
