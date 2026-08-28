@@ -43,6 +43,7 @@ from __future__ import annotations
 
 import html
 import json
+import math
 import pathlib
 import sys
 from datetime import datetime, timezone
@@ -1484,6 +1485,362 @@ def _icon(name: str, size: int = 20) -> str:
             f' aria-hidden="true">{ICONS[name]}</svg>')
 
 
+def _network_data(events, rail_map, roster):
+    """The real trading graph: who found whom, and what they paid.
+
+    THE LEVERAGE, MADE TOUCHABLE. A merchant reading a sentence about network
+    effects learns nothing. A merchant that clicks its own name and watches
+    lines fire out to counterparties it never introduced itself to has
+    understood the product. Every edge below is a trade that happened; there
+    are no illustrative links.
+
+    Positions are computed here rather than in the browser so the layout is
+    identical on every render and in every screenshot.
+    """
+    from exchange.books import entries_for
+
+    edges = sorted({(r["buyer"], s["head"])
+                    for r in rail_map.values()
+                    for s in r["stations"]
+                    if s["key"] == "picked" and s["head"].startswith("m_")})
+    degree: dict[str, int] = {}
+    for a, b in edges:
+        degree[a] = degree.get(a, 0) + 1
+        degree[b] = degree.get(b, 0) + 1
+
+    # Alphabetical order puts the Bangalore cafés beside each other and the
+    # suppliers beside each other, so the chords read as a market rather than
+    # as noise. It is also deterministic, which a random layout is not.
+    ring = [m for m in roster]
+    n = len(ring)
+    cx = cy = 300.0
+    radius = 232.0
+    nodes = []
+    at = {}
+    for i, actor in enumerate(ring):
+        angle = (i / n) * math.tau - math.pi / 2
+        x = cx + radius * math.cos(angle)
+        y = cy + radius * math.sin(angle)
+        at[actor] = (x, y)
+        lx = cx + (radius + 17) * math.cos(angle)
+        ly = cy + (radius + 17) * math.sin(angle)
+        nodes.append({
+            "id": actor,
+            "label": actor[2:].replace("_", " "),
+            "x": round(x, 1), "y": round(y, 1),
+            "lx": round(lx, 1), "ly": round(ly, 1),
+            "rot": round(math.degrees(angle) + (180 if math.cos(angle) < 0
+                                                else 0), 2),
+            "anchor": "end" if math.cos(angle) < 0 else "start",
+            "deg": degree.get(actor, 0),
+        })
+
+    # Chords bend toward the middle, so the eye follows a relationship across
+    # the market instead of around its edge.
+    links = []
+    for a, b in edges:
+        (x1, y1), (x2, y2) = at[a], at[b]
+        mx, my = (x1 + x2) / 2, (y1 + y2) / 2
+        qx, qy = cx + (mx - cx) * 0.28, cy + (my - cy) * 0.28
+        links.append({"a": a, "b": b,
+                      "d": f"M{x1:.1f},{y1:.1f} Q{qx:.1f},{qy:.1f} "
+                           f"{x2:.1f},{y2:.1f}"})
+
+    trades = {}
+    for actor in roster:
+        rows = entries_for(events, actor).entries
+        if not rows:
+            continue
+        trades[actor] = [{
+            "with": e.counterparty,
+            "dir": e.direction,
+            "item": _clip_words(e.item, 40),
+            "amt": f"₹{e.amount_inr:,.0f}",
+        } for e in rows[:4]]
+
+    return {"nodes": nodes, "links": links, "trades": trades,
+            "busiest": max(degree, key=degree.get) if degree else None}
+
+
+def _network_html(net) -> str:
+    if not net["nodes"]:
+        return ""
+    links = "".join(
+        f'<path class="lk" data-a="{esc(l["a"])}" data-b="{esc(l["b"])}" '
+        f'd="{l["d"]}"/>' for l in net["links"])
+    nodes = "".join(
+        f'<g class="nd" data-id="{esc(n["id"])}" tabindex="0" role="button" '
+        f'aria-label="{esc(n["label"])}, {n["deg"]} trading partners">'
+        f'<circle cx="{n["x"]}" cy="{n["y"]}" r="{4.5 + min(n["deg"], 6) * .9:.1f}"/>'
+        f'<circle class="hit" cx="{n["x"]}" cy="{n["y"]}" r="15"/>'
+        f'<text x="{n["lx"]}" y="{n["ly"]}" text-anchor="{n["anchor"]}" '
+        f'transform="rotate({n["rot"]} {n["lx"]} {n["ly"]})">'
+        f'{esc(n["label"])}</text></g>'
+        for n in net["nodes"])
+    return (
+        '<div class="net">'
+        '<svg viewBox="0 0 600 600" class="graph" role="img" '
+        'aria-label="Trading relationships between merchants">'
+        f'<g class="links">{links}</g><g class="nodes">{nodes}</g></svg>'
+        '<aside class="dossier" id="dossier">'
+        '<div class="dh"><span class="who" id="dwho">the whole market</span>'
+        '<span class="deg" id="ddeg"></span></div>'
+        '<div class="db" id="dbody"></div>'
+        '<p class="hint" id="dhint">Hover any merchant. These are real '
+        'counterparties, found by agents with no introduction.</p>'
+        "</aside></div>")
+
+
+def _auction_html(sale) -> str:
+    """The sealed auction, playable.
+
+    A second-price auction is the one mechanism here that nobody believes
+    until they have lost one. So: eight real sealed bids, face down, and the
+    visitor's own number goes in beside them. The rule is applied to their
+    bid exactly as it was applied to the eight.
+    """
+    if not sale:
+        return ""
+    envelopes = "".join(
+        f'<li class="env" data-amt="{e.payload.get("amount")}" '
+        f'data-who="{esc(e.actor_id[2:].replace("_", " "))}">'
+        f'<span class="seal"></span>'
+        f'<span class="bw">{esc(e.actor_id[2:].replace("_", " "))}</span>'
+        f'<span class="ba">{esc(e.payload.get("amount"))}</span></li>'
+        for e in sale["bids"])
+    return (
+        '<div class="auction">'
+        f'<div class="lot"><span class="lb">the lot</span>'
+        f'<p>&ldquo;{esc(sale["headline"])}&rdquo;</p>'
+        f'<span class="src">mined from {sale["contributors"]} merchants&rsquo; '
+        f'settled trades &middot; no merchant named</span></div>'
+        '<div class="play">'
+        '<label for="bid">Your sealed bid, in points</label>'
+        '<div class="bidrow"><input id="bid" type="number" min="0" max="9999" '
+        'step="50" placeholder="1200" inputmode="numeric">'
+        '<button id="place">Open the envelopes</button></div>'
+        '<p class="verdict" id="verdict" role="status"></p>'
+        f'<ul class="envs" id="envs">{envelopes}</ul>'
+        '</div></div>')
+
+
+NET_CSS = """
+/* --- THE SIGNATURE: the network, touchable ------------------------------- */
+.net{display:grid;grid-template-columns:minmax(0,1.45fr) minmax(0,1fr);
+  gap:clamp(20px,3vw,44px);align-items:center}
+@media(max-width:900px){.net{grid-template-columns:1fr}}
+.graph{width:100%;height:auto;overflow:visible}
+.graph .lk{fill:none;stroke:#2A2E38;stroke-width:1;
+  transition:stroke .3s,stroke-width .3s,opacity .3s}
+.graph.on .lk{opacity:.28}
+.graph .lk.hot{stroke:var(--ember);stroke-width:1.7;opacity:1}
+.graph .nd circle{fill:#3B404C;transition:fill .3s,r .3s}
+.graph .nd .hit{fill:transparent;cursor:pointer}
+.graph .nd text{font-family:var(--mono);font-size:9.6px;fill:#98A1B2;
+  transition:fill .3s;pointer-events:none}
+.graph.on .nd{opacity:.4;transition:opacity .3s}
+.graph .nd.hot,.graph .nd.near{opacity:1}
+.graph .nd.hot circle{fill:var(--ember)}
+.graph .nd.hot text{fill:var(--bright)}
+.graph .nd.near circle{fill:var(--mint)}
+.graph .nd.near text{fill:var(--mid)}
+.graph .nd:focus{outline:none}
+.graph .nd:focus-visible circle{stroke:var(--bright);stroke-width:2}
+
+.dossier{border:1px solid var(--line);border-radius:13px;background:var(--deep);
+  min-height:274px;display:flex;flex-direction:column}
+.dossier .dh{display:flex;align-items:baseline;gap:10px;padding:13px 16px;
+  border-bottom:1px solid var(--line)}
+.dossier .who{font-family:var(--mono);font-size:14px;color:var(--ember)}
+.dossier .deg{margin-left:auto;font-family:var(--mono);font-size:11px;
+  color:var(--low)}
+.dossier .db{padding:6px 16px;flex:1}
+.dossier .hint{margin:0;padding:12px 16px 16px;font-size:13px;
+  color:var(--low);line-height:1.5;border-top:1px solid var(--line)}
+.tr{display:grid;grid-template-columns:auto 1fr auto;gap:11px;padding:9px 0;
+  border-bottom:1px solid var(--line);align-items:baseline;font-size:13px}
+.tr:last-child{border-bottom:0}
+.tr .d{font-family:var(--mono);font-size:10px;letter-spacing:.09em;
+  text-transform:uppercase;color:var(--low)}
+.tr .n{color:var(--mid);overflow:hidden;text-overflow:ellipsis;
+  white-space:nowrap}
+.tr .a{font-family:var(--mono);color:var(--ember);
+  font-variant-numeric:tabular-nums}
+
+/* --- the playable auction ------------------------------------------------ */
+.auction{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.15fr);
+  gap:clamp(20px,3vw,40px);align-items:start}
+@media(max-width:900px){.auction{grid-template-columns:1fr}}
+.lot{border:1px solid var(--iris);border-radius:13px;padding:20px 22px 22px;
+  background:rgba(156,140,255,.05)}
+.lot .lb{font-family:var(--mono);font-size:10px;letter-spacing:.16em;
+  text-transform:uppercase;color:var(--iris)}
+.lot p{font-family:var(--disp);font-size:20px;line-height:1.32;margin:12px 0 0;
+  letter-spacing:-.018em}
+.lot .src{display:block;margin-top:14px;font-family:var(--mono);font-size:11px;
+  color:var(--low);line-height:1.6}
+.play label{display:block;font-size:13px;color:var(--mid);margin-bottom:9px}
+.bidrow{display:flex;gap:9px}
+.bidrow input{flex:1;background:var(--deep);border:1px solid var(--edge);
+  border-radius:10px;color:var(--bright);font-family:var(--mono);font-size:17px;
+  padding:12px 14px;min-width:0}
+.bidrow input:focus{outline:none;border-color:var(--iris)}
+.bidrow button{background:var(--iris);border:0;border-radius:10px;color:#0B0C10;
+  font-family:var(--sans);font-size:14px;font-weight:650;padding:0 20px;
+  cursor:pointer;white-space:nowrap;
+  transition:transform .2s cubic-bezier(.16,1,.3,1),filter .2s}
+.bidrow button:hover{filter:brightness(1.08)}
+.bidrow button:active{transform:scale(.985);transition-duration:.09s}
+.verdict{min-height:22px;margin:13px 0 0;font-size:15px;line-height:1.5;
+  color:var(--mid)}
+.verdict b{color:var(--mint)}
+.verdict i{font-style:normal;color:var(--flare)}
+.envs{list-style:none;margin:14px 0 0;padding:0;display:grid;gap:1px;
+  background:var(--line);border:1px solid var(--line);border-radius:11px;
+  overflow:hidden}
+.env{display:grid;grid-template-columns:auto 1fr auto;gap:12px;
+  padding:10px 14px;background:var(--deep);align-items:center;
+  font-family:var(--mono);font-size:13px}
+.env .seal{width:7px;height:7px;border-radius:1px;background:var(--edge);
+  transition:background .3s}
+.env .bw,.env .ba{opacity:0;transition:opacity .35s}
+.env .bw{color:var(--mid)}
+.env .ba{color:var(--bright);font-variant-numeric:tabular-nums}
+.env.open .bw,.env.open .ba{opacity:1}
+.env.open .seal{background:var(--low)}
+.env.won{background:rgba(52,226,160,.09)}
+.env.won .seal{background:var(--mint)}
+.env.won .ba{color:var(--mint)}
+.env.mine{background:rgba(156,140,255,.11)}
+.env.mine .seal{background:var(--iris)}
+.env.mine .bw{color:var(--iris)}
+.env.mine.won{background:linear-gradient(90deg,rgba(156,140,255,.13),
+  rgba(52,226,160,.12))}
+.env.mine.won .ba{color:var(--mint)}
+@media(prefers-reduced-motion:reduce){
+  .env .bw,.env .ba,.graph .lk,.graph .nd{transition-duration:.01ms!important}}
+"""
+
+
+NET_JS = r"""
+/* --- the network ------------------------------------------------------- */
+var NET=JSON.parse(document.getElementById('net').textContent);
+var graph=document.querySelector('.graph');
+if(graph){
+  var byId={}; NET.nodes.forEach(function(n){byId[n.id]=n});
+  var partners={};
+  NET.links.forEach(function(l){
+    (partners[l.a]=partners[l.a]||[]).push(l.b);
+    (partners[l.b]=partners[l.b]||[]).push(l.a);
+  });
+  var dwho=document.getElementById('dwho'),ddeg=document.getElementById('ddeg'),
+      dbody=document.getElementById('dbody'),dhint=document.getElementById('dhint');
+  var tour=null,taken=false;
+
+  function clear(){
+    graph.classList.remove('on');
+    [].forEach.call(graph.querySelectorAll('.hot,.near'),function(el){
+      el.classList.remove('hot','near')});
+  }
+  function focusOn(id){
+    clear();
+    graph.classList.add('on');
+    var mates=partners[id]||[];
+    [].forEach.call(graph.querySelectorAll('.lk'),function(p){
+      if(p.dataset.a===id||p.dataset.b===id)p.classList.add('hot')});
+    [].forEach.call(graph.querySelectorAll('.nd'),function(g){
+      if(g.dataset.id===id)g.classList.add('hot');
+      else if(mates.indexOf(g.dataset.id)>=0)g.classList.add('near');
+    });
+    var node=byId[id];
+    dwho.textContent=node.label;
+    ddeg.textContent=mates.length+(mates.length===1?' partner':' partners');
+    var rows=NET.trades[id]||[];
+    dbody.innerHTML=rows.length?rows.map(function(t){
+      return '<div class="tr"><span class="d">'+esc(t.dir)+'</span>'+
+        '<span class="n">'+esc(t.item)+'</span>'+
+        '<span class="a">'+esc(t.amt)+'</span></div>'}).join('')
+      :'<div class="tr"><span class="n">No settled trades on this '+
+       'merchant&rsquo;s book yet.</span></div>';
+    dhint.textContent=rows.length
+      ? 'Counterparties its agent found on its own. Nobody made an introduction.'
+      : 'Its agent posted and negotiated, but nothing cleared this run.';
+  }
+  function stopTour(){if(tour){clearInterval(tour);tour=null}taken=true}
+
+  [].forEach.call(graph.querySelectorAll('.nd'),function(g){
+    g.addEventListener('pointerenter',function(){stopTour();focusOn(g.dataset.id)});
+    g.addEventListener('focus',function(){stopTour();focusOn(g.dataset.id)});
+  });
+  graph.addEventListener('pointerleave',function(){if(taken)clear()});
+
+  /* It tours itself until somebody takes over, so the section is alive
+     before it is touched — and it never fights a visitor for control. */
+  if(!matchMedia('(prefers-reduced-motion: reduce)').matches){
+    var linked=NET.nodes.filter(function(n){return n.deg>0}),k=0;
+    var start=function(){
+      if(taken)return;
+      focusOn(linked[k++%linked.length].id);
+      tour=setInterval(function(){
+        if(taken||document.hidden)return;
+        focusOn(linked[k++%linked.length].id);
+      },2100);
+    };
+    var seen=new IntersectionObserver(function(es){
+      es.forEach(function(e){if(e.isIntersecting){start();seen.disconnect()}})
+    },{threshold:.35});
+    seen.observe(graph);
+  }else{
+    focusOn(NET.busiest);
+  }
+}
+
+/* --- the sealed auction ------------------------------------------------ */
+var place=document.getElementById('place');
+if(place){
+  var envs=[].slice.call(document.querySelectorAll('.env'));
+  var input=document.getElementById('bid'),
+      verdict=document.getElementById('verdict'),
+      list=document.getElementById('envs');
+  place.addEventListener('click',function(){
+    var mine=parseInt(input.value,10);
+    if(isNaN(mine)||mine<0){input.focus();
+      verdict.textContent='Put a number in first — any number of points.';
+      return}
+
+    list.innerHTML='';
+    var all=envs.map(function(e){
+      return {who:e.dataset.who,amt:+e.dataset.amt,mine:false}});
+    all.push({who:'you',amt:mine,mine:true});
+    all.sort(function(a,b){return b.amt-a.amt});
+
+    /* Second price, applied to the visitor's bid exactly as it was applied
+       to the eight real ones: the winner pays what the runner-up bid. */
+    var pays=all[1].amt, iWon=all[0].mine;
+    all.forEach(function(b,i){
+      var li=document.createElement('li');
+      li.className='env'+(i===0?' won':'')+(b.mine?' mine':'');
+      li.innerHTML='<span class="seal"></span><span class="bw">'+esc(b.who)+
+        '</span><span class="ba">'+b.amt+'</span>';
+      list.appendChild(li);
+      setTimeout(function(){li.classList.add('open')},90+i*85);
+    });
+    setTimeout(function(){
+      verdict.innerHTML=iWon
+        ? 'You won it — and you pay <b>'+pays+'</b>, not your '+mine+
+          '. The runner-up sets the price, which is why bidding what it is '+
+          'truly worth to you is the winning move.'
+        : '<i>'+esc(all[0].who)+'</i> outbid you at '+all[0].amt+
+          '. Bidding higher than your honest valuation is the only way to '+
+          'lose money here, so the rule does that thinking for you.';
+    },90+all.length*85);
+  });
+  input.addEventListener('keydown',function(e){
+    if(e.key==='Enter')place.click()});
+}
+"""
+
+
 LANDING_CSS = """
 @font-face{
   font-family:'Fraunces Display';
@@ -1717,7 +2074,7 @@ footer{padding:26px clamp(20px,5vw,64px);border-top:1px solid var(--line);
   .js .st,.js .pr,.js .jobs,.js .wheel{opacity:1;transform:none}
   .enter,.spread .track i,.spread .val{transition-duration:.01ms!important}
 }
-"""
+""" + NET_CSS
 
 
 LANDING_JS = r"""<script>
@@ -1776,6 +2133,7 @@ if(!('IntersectionObserver' in window)){
   },{threshold:.12});
   reveal.forEach(function(el){io.observe(el)});
 }
+""" + NET_JS + """
 })();
 </script>"""
 
@@ -1800,6 +2158,7 @@ def build_landing(db_path: str, roster) -> str:
 
     hero = _hero_deal(rail_map)
     deal = _deal_payload(hero)
+    net = _network_data(events, rail_map, roster)
 
     return (
         '<!doctype html>\n<html lang="en"><head><meta charset="utf-8">'
@@ -1834,10 +2193,11 @@ def build_landing(db_path: str, roster) -> str:
         + '<section class="band dark" style="padding-top:0"><div class="in">'
         + '<div class="lead"><h2>One shop cannot see the market. '
           '<em>A network can.</em></h2>'
-          '<p>Razorpay already sits between every business on it. Your '
-          'suppliers are on it. So are your buyers, and so is every merchant '
-          'who has already tried the thing you are about to try. The network '
-          'is there; nobody has switched it on.</p></div>'
+          '<p>Every line here is a trade that happened. Nobody made an '
+          'introduction &mdash; the agents found each other. Touch any '
+          'merchant to see who its agent reached and what it paid.</p></div>'
+        + _network_html(net)
+        + '<div style="height:clamp(46px,6vw,78px)"></div>'
         + _steps_html()
         + "</div></section>"
 
@@ -1851,6 +2211,12 @@ def build_landing(db_path: str, roster) -> str:
 
         # ---- the flywheel --------------------------------------------------
         + '<section class="band dark"><div class="in">'
+        + '<div class="lead"><h2>Try winning one.</h2>'
+          '<p>Eight agents bid on this lot in sealed envelopes. Put your own '
+          'number in and open them &mdash; the same rule is applied to your '
+          'bid as was applied to theirs.</p></div>'
+        + _auction_html(sale)
+        + '<div style="height:clamp(52px,7vw,90px)"></div>'
         + '<div class="lead"><h2>And you are paid when your win '
           '<em>is the thing being sold</em>.</h2>'
           '<p>Razorpay can see what is working across the whole client base — '
@@ -1903,6 +2269,8 @@ def build_landing(db_path: str, roster) -> str:
           f'negotiation above is quoted, not written.</footer>'
 
         + f'<script type="application/json" id="deal">{deal}</script>'
+        + f'<script type="application/json" id="net">'
+          f'{json.dumps(net, separators=(",", ":"))}</script>'
         + LANDING_JS + "</body></html>"
     )
 
