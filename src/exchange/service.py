@@ -284,6 +284,57 @@ class Exchange:
 
         return decision, settlement
 
+    def mint_for_settlement(self, settlement_id: str, match_id: str,
+                             buyer_id: str, amount: int,
+                             correlation_id: str, causation_id: str) -> None:
+        """Mint for a settlement that completed after the fact.
+
+        `_mint_earned` is reached from `execute_match` and needs the Match
+        object, which a repair does not have — it has a settlement in the log
+        and a capture at Razorpay. This rebuilds the two figures the rule
+        actually needs, from the log, using the same checks:
+
+          the ask price, from the counterparty's posted order
+          the quantity, from the match this settlement was for
+
+        The accountant calls it when it repairs a drift, so points follow the
+        money rather than the moment it arrived.
+        """
+        state = self.state()
+        match_event = next(
+            (e for e in self.log.read_all()
+             if e.type == ev.MATCH_PROPOSED
+             and e.payload.get("match_id") == match_id),
+            None,
+        )
+        if match_event is None:
+            return
+        qty = match_event.payload.get("qty", 0)
+        ask_order_id = match_event.payload.get("ask_order_id")
+        posted = state.posted_orders.get(ask_order_id) if ask_order_id else None
+        # The same rule the inline path uses: the ask must belong to someone
+        # else, or a merchant mints against a price it set for itself.
+        if posted is None or posted.actor_id == buyer_id or posted.side != Side.ASK:
+            return
+
+        points = points_for_settlement(
+            amount=amount,
+            ask_price=posted.limit_price,
+            qty=qty,
+            delivered=True,
+        )
+        if points <= 0:
+            return
+        self._minter.mint(
+            actor_id=buyer_id,
+            points=points,
+            source_settlement_id=settlement_id,
+            correlation_id=correlation_id,
+            causation_id=causation_id,
+            reason=(f"margin captured on {settlement_id}, paid late: "
+                    f"{amount} against an ask of {posted.limit_price} x {qty}"),
+        )
+
     def _mint_earned(self, match: Match, buyer_id: str, seller_id: str,
                      settlement: Settlement, currency: Currency,
                      correlation_id: str, causation_id: str) -> None:

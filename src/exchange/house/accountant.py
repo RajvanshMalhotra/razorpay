@@ -726,6 +726,44 @@ class Accountant:
             causation_id=causation_id,
         )
 
+    def _earn_on_repair(self, initiated, payment_id: str) -> None:
+        """Points follow the money, not the moment.
+
+        Minting lives in `execute_match`, which runs when the rail returns
+        COMPLETED — inline, at the till. A settlement that completes LATER,
+        because someone paid its link and the accountant found the capture,
+        used to skip minting entirely: the money arrived and the economy did
+        not notice.
+
+        That is wrong on the merits rather than merely inconvenient. A
+        merchant whose buyer paid an hour late traded exactly as well as one
+        whose buyer paid at once, and the rule is that points reward margin
+        captured — nothing in it is about timing. Left unfixed it also
+        happened to be the ONLY path our own market takes, since every
+        merchant here pays its link after the trade.
+
+        Minted on the trade's own correlation, like every other consequence
+        of that trade, so replaying the deal still answers "what did this
+        earn".
+        """
+        if self._exchange is None:
+            return
+        payload = initiated.payload
+        if payload.get("currency") not in (None, "INR"):
+            return
+        try:
+            self._exchange.mint_for_settlement(
+                settlement_id=payload["settlement_id"],
+                match_id=payload.get("match_id", ""),
+                buyer_id=initiated.actor_id,
+                amount=payload.get("amount", 0),
+                correlation_id=initiated.correlation_id,
+                causation_id=initiated.event_id,
+            )
+        except Exception:  # noqa: BLE001 - a lost mint must not lose a repair
+            _log.exception("minting after repair failed for %s",
+                           payload.get("settlement_id"))
+
     def repair(self, drift: Drift) -> None:
         """Make the local record agree with Razorpay's.
 
@@ -812,6 +850,7 @@ class Accountant:
             correlation_id=initiated.correlation_id,
             causation_id=initiated.event_id,
         )
+        self._earn_on_repair(initiated, payment_id)
 
     def resume(
         self,
