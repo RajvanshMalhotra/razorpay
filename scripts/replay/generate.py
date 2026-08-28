@@ -45,8 +45,15 @@ font-variant-numeric:tabular-nums lining-nums}
 .wrap{max-width:900px;margin:0 auto;padding:0 22px 90px}
 .beat{padding:46px 0;border-top:1px solid var(--line)}
 .beat:first-of-type{border-top:0}
-.beat>.num{font:600 11px/1 ui-monospace,monospace;letter-spacing:.14em;
-color:var(--dim);text-transform:uppercase;margin-bottom:8px}
+/* Two-digit markers, mono, low contrast — structure a reader feels rather
+   than reads. They must not compete with the heading beside them, so the
+   number sits at the same baseline and half the weight of the words. */
+.beat>.num{display:flex;gap:12px;align-items:baseline;margin-bottom:10px;
+font:500 11.5px/1 ui-monospace,SFMono-Regular,Menlo,monospace;
+letter-spacing:.13em;text-transform:uppercase;color:var(--dim)}
+.beat>.num .n{color:var(--line);font-weight:600;
+/* darker than the rule it matches, so it reads as ink not as a border */
+filter:brightness(.72)}
 .lede{color:var(--dim);max-width:64ch;margin:0 0 20px}
 /* The one interactive control on the page. It is used once, deliberately,
    so it gets feedback rather than motion — and a visible focus ring,
@@ -292,7 +299,7 @@ def build(db_path: str) -> str:
 </div>
 
 <section class="beat">
-  <div class="num">One &middot; the market</div>
+  <div class="num"><span class="n">01</span><span>the market</span></div>
   <div class="grid">{stats}</div>
   <p class="lede" style="margin-top:18px">{summary.walked} negotiations ended
     without a deal. That is not a failure rate — agents decline, and a market
@@ -300,7 +307,7 @@ def build(db_path: str) -> str:
 </section>
 
 <section class="beat">
-  <div class="num">Two &middot; one trade, end to end</div>
+  <div class="num"><span class="n">02</span><span>one trade, end to end</span></div>
   <p class="lede">Discovery, a real negotiation, the gate refusing a full lot
     to a stranger and then allowing a smaller one, and money moving.
     {len(trials)} of this log's trades were refused and re-tried smaller.</p>
@@ -308,18 +315,18 @@ def build(db_path: str) -> str:
 </section>
 
 <section class="beat">
-  <div class="num">Three &middot; the failure, caught and repaired</div>
+  <div class="num"><span class="n">03</span><span>the failure, caught and repaired</span></div>
   <p class="lede">{esc(failure_note)}</p>
   {failure_html}
 </section>
 
 <section class="beat">
-  <div class="num">Four &middot; the intelligence economy</div>
+  <div class="num"><span class="n">04</span><span>the intelligence economy</span></div>
   {econ}
 </section>
 
 <section class="beat">
-  <div class="num">Five &middot; what the agents remember</div>
+  <div class="num"><span class="n">05</span><span>what the agents remember</span></div>
   <p class="lede">Each merchant's Subconscious compresses a whole trade into
     one durable sentence, typed by what it may affect: a reliability lesson
     can move a counterparty's standing, a behavioural one never can.</p>
