@@ -50,6 +50,11 @@ TURN_ENDED = "TURN_ENDED"
 COUNTERPARTY_CHOSEN = "COUNTERPARTY_CHOSEN"
 INSIGHT_MINTED = "INSIGHT_MINTED"
 PRIVACY_REFUSED = "PRIVACY_REFUSED"
+# One row of Razorpay's internal campaign board. Marked `razorpay_internal`
+# in its own payload because the audience is the point: the ranking is the
+# house's view across every client, and a merchant reaches it only by
+# winning the auction for a lot minted from it.
+CAMPAIGN_RANKED = "CAMPAIGN_RANKED"
 AUCTION_OPENED = "AUCTION_OPENED"
 BID_PLACED = "BID_PLACED"
 AUCTION_CLEARED = "AUCTION_CLEARED"

@@ -202,12 +202,18 @@ SAYS = {
 }
 
 
-def tape(events, limit: int = 420):
+def tape(events, limit: int = 2000):
     """The market as a stream a viewer can watch play.
 
-    Every row is a real event in the order it happened. Trimmed to the types
-    that carry the story — a viewer watching 961 rows learns less than one
-    watching 400, and the full log is a click away in each panel.
+    Every row is a real event in the order it happened, filtered to the types
+    that carry the story.
+
+    THE LIMIT NO LONGER SAMPLES, AND THAT IS THE POINT. It used to keep every
+    n-th row to hold the tape near 400, which quietly meant the page's live
+    counters disagreed with its own totals — 26 allowed on screen against 49
+    in the footer. A replay whose two halves report different numbers is
+    doing exactly what the accountant exists to catch. The limit stays as a
+    guard against an enormous log, set well above any run this produces.
     """
     keep = {
         "ORDER_POSTED", "COUNTERPARTY_CHOSEN", "NEGOTIATION_ROUND",
@@ -298,6 +304,27 @@ def storefront(events):
         "rows": [{"actor": e.actor_id, "type": e.type,
                   "says": SAYS.get(e.type, e.type), "seq": e.seq}
                  for e in chosen],
+    }
+
+
+def board(events):
+    """Razorpay's internal campaign board, exactly as it was published.
+
+    Rows and refusals share one correlation id, so the board comes back
+    whole — including what was kept off it, which is the half a reader is
+    least likely to be shown and most entitled to see.
+    """
+    rows = [e for e in events if e.type == "CAMPAIGN_RANKED"]
+    if not rows:
+        return None
+    corr = rows[0].correlation_id
+    refused = [e for e in events
+               if e.type == "PRIVACY_REFUSED"
+               and e.correlation_id == corr]
+    return {
+        "correlation_id": corr,
+        "rows": [e.payload for e in sorted(rows, key=lambda e: e.payload["rank"])],
+        "refused": [e.payload for e in refused],
     }
 
 
