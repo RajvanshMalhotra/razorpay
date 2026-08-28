@@ -28,15 +28,35 @@ CSS = """
    feel they are reading evidence. */
 :root{--ink:#12161c;--dim:#6b7684;--line:#e3e7ec;--bg:#fbfcfd;--card:#fff;
 --ok:#0f7b4f;--no:#a8331f;--gate:#1f4fa8;--accent:#8a5a00}
+
+/* A judge may open this in either theme, and a light-only page in dark mode
+   reads as unfinished. Only the tokens change. */
+@media (prefers-color-scheme: dark){
+  :root{--ink:#e8ecf1;--dim:#98a3b2;--line:#232a33;--bg:#0e1116;--card:#151a21;
+  --ok:#4ec38a;--no:#ef8571;--gate:#7aa6f0;--accent:#d9a441}
+}
 *{box-sizing:border-box}
 body{margin:0;background:var(--bg);color:var(--ink);
-font:15px/1.55 ui-sans-serif,-apple-system,"Segoe UI",Roboto,sans-serif}
+font:15px/1.6 ui-sans-serif,-apple-system,"Segoe UI",Roboto,sans-serif;
+-webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility;
+/* Every figure on this page is evidence, and evidence that shifts column
+   as it changes is harder to compare. Lining, tabular figures throughout. */
+font-variant-numeric:tabular-nums lining-nums}
 .wrap{max-width:900px;margin:0 auto;padding:0 22px 90px}
 .beat{padding:46px 0;border-top:1px solid var(--line)}
 .beat:first-of-type{border-top:0}
 .beat>.num{font:600 11px/1 ui-monospace,monospace;letter-spacing:.14em;
 color:var(--dim);text-transform:uppercase;margin-bottom:8px}
-.lede{color:var(--dim);max-width:62ch;margin:0 0 20px}
+.lede{color:var(--dim);max-width:64ch;margin:0 0 20px}
+/* The one interactive control on the page. It is used once, deliberately,
+   so it gets feedback rather than motion — and a visible focus ring,
+   because a keyboard user should never have to guess where they are. */
+summary{border-radius:6px;padding:2px 4px;margin:-2px -4px;
+transition:color 120ms ease}
+summary:hover{color:var(--ink)}
+summary:focus-visible{outline:2px solid var(--gate);outline-offset:2px}
+@media (prefers-reduced-motion: reduce){*{transition-duration:0.01ms!important;
+animation-duration:0.01ms!important}}
 .mono{font-family:ui-monospace,SFMono-Regular,Menlo,monospace}
 .big{font-size:31px;letter-spacing:-.025em;margin:0 0 4px}
 .hero{padding:54px 0 30px}
@@ -46,13 +66,14 @@ color:var(--dim);text-transform:uppercase;margin-bottom:8px}
 .q{border-left:2px solid var(--line);padding:2px 0 2px 14px;margin:10px 0;
 color:var(--ink)}
 .q .by{color:var(--dim);font-size:12.5px}
-h1{font-size:26px;margin:0 0 6px;letter-spacing:-.02em}
+h1{font-size:30px;margin:0 0 10px;letter-spacing:-.028em;line-height:1.18;
+max-width:20ch}
 h2{font-size:19px;margin:44px 0 12px;letter-spacing:-.01em}
 .sub{color:var(--dim);margin:0 0 28px}
 .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:12px}
 .stat{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:14px}
-.stat b{display:block;font-size:22px;letter-spacing:-.02em}
-.stat span{color:var(--dim);font-size:12.5px}
+.stat b{display:block;font-size:23px;letter-spacing:-.022em;line-height:1.25}
+.stat span{color:var(--dim);font-size:12.5px;display:block;margin-top:3px}
 .card{background:var(--card);border:1px solid var(--line);border-radius:10px;
 padding:18px;margin:14px 0}
 .head{display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap;
