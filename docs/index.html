@@ -6,30 +6,40 @@
   font-weight:400 900;font-style:normal;font-display:swap;
 }
 :root{
-  /* OKLCH, so every step is perceptually even and a tint is a calculation
-     rather than a guess. The ground is navy-tinted rather than neutral
-     black: pure black belongs to the terminal, and a payments product is
-     allowed a colour of its own.
+  /* THE PAGE IS LIGHT AND THE MACHINES ARE DARK.
+     Every rejected version shared one shape — a dark page with a bright
+     accent — which is the developer-tool default. This is a payments
+     product for shopkeepers, read on a phone in daylight; Razorpay's own
+     site is light. So the page is paper and the machinery is inset into it
+     in dark panels, which is also what the product actually is: ordinary
+     business on top, agents underneath, visibly.
 
-     THREE SIGNALS, NOT FOUR. Iris is the brand and carries money. Mint means
-     agreed, settled, won. Rose means refused or broken. Nothing else is
-     coloured, which is why the coloured things read. */
-  --void:oklch(15% .012 255); --deep:oklch(20% .015 255);
-  --line:oklch(27% .015 255); --edge:oklch(37% .017 255);
-  --bright:oklch(97% .004 255); --mid:oklch(74% .014 255);
-  --low:oklch(62% .016 255);
-  /* Cool paper, not cream. */
-  --paper:oklch(97.5% .003 255); --card:#fff; --pline:oklch(92% .005 255);
-  --ink:oklch(20% .014 255); --body:oklch(42% .014 255);
-  --soft:oklch(56% .014 255);
-  /* Azure is the brand and carries money. It is Razorpay's own colour and
-     the one nobody mistakes for a generated palette. Gold marks what is
-     internal — privileged, not decorative. Green settles, red refuses. */
-  --ember:oklch(70% .165 248); --mint:oklch(78% .15 165);
-  --flare:oklch(67% .20 24); --iris:oklch(79% .148 78);
-  /* Tints derived from the signals rather than hand-picked. */
-  --iris-wash:color-mix(in oklab,var(--iris) 12%,transparent);
-  --mint-wash:color-mix(in oklab,var(--mint) 11%,transparent);
+     OKLCH throughout, so every step is perceptually even and a tint is a
+     calculation rather than a guess.
+
+     Ground is ledger paper with a blue cast, not cream. Ink is a
+     fountain-pen blue-black, not neutral charcoal. */
+  --paper:oklch(96.5% .008 230); --card:#fff;
+  --pline:oklch(90.5% .012 240); --pedge:oklch(84% .016 240);
+  --ink:oklch(24% .04 250); --body:oklch(43% .026 248);
+  --soft:oklch(50% .024 246); --faint:oklch(57% .022 245);
+
+  /* Four signals and no decoration. Blue works, green settles, red
+     refuses, gold marks what is internal. */
+  --blue:oklch(52% .18 252); --green:oklch(56% .14 155);
+  --red:oklch(55% .19 27); --gold:oklch(62% .13 74);
+
+  /* The instruments: dark panels the page sets into itself. */
+  --void:oklch(19% .028 255); --deep:oklch(23% .03 255);
+  --line:oklch(31% .028 255); --edge:oklch(41% .03 255);
+  --bright:oklch(96% .006 255); --mid:oklch(76% .016 255);
+  --low:oklch(64% .018 255);
+  /* On a dark instrument the signals lift a step to stay legible. */
+  --ember:oklch(74% .15 250); --mint:oklch(80% .15 162);
+  --flare:oklch(70% .19 25); --iris:oklch(81% .14 78);
+
+  --iris-wash:color-mix(in oklab,var(--iris) 14%,transparent);
+  --mint-wash:color-mix(in oklab,var(--mint) 13%,transparent);
   --disp:'Fraunces Display',"Iowan Old Style",Georgia,serif;
   --sans:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
   --mono:ui-monospace,SFMono-Regular,"SF Mono",Menlo,Consolas,monospace;
@@ -41,14 +51,12 @@ html{scroll-behavior:smooth}
 @view-transition{navigation:auto}
 ::view-transition-old(root),::view-transition-new(root){
   animation-duration:.34s;animation-timing-function:cubic-bezier(.16,1,.3,1)}
-body{margin:0;background:var(--void);color:var(--bright);
+body{margin:0;background:var(--paper);color:var(--ink);
   font-family:var(--sans);font-size:16px;line-height:1.6;
   -webkit-font-smoothing:antialiased}
-::selection{background:var(--ember);color:#000}
-:focus-visible{outline:2px solid var(--ember);outline-offset:3px}
-html{scrollbar-color:var(--edge) var(--void)}
-.light ::selection{background:var(--ink);color:var(--paper)}
-.light :focus-visible{outline-color:var(--ink)}
+::selection{background:var(--blue);color:#fff}
+:focus-visible{outline:2px solid var(--blue);outline-offset:3px}
+html{scrollbar-color:var(--pedge) var(--paper)}
 h1,h2,h3{font-family:var(--disp);font-weight:600;letter-spacing:-.028em;
   margin:0;text-wrap:balance}
 .ic{flex:none}
@@ -56,29 +64,30 @@ h1,h2,h3{font-family:var(--disp);font-weight:600;letter-spacing:-.028em;
 
 .band{padding:clamp(60px,8vw,110px) clamp(20px,5vw,64px)}
 .in{max-width:1180px;margin:0 auto}
-.dark{background:var(--void);color:var(--bright)}
-.light{background:var(--paper);color:var(--ink);border-top:1px solid var(--line)}
-.light+.dark{border-top:1px solid var(--line)}
+.dark{background:var(--paper);color:var(--ink)}
+.light{background:var(--card);color:var(--ink);
+  border-block:1px solid var(--pline)}
 
 /* --- hero ----------------------------------------------------------------- */
 .hero{display:grid;grid-template-columns:minmax(0,1.05fr) minmax(0,.95fr);
   gap:clamp(30px,4vw,60px);align-items:center;padding-top:clamp(20px,4vw,44px)}
 @media(max-width:960px){.hero{grid-template-columns:1fr}}
 .hero h1{font-size:clamp(38px,5.1vw,66px);line-height:1.02}
-.hero h1 em{font-style:italic;color:var(--ember)}
-.hero .say{margin:24px 0 0;color:var(--mid);font-size:clamp(16px,1.4vw,18px);
+.hero h1 em{font-style:italic;color:var(--blue)}
+.hero .say{margin:24px 0 0;color:var(--body);font-size:clamp(16px,1.4vw,18px);
   max-width:52ch;line-height:1.62}
-.hero .say b{color:var(--bright);font-weight:600}
-.tape{margin-top:30px;padding-top:18px;border-top:1px solid var(--line);
-  font-family:var(--mono);font-size:12px;color:var(--low);display:flex;
+.hero .say b{color:var(--ink);font-weight:650}
+.tape{margin-top:30px;padding-top:18px;border-top:1px solid var(--pline);
+  font-family:var(--mono);font-size:12px;color:var(--soft);display:flex;
   flex-wrap:wrap;gap:6px 20px}
-.tape b{color:var(--bright);font-weight:600}
-.tape .m{color:var(--ember)}
+.tape b{color:var(--ink);font-weight:650}
+.tape .m{color:var(--green)}
 
 /* --- the live negotiation: proof, sitting under the claim ----------------- */
 .deal{background:var(--deep);border:1px solid var(--line);border-radius:14px;
-  overflow:hidden;box-shadow:0 26px 60px -24px rgba(0,0,0,.85),
-    0 2px 0 rgba(255,255,255,.03) inset}
+  overflow:hidden;
+  box-shadow:0 26px 60px -28px color-mix(in oklab,var(--ink) 55%,transparent),
+    0 2px 0 rgba(255,255,255,.04) inset}
 .deal .dh{display:flex;align-items:center;gap:10px;padding:12px 16px;
   border-bottom:1px solid var(--line);font-family:var(--mono);font-size:10.5px;
   letter-spacing:.15em;text-transform:uppercase;color:var(--low)}
@@ -136,23 +145,20 @@ h1,h2,h3{font-family:var(--disp);font-weight:600;letter-spacing:-.028em;
 /* --- section headings ----------------------------------------------------- */
 .lead{max-width:56ch;margin:0 0 clamp(34px,4vw,52px)}
 .lead h2{font-size:clamp(30px,3.9vw,46px);line-height:1.06}
-.lead h2 em{font-style:italic;color:var(--ember)}
-.light .lead h2 em{color:var(--ink)}
-.lead p{margin:16px 0 0;font-size:17px;line-height:1.62}
-.dark .lead p{color:var(--mid)}
-.light .lead p{color:var(--body)}
+.lead h2 em{font-style:italic;color:var(--blue)}
+.lead p{margin:16px 0 0;font-size:17px;line-height:1.62;color:var(--body)}
 
 /* --- what your agent does ------------------------------------------------- */
 .jobs{display:grid;grid-template-columns:repeat(auto-fit,minmax(258px,1fr));
   gap:1px;background:var(--pline);border:1px solid var(--pline);
   border-radius:15px;overflow:hidden}
-.job{background:var(--card);padding:26px 24px 24px}
-.job .ic{color:var(--ink)}
+.job{background:var(--paper);padding:26px 24px 24px}
+.job .ic{color:var(--blue)}
 .job h3{font-size:21px;margin:16px 0 0;letter-spacing:-.022em}
 .job p{margin:10px 0 0;color:var(--soft);font-size:14.5px;line-height:1.55}
 .job .ev{margin-top:18px;padding-top:14px;border-top:1px solid var(--pline);
   font-family:var(--mono);font-size:12px;color:var(--ink)}
-.job .ev b{color:var(--ink);font-size:16px;font-weight:600;margin-right:7px;
+.job .ev b{color:var(--green);font-size:16px;font-weight:600;margin-right:7px;
   font-variant-numeric:tabular-nums}
 .job .ev span{color:var(--soft)}
 
@@ -167,44 +173,40 @@ h1,h2,h3{font-family:var(--disp);font-weight:600;letter-spacing:-.028em;
 .wf h3{font-size:18px;margin:9px 0 0;letter-spacing:-.02em}
 .wf p{margin:8px 0 0;color:var(--mid);font-size:13.5px;line-height:1.5}
 .wf .fig{margin-top:14px;font-family:var(--mono);font-size:15px;
-  color:var(--ember);font-variant-numeric:tabular-nums}
-.pull{font-family:var(--disp);font-size:clamp(21px,2.5vw,29px);line-height:1.35;
-  letter-spacing:-.02em;max-width:30ch;margin:0;color:var(--bright)}
-.pull span{color:var(--iris)}
+  color:var(--mint);font-variant-numeric:tabular-nums}
+.pull{font-family:var(--disp);font-size:clamp(23px,2.7vw,32px);line-height:1.3;
+  letter-spacing:-.022em;max-width:30ch;margin:26px 0 0;color:var(--ink)}
+.pull span{color:var(--blue)}
 
 /* --- proof panels --------------------------------------------------------- */
 .proof{border-radius:13px;overflow:hidden;font-family:var(--mono)}
-.light .proof{background:var(--card);border:1px solid var(--pline);
-  box-shadow:0 1px 2px color-mix(in oklab,var(--ink) 6%,transparent),0 14px 34px -20px color-mix(in oklab,var(--ink) 26%,transparent)}
-.dark .proof{background:oklch(11% .01 255);border:1px solid var(--line)}
+.proof{background:var(--void);border:1px solid var(--line);
+  box-shadow:0 18px 40px -24px color-mix(in oklab,var(--ink) 40%,transparent)}
 .proof .ph{padding:9px 14px;font-size:10px;letter-spacing:.15em;
   text-transform:uppercase}
-.light .proof .ph{color:var(--soft);border-bottom:1px solid var(--pline)}
-.dark .proof .ph{color:var(--iris);border-bottom:1px solid var(--line)}
+.proof .ph{color:var(--iris);border-bottom:1px solid var(--line)}
 .proof .pb{padding:6px 14px 14px}
 .pr{display:grid;grid-template-columns:1fr auto;gap:12px;padding:8px 0;
   font-size:12.5px;align-items:baseline}
-.light .pr{border-bottom:1px solid var(--pline);color:var(--body)}
-.dark .pr{border-bottom:1px solid var(--line);color:var(--mid)}
+.pr{border-bottom:1px solid var(--line);color:var(--mid)}
 .pr:last-child{border-bottom:0}
 .pr .v{font-variant-numeric:tabular-nums;white-space:nowrap}
-.light .pr .v{color:var(--ink);font-weight:600}
-.dark .pr .v{color:var(--ember)}
+.pr .v{color:var(--ember)}
 .pr .rk{color:var(--iris);margin-right:9px}
 .pr .nm{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .pr.win .v{color:var(--mint)}
 
 /* --- the six steps -------------------------------------------------------- */
 .steps{display:grid;grid-template-columns:repeat(6,1fr);
-  border-top:1px solid var(--line);border-bottom:1px solid var(--line)}
+  border-block:1px solid var(--pline)}
 @media(max-width:860px){.steps{grid-template-columns:repeat(2,1fr)}}
-.st{padding:22px 20px 26px;border-left:1px solid var(--line)}
+.st{padding:22px 20px 26px;border-left:1px solid var(--pline)}
 .st:first-child{border-left:0}
 @media(max-width:860px){.st:nth-child(odd){border-left:0}}
-.st .n{font-family:var(--mono);font-size:10.5px;color:var(--ember)}
+.st .n{font-family:var(--mono);font-size:10.5px;color:var(--blue)}
 .st .t{font-family:var(--disp);font-size:19px;margin-top:8px;
   letter-spacing:-.02em}
-.st .d{font-size:13.5px;color:var(--low);margin-top:6px;line-height:1.5}
+.st .d{font-size:13.5px;color:var(--soft);margin-top:6px;line-height:1.5}
 /* Content is visible by default; the reveal is added by script, so a page
    whose JavaScript never runs still reads completely. */
 .js .st,.js .pr,.js .jobs,.js .wheel{opacity:0;transform:translateY(10px)}
@@ -218,16 +220,14 @@ h1,h2,h3{font-family:var(--disp);font-weight:600;letter-spacing:-.028em;
 @media(max-width:860px){.door{grid-template-columns:1fr}}
 .sell h2{font-size:clamp(30px,4.1vw,48px);line-height:1.04}
 .sell p{font-size:17px;line-height:1.62;margin:18px 0 0;max-width:50ch}
-.light .sell p{color:var(--body)}
-.dark .sell p{color:var(--mid)}
+.sell p{color:var(--body)}
 .pts{list-style:none;margin:24px 0 0;padding:0;display:grid;gap:13px}
 .pts li{display:grid;grid-template-columns:auto 1fr;gap:12px;align-items:start;
   font-size:15px;line-height:1.5}
-.light .pts li{color:var(--body)}
-.dark .pts li{color:var(--mid)}
+.pts li{color:var(--body)}
 .pts .ic{margin-top:3px}
-.light .pts .ic{color:var(--ink)}
-.dark .pts .ic{color:var(--iris)}
+.pts .ic{color:var(--blue)}
+.band.light .pts .ic{color:var(--gold)}
 .enter{margin-top:30px;display:inline-flex;align-items:center;gap:11px;
   text-decoration:none;font-size:16px;font-weight:600;padding:15px 22px;
   border-radius:11px;
@@ -235,17 +235,20 @@ h1,h2,h3{font-family:var(--disp);font-weight:600;letter-spacing:-.028em;
 .enter .ic{transition:transform .22s cubic-bezier(.16,1,.3,1)}
 .enter:hover .ic{transform:translateX(4px)}
 .enter:active{transform:translateY(0) scale(.985);transition-duration:.09s}
-.light .enter{background:var(--ink);color:var(--paper);
-  box-shadow:0 12px 26px -12px color-mix(in oklab,var(--ink) 55%,transparent)}
-.light .enter:hover{transform:translateY(-2px)}
-.light .enter:active{box-shadow:0 6px 14px -10px color-mix(in oklab,var(--ink) 55%,transparent)}
-.dark .enter{background:var(--iris);color:var(--void);
-  box-shadow:0 14px 34px -14px color-mix(in oklab,var(--iris) 70%,transparent)}
-.dark .enter:hover{transform:translateY(-2px)}
+.enter{background:var(--blue);color:#fff;
+  box-shadow:0 12px 26px -12px color-mix(in oklab,var(--blue) 60%,transparent)}
+.enter:hover{transform:translateY(-2px)}
+.enter:active{box-shadow:0 6px 14px -10px
+  color-mix(in oklab,var(--blue) 60%,transparent)}
+/* The desk is the one place gold appears, because it is the one place a
+   merchant cannot go. */
+.band.light .enter{background:var(--ink)}
+.band.light .enter{box-shadow:0 12px 26px -12px
+  color-mix(in oklab,var(--ink) 55%,transparent)}
 
-footer{padding:26px clamp(20px,5vw,64px);border-top:1px solid var(--line);
-  color:var(--low);font-family:var(--mono);font-size:11px;line-height:1.8;
-  background:var(--void)}
+footer{padding:26px clamp(20px,5vw,64px);border-top:1px solid var(--pline);
+  color:var(--soft);font-family:var(--mono);font-size:11px;line-height:1.8;
+  background:var(--paper)}
 @media(prefers-reduced-motion:reduce){
   *{animation:none!important;scroll-behavior:auto}
   .js .st,.js .pr,.js .jobs,.js .wheel{opacity:1;transform:none}
@@ -253,8 +256,13 @@ footer{padding:26px clamp(20px,5vw,64px);border-top:1px solid var(--line);
 }
 
 /* --- THE SIGNATURE: the network, touchable ------------------------------- */
+/* The instruments sit in one dark plate, so the machinery reads as a thing
+   set into the page rather than as a second page. */
 .net{display:grid;grid-template-columns:minmax(0,1.45fr) minmax(0,1fr);
-  gap:clamp(20px,3vw,44px);align-items:center}
+  gap:clamp(18px,2.4vw,34px);align-items:center;background:var(--void);
+  border:1px solid var(--line);border-radius:18px;
+  padding:clamp(18px,2.4vw,30px);
+  box-shadow:0 26px 60px -30px color-mix(in oklab,var(--ink) 50%,transparent)}
 @media(max-width:900px){.net{grid-template-columns:1fr}}
 .graph{width:100%;height:auto;overflow:visible}
 .graph .lk{fill:none;stroke:oklch(31% .017 255);stroke-width:1;
@@ -274,7 +282,7 @@ footer{padding:26px clamp(20px,5vw,64px);border-top:1px solid var(--line);
 .graph .nd:focus{outline:none}
 .graph .nd:focus-visible circle{stroke:var(--bright);stroke-width:2}
 
-.dossier{border:1px solid var(--line);border-radius:13px;background:var(--deep);
+.dossier{border:1px solid var(--line);border-radius:12px;background:var(--deep);
   min-height:274px;display:flex;flex-direction:column}
 .dossier .dh{display:flex;align-items:baseline;gap:10px;padding:13px 16px;
   border-bottom:1px solid var(--line)}
@@ -296,14 +304,17 @@ footer{padding:26px clamp(20px,5vw,64px);border-top:1px solid var(--line);
 
 /* --- the playable auction ------------------------------------------------ */
 .auction{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.15fr);
-  gap:clamp(20px,3vw,40px);align-items:start}
+  gap:clamp(18px,2.4vw,34px);align-items:stretch;background:var(--void);
+  border:1px solid var(--line);border-radius:18px;
+  padding:clamp(18px,2.4vw,30px);
+  box-shadow:0 26px 60px -30px color-mix(in oklab,var(--ink) 50%,transparent)}
 @media(max-width:900px){.auction{grid-template-columns:1fr}}
-.lot{border:1px solid var(--iris);border-radius:13px;padding:20px 22px 22px;
-  background:var(--iris-wash)}
+.lot{border:1px solid color-mix(in oklab,var(--iris) 45%,transparent);
+  border-radius:12px;padding:20px 22px 22px;background:var(--iris-wash)}
 .lot .lb{font-family:var(--mono);font-size:10px;letter-spacing:.16em;
   text-transform:uppercase;color:var(--iris)}
 .lot p{font-family:var(--disp);font-size:20px;line-height:1.32;margin:12px 0 0;
-  letter-spacing:-.018em}
+  letter-spacing:-.018em;color:var(--bright)}
 .lot .src{display:block;margin-top:14px;font-family:var(--mono);font-size:11px;
   color:var(--low);line-height:1.6}
 .play label{display:block;font-size:13px;color:var(--mid);margin-bottom:9px}
