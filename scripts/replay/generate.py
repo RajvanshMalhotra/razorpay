@@ -104,6 +104,11 @@ CSS = """
   --serif:"Iowan Old Style","Palatino Linotype",Palatino,Georgia,serif;
 }
 *{box-sizing:border-box}
+/* The other half of the landing page's door: arriving here cross-fades in
+   rather than cutting, so entering the desk reads as continuous. */
+@view-transition{navigation:auto}
+::view-transition-old(root),::view-transition-new(root){
+  animation-duration:.34s;animation-timing-function:cubic-bezier(.16,1,.3,1)}
 html,body{margin:0;height:100%}
 body{background:var(--bg);color:var(--white);font-family:var(--mono);
   font-size:13px;line-height:1.45;-webkit-font-smoothing:antialiased;
@@ -513,6 +518,9 @@ LIGHT_CSS = """
   --shadow:0 1px 2px rgba(17,24,38,.05),0 4px 14px rgba(17,24,38,.05);
 }
 *{box-sizing:border-box}
+@view-transition{navigation:auto}
+::view-transition-old(root),::view-transition-new(root){
+  animation-duration:.34s;animation-timing-function:cubic-bezier(.16,1,.3,1)}
 html,body{margin:0}
 body{background:var(--paper);color:var(--ink);font-family:var(--sans);
   font-size:15px;line-height:1.55;-webkit-font-smoothing:antialiased}
@@ -1413,23 +1421,29 @@ def _board_html(desk, sale, summary) -> str:
 #  THE FRONT DOOR
 # =============================================================================
 #
-# THE PAGE IS SPLIT INTO THE TWO WORLDS IT LEADS TO. Dark is the machine side,
-# where agents negotiate and the house watches the whole book. Light is the
-# merchant side. You scroll out of one and into the other, and each door sits
-# inside its own world — so clicking through is visually continuous rather
-# than a jump. The inversion is the structure, and it encodes the product's
-# actual split rather than decorating it.
+# THIS PAGE SELLS THE LEVERAGE, NOT THE MACHINERY. An earlier version proved
+# the technology worked — machines negotiate, money moves, here is the audit
+# trail — and a merchant reading it learned nothing about what it would get.
+# The proof still has to be here, because the claim is extraordinary, but it
+# is evidence underneath an argument rather than the argument itself.
 #
-# THE HERO IS A REAL NEGOTIATION. Two agents converging over seven offers,
-# quoted from the log, ending in the gate's ruling and the payment id Razorpay
-# returned. It is the most characteristic thing in this world and the hardest
-# to believe, so it goes first and it is real: the copy on this page contains
-# no sentence a machine did not actually say.
+# THE ARGUMENT. A shop trading alone is one shop. Every other business on
+# Razorpay is already a supplier, a buyer, or a lesson, and Razorpay already
+# sits between all of them — the network exists, nobody has switched it on.
+# An agent that can reach it buys better, finds counterparties nobody
+# introduced, keeps the books that fall out of the trading, and bids for what
+# is working elsewhere. And when a merchant's own win is the thing being
+# sold, that merchant is paid for it.
 #
-# The display face is Fraunces, vendored under the OFL and embedded as a data
-# URI so the page renders from disk with no network. An organic, high-contrast
-# serif over monospaced machine data is the tension of the whole product:
-# agents that argue in English about money that moves like clockwork.
+# EVERY FIGURE ON THIS PAGE IS READ FROM THE LOG. There is no illustrative
+# number and no rounded-up claim: a marketing page for a product whose entire
+# proposition is "you can check this" cannot be the one surface that invents
+# something. Where a number would be persuasive but is not in the log, the
+# sentence is written without it.
+#
+# THE PAGE IS SPLIT INTO THE TWO WORLDS IT LEADS TO. Dark is the machine and
+# house side, light is the merchant side, and each door sits inside its own
+# world so clicking through is continuous rather than a cut.
 
 
 def _font_data_uri() -> str:
@@ -1451,8 +1465,15 @@ ICONS = {
                '<path d="M4 3v18"/><path d="M8 8h6M8 12h6M8 16h3"/>'),
     "shield": ('<path d="M12 3l7 3v6c0 4.4-2.9 8.3-7 9.5C7.9 20.3 5 16.4 5 12'
                'V6z"/><path d="M9 12l2 2 4-4"/>'),
-    "chart": ('<path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/>'),
+    "chart": '<path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/>',
     "arrow": '<path d="M5 12h13M12 6l6 6-6 6"/>',
+    "swap": ('<path d="M4 8h13l-3-3M20 16H7l3 3"/>'),
+    "link": ('<path d="M9.5 14.5l5-5"/>'
+             '<path d="M11 6.5l1.6-1.6a4 4 0 0 1 5.7 5.7L16.6 12"/>'
+             '<path d="M13 17.5l-1.6 1.6a4 4 0 0 1-5.7-5.7L7.4 12"/>'),
+    "gavel": ('<path d="M3 21h9"/><path d="M6.5 17.5l7-7"/>'
+              '<path d="M11 6l7 7"/><path d="M13.5 3.5l7 7"/>'
+              '<path d="M9.5 8.5l6 6"/>'),
 }
 
 
@@ -1481,40 +1502,46 @@ LANDING_CSS = """
 }
 *{box-sizing:border-box}
 html{scroll-behavior:smooth}
+/* Clicking a door cross-fades into the page behind it, so entering the
+   merchant world or the desk reads as continuous rather than as a cut. */
+@view-transition{navigation:auto}
+::view-transition-old(root),::view-transition-new(root){
+  animation-duration:.34s;animation-timing-function:cubic-bezier(.16,1,.3,1)}
 body{margin:0;background:var(--void);color:var(--bright);
   font-family:var(--sans);font-size:16px;line-height:1.6;
   -webkit-font-smoothing:antialiased}
-/* The browser's own surfaces belong to the design too. */
 ::selection{background:var(--ember);color:#000}
 :focus-visible{outline:2px solid var(--ember);outline-offset:3px}
-.dark{scrollbar-color:var(--edge) var(--void)}
-h1,h2,h3{font-family:var(--disp);font-weight:600;letter-spacing:-.025em;
+html{scrollbar-color:var(--edge) var(--void)}
+.light ::selection{background:var(--ink);color:var(--paper)}
+.light :focus-visible{outline-color:var(--ink)}
+h1,h2,h3{font-family:var(--disp);font-weight:600;letter-spacing:-.028em;
   margin:0;text-wrap:balance}
 .ic{flex:none}
+.num{font-variant-numeric:tabular-nums}
 
-.band{padding:clamp(52px,7vw,92px) clamp(20px,5vw,64px)}
+.band{padding:clamp(60px,8vw,110px) clamp(20px,5vw,64px)}
 .in{max-width:1180px;margin:0 auto}
 .dark{background:var(--void);color:var(--bright)}
-.light{background:var(--paper);color:var(--ink)}
-/* The seam between the two worlds, cut rather than faded. */
-.light{border-top:1px solid var(--line)}
+.light{background:var(--paper);color:var(--ink);border-top:1px solid var(--line)}
+.light+.dark{border-top:1px solid var(--line)}
 
-/* --- hero ---------------------------------------------------------------- */
-.hero{display:grid;grid-template-columns:minmax(0,1.02fr) minmax(0,.98fr);
-  gap:clamp(30px,4vw,60px);align-items:center;padding-top:clamp(8px,2vw,26px)}
-@media(max-width:940px){.hero{grid-template-columns:1fr}}
-.hero h1{font-size:clamp(42px,6.2vw,80px);line-height:1;
-  letter-spacing:-.038em}
+/* --- hero ----------------------------------------------------------------- */
+.hero{display:grid;grid-template-columns:minmax(0,1.05fr) minmax(0,.95fr);
+  gap:clamp(30px,4vw,60px);align-items:center;padding-top:clamp(20px,4vw,44px)}
+@media(max-width:960px){.hero{grid-template-columns:1fr}}
+.hero h1{font-size:clamp(38px,5.1vw,66px);line-height:1.02}
 .hero h1 em{font-style:italic;color:var(--ember)}
-.hero .say{margin:26px 0 0;color:var(--mid);font-size:clamp(16px,1.5vw,18.5px);
-  max-width:46ch;line-height:1.62}
-.tape{margin-top:28px;padding-top:18px;border-top:1px solid var(--line);
-  font-family:var(--mono);font-size:12px;letter-spacing:.02em;
-  color:var(--low);display:flex;flex-wrap:wrap;gap:6px 20px}
+.hero .say{margin:24px 0 0;color:var(--mid);font-size:clamp(16px,1.4vw,18px);
+  max-width:52ch;line-height:1.62}
+.hero .say b{color:var(--bright);font-weight:600}
+.tape{margin-top:30px;padding-top:18px;border-top:1px solid var(--line);
+  font-family:var(--mono);font-size:12px;color:var(--low);display:flex;
+  flex-wrap:wrap;gap:6px 20px}
 .tape b{color:var(--bright);font-weight:600}
 .tape .m{color:var(--ember)}
 
-/* --- the signature: a negotiation, played --------------------------------- */
+/* --- the live negotiation: proof, sitting under the claim ----------------- */
 .deal{background:var(--deep);border:1px solid var(--line);border-radius:14px;
   overflow:hidden;box-shadow:0 26px 60px -24px rgba(0,0,0,.85),
     0 2px 0 rgba(255,255,255,.03) inset}
@@ -1523,18 +1550,32 @@ h1,h2,h3{font-family:var(--disp);font-weight:600;letter-spacing:-.025em;
   letter-spacing:.15em;text-transform:uppercase;color:var(--low)}
 .deal .dh .dot{width:6px;height:6px;border-radius:50%;background:var(--mint)}
 .deal .dh .want{margin-left:auto;color:var(--mid);letter-spacing:.04em;
-  text-transform:none;font-size:11.5px;overflow:hidden;
-  text-overflow:ellipsis;white-space:nowrap;max-width:52%}
-/* Fixed, not growing. The card sits beside a headline and must not push
-   the page around as lines arrive; old offers scroll off the top instead. */
-.feed{padding:14px 16px;height:clamp(300px,44vh,392px);display:flex;
+  text-transform:none;font-size:11.5px;overflow:hidden;text-overflow:ellipsis;
+  white-space:nowrap;max-width:52%}
+/* The gap between the two sides, narrowing in real time. A negotiation IS a
+   spread closing, and the offers alone never showed it. */
+.spread{display:grid;grid-template-columns:auto 1fr auto;gap:12px;
+  align-items:center;padding:11px 16px;border-bottom:1px solid var(--line);
+  font-family:var(--mono)}
+.spread .lab{font-size:10px;letter-spacing:.15em;text-transform:uppercase;
+  color:var(--low)}
+.spread .track{height:3px;background:#20242C;border-radius:2px;
+  overflow:hidden;position:relative}
+.spread .track i{position:absolute;inset:0 auto 0 0;width:100%;display:block;
+  background:linear-gradient(90deg,var(--flare),var(--ember));
+  transition:width .62s cubic-bezier(.16,1,.3,1),background .4s}
+.spread.closed .track i{background:var(--mint)}
+.spread .val{font-size:14px;color:var(--ember);min-width:5.4ch;
+  text-align:right;transition:color .4s;font-variant-numeric:tabular-nums}
+.spread.closed .val{color:var(--mint)}
+.feed{padding:14px 16px;height:clamp(288px,40vh,364px);display:flex;
   flex-direction:column;gap:9px;justify-content:flex-end;overflow:hidden}
-.line{display:grid;grid-template-columns:1fr auto;gap:14px;
-  align-items:baseline;padding:9px 12px;border-radius:9px;
-  background:#191C22;border:1px solid transparent}
+.line{display:grid;grid-template-columns:1fr auto;gap:14px;align-items:baseline;
+  padding:9px 12px;border-radius:9px;background:#191C22;
+  border:1px solid transparent}
 .line.b{background:#171A20}
 .line .who{font-family:var(--mono);font-size:10.5px;color:var(--low);
-  display:block;margin-bottom:3px;letter-spacing:.03em}
+  display:block;margin-bottom:3px}
 .line .said{font-size:13.5px;color:var(--mid);line-height:1.42;
   display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;
   overflow:hidden}
@@ -1542,9 +1583,8 @@ h1,h2,h3{font-family:var(--disp);font-weight:600;letter-spacing:-.025em;
   font-variant-numeric:tabular-nums;white-space:nowrap}
 .line.deal-done{border-color:var(--mint);background:rgba(52,226,160,.07)}
 .line.deal-done .px{color:var(--mint)}
-.stamp{display:grid;grid-template-columns:1fr auto;gap:14px;
-  align-items:center;padding:11px 12px;border-radius:9px;
-  border:1px solid var(--line)}
+.stamp{display:grid;grid-template-columns:1fr auto;gap:14px;align-items:center;
+  padding:11px 12px;border-radius:9px;border:1px solid var(--line)}
 .stamp .lb{font-family:var(--mono);font-size:10px;letter-spacing:.15em;
   text-transform:uppercase;color:var(--low)}
 .stamp .vl{font-family:var(--mono);font-size:13px;color:var(--mid);
@@ -1555,61 +1595,50 @@ h1,h2,h3{font-family:var(--disp);font-weight:600;letter-spacing:-.025em;
 .stamp.paid .vl{color:var(--ember);font-size:15px}
 @media(prefers-reduced-motion:no-preference){
   .line,.stamp{animation:step .5s cubic-bezier(.16,1,.3,1) both}
-  @keyframes step{
-    from{opacity:0;transform:translateY(9px);filter:blur(4px)}
+  @keyframes step{from{opacity:0;transform:translateY(9px);filter:blur(4px)}
     to{opacity:1;transform:none;filter:blur(0)}}
 }
 
-/* --- the six steps -------------------------------------------------------- */
-.steps{display:grid;grid-template-columns:repeat(6,1fr);
-  border-top:1px solid var(--line);border-bottom:1px solid var(--line)}
-@media(max-width:860px){.steps{grid-template-columns:repeat(2,1fr)}}
-.st{padding:22px 20px 26px;border-left:1px solid var(--line)}
-.st:first-child{border-left:0}
-@media(max-width:860px){.st:nth-child(odd){border-left:0}}
-.st .n{font-family:var(--mono);font-size:10.5px;color:var(--ember);
-  letter-spacing:.1em}
-.st .t{font-family:var(--disp);font-size:19px;margin-top:8px;
-  letter-spacing:-.02em}
-.st .d{font-size:13.5px;color:var(--low);margin-top:6px;line-height:1.5}
-.leadin{max-width:52ch;margin:0 0 34px}
-.leadin h2{font-size:clamp(28px,3.6vw,40px);line-height:1.08}
-.leadin p{color:var(--mid);margin:14px 0 0;font-size:16.5px}
-.light .leadin p{color:var(--soft)}
+/* --- section headings ----------------------------------------------------- */
+.lead{max-width:56ch;margin:0 0 clamp(34px,4vw,52px)}
+.lead h2{font-size:clamp(30px,3.9vw,46px);line-height:1.06}
+.lead h2 em{font-style:italic;color:var(--ember)}
+.light .lead h2 em{color:var(--ink)}
+.lead p{margin:16px 0 0;font-size:17px;line-height:1.62}
+.dark .lead p{color:var(--mid)}
+.light .lead p{color:var(--body)}
 
-/* --- the doors ------------------------------------------------------------ */
-.door{display:grid;grid-template-columns:minmax(0,1.25fr) minmax(0,1fr);
-  gap:clamp(22px,3vw,44px);align-items:start}
-@media(max-width:860px){.door{grid-template-columns:1fr}}
-.sell h2{font-size:clamp(32px,4.4vw,52px);line-height:1.04;
-  letter-spacing:-.032em}
-.sell p{font-size:17px;line-height:1.62;margin:18px 0 0;max-width:50ch}
-.light .sell p{color:var(--body)}
-.dark .sell p{color:var(--mid)}
-.pts{list-style:none;margin:26px 0 0;padding:0;display:grid;gap:14px}
-.pts li{display:grid;grid-template-columns:auto 1fr;gap:12px;
-  align-items:start;font-size:15px;line-height:1.5}
-.light .pts li{color:var(--body)}
-.dark .pts li{color:var(--mid)}
-.pts .ic{margin-top:3px}
-.light .pts .ic{color:var(--ink)}
-.dark .pts .ic{color:var(--iris)}
+/* --- what your agent does ------------------------------------------------- */
+.jobs{display:grid;grid-template-columns:repeat(auto-fit,minmax(258px,1fr));
+  gap:1px;background:var(--pline);border:1px solid var(--pline);
+  border-radius:15px;overflow:hidden}
+.job{background:var(--card);padding:26px 24px 24px}
+.job .ic{color:var(--ink)}
+.job h3{font-size:21px;margin:16px 0 0;letter-spacing:-.022em}
+.job p{margin:10px 0 0;color:var(--soft);font-size:14.5px;line-height:1.55}
+.job .ev{margin-top:18px;padding-top:14px;border-top:1px solid var(--pline);
+  font-family:var(--mono);font-size:12px;color:var(--ink)}
+.job .ev b{color:var(--ink);font-size:16px;font-weight:600;margin-right:7px;
+  font-variant-numeric:tabular-nums}
+.job .ev span{color:var(--soft)}
 
-.enter{margin-top:30px;display:inline-flex;align-items:center;gap:11px;
-  text-decoration:none;
-  font-size:16px;font-weight:600;padding:15px 22px;border-radius:11px;
-  transition:transform .22s cubic-bezier(.16,1,.3,1),box-shadow .22s}
-.enter .ic{transition:transform .22s cubic-bezier(.16,1,.3,1)}
-.enter:hover .ic{transform:translateX(4px)}
-.light .enter{background:var(--ink);color:var(--paper);
-  box-shadow:0 12px 26px -12px rgba(20,22,27,.6)}
-.light .enter:hover{transform:translateY(-2px);
-  box-shadow:0 18px 34px -12px rgba(20,22,27,.55)}
-.dark .enter{background:var(--iris);color:#0B0C10;
-  box-shadow:0 14px 34px -14px rgba(156,140,255,.7)}
-.dark .enter:hover{transform:translateY(-2px)}
+/* --- the flywheel --------------------------------------------------------- */
+.wheel{display:grid;grid-template-columns:repeat(4,1fr);gap:1px;
+  background:var(--line);border:1px solid var(--line);border-radius:14px;
+  overflow:hidden;margin-bottom:28px}
+@media(max-width:860px){.wheel{grid-template-columns:repeat(2,1fr)}}
+.wf{background:var(--deep);padding:22px 20px 24px}
+.wf .n{font-family:var(--mono);font-size:10.5px;color:var(--iris);
+  letter-spacing:.12em}
+.wf h3{font-size:18px;margin:9px 0 0;letter-spacing:-.02em}
+.wf p{margin:8px 0 0;color:var(--mid);font-size:13.5px;line-height:1.5}
+.wf .fig{margin-top:14px;font-family:var(--mono);font-size:15px;
+  color:var(--ember);font-variant-numeric:tabular-nums}
+.pull{font-family:var(--disp);font-size:clamp(21px,2.5vw,29px);line-height:1.35;
+  letter-spacing:-.02em;max-width:30ch;margin:0;color:var(--bright)}
+.pull span{color:var(--iris)}
 
-/* The proof panel beside each pitch: a real fragment of that world. */
+/* --- proof panels --------------------------------------------------------- */
 .proof{border-radius:13px;overflow:hidden;font-family:var(--mono)}
 .light .proof{background:var(--card);border:1px solid var(--pline);
   box-shadow:0 1px 2px rgba(20,22,27,.05),0 14px 34px -20px rgba(20,22,27,.28)}
@@ -1629,26 +1658,80 @@ h1,h2,h3{font-family:var(--disp);font-weight:600;letter-spacing:-.025em;
 .dark .pr .v{color:var(--ember)}
 .pr .rk{color:var(--iris);margin-right:9px}
 .pr .nm{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.pr.win .v{color:var(--mint)}
 
-foot{display:block}
+/* --- the six steps -------------------------------------------------------- */
+.steps{display:grid;grid-template-columns:repeat(6,1fr);
+  border-top:1px solid var(--line);border-bottom:1px solid var(--line)}
+@media(max-width:860px){.steps{grid-template-columns:repeat(2,1fr)}}
+.st{padding:22px 20px 26px;border-left:1px solid var(--line)}
+.st:first-child{border-left:0}
+@media(max-width:860px){.st:nth-child(odd){border-left:0}}
+.st .n{font-family:var(--mono);font-size:10.5px;color:var(--ember)}
+.st .t{font-family:var(--disp);font-size:19px;margin-top:8px;
+  letter-spacing:-.02em}
+.st .d{font-size:13.5px;color:var(--low);margin-top:6px;line-height:1.5}
+/* Content is visible by default; the reveal is added by script, so a page
+   whose JavaScript never runs still reads completely. */
+.js .st,.js .pr,.js .jobs,.js .wheel{opacity:0;transform:translateY(10px)}
+.js .st.in,.js .pr.in,.js .jobs.in,.js .wheel.in{opacity:1;transform:none;
+  transition:opacity .5s cubic-bezier(.16,1,.3,1),
+             transform .5s cubic-bezier(.16,1,.3,1)}
+
+/* --- the doors ------------------------------------------------------------ */
+.door{display:grid;grid-template-columns:minmax(0,1.25fr) minmax(0,1fr);
+  gap:clamp(22px,3vw,44px);align-items:start}
+@media(max-width:860px){.door{grid-template-columns:1fr}}
+.sell h2{font-size:clamp(30px,4.1vw,48px);line-height:1.04}
+.sell p{font-size:17px;line-height:1.62;margin:18px 0 0;max-width:50ch}
+.light .sell p{color:var(--body)}
+.dark .sell p{color:var(--mid)}
+.pts{list-style:none;margin:24px 0 0;padding:0;display:grid;gap:13px}
+.pts li{display:grid;grid-template-columns:auto 1fr;gap:12px;align-items:start;
+  font-size:15px;line-height:1.5}
+.light .pts li{color:var(--body)}
+.dark .pts li{color:var(--mid)}
+.pts .ic{margin-top:3px}
+.light .pts .ic{color:var(--ink)}
+.dark .pts .ic{color:var(--iris)}
+.enter{margin-top:30px;display:inline-flex;align-items:center;gap:11px;
+  text-decoration:none;font-size:16px;font-weight:600;padding:15px 22px;
+  border-radius:11px;
+  transition:transform .22s cubic-bezier(.16,1,.3,1),box-shadow .22s}
+.enter .ic{transition:transform .22s cubic-bezier(.16,1,.3,1)}
+.enter:hover .ic{transform:translateX(4px)}
+.enter:active{transform:translateY(0) scale(.985);transition-duration:.09s}
+.light .enter{background:var(--ink);color:var(--paper);
+  box-shadow:0 12px 26px -12px rgba(20,22,27,.6)}
+.light .enter:hover{transform:translateY(-2px)}
+.light .enter:active{box-shadow:0 6px 14px -10px rgba(20,22,27,.6)}
+.dark .enter{background:var(--iris);color:#0B0C10;
+  box-shadow:0 14px 34px -14px rgba(156,140,255,.7)}
+.dark .enter:hover{transform:translateY(-2px)}
+
 footer{padding:26px clamp(20px,5vw,64px);border-top:1px solid var(--line);
   color:var(--low);font-family:var(--mono);font-size:11px;line-height:1.8;
   background:var(--void)}
-@media(prefers-reduced-motion:reduce){*{animation:none!important;
-  transition:none!important;scroll-behavior:auto}}
+@media(prefers-reduced-motion:reduce){
+  *{animation:none!important;scroll-behavior:auto}
+  .js .st,.js .pr,.js .jobs,.js .wheel{opacity:1;transform:none}
+  .enter,.spread .track i,.spread .val{transition-duration:.01ms!important}
+}
 """
 
 
 LANDING_JS = r"""<script>
 (function(){
-/* The negotiation plays once, at reading speed, and stops. It is the page's
-   one authored moment: everything else is still, so this is where the eye
-   goes. Every line is quoted from the log — the page does not simulate a
-   deal, it replays one. */
+document.documentElement.classList.add('js');
 var D=JSON.parse(document.getElementById('deal').textContent);
 var feed=document.getElementById('feed'),n=0;
+var gapBar=document.getElementById('gap'),sprd=document.getElementById('sprd');
+var spreadBox=document.querySelector('.spread');
 function esc(t){var d=document.createElement('div');
   d.textContent=t==null?'':t;return d.innerHTML}
+/* The negotiation plays once, at reading speed, and stops. It is the page's
+   one authored moment. Every line is quoted from the log — the page does not
+   simulate a deal, it replays one. */
 function add(){
   if(n>=D.lines.length)return;
   var L=D.lines[n++];
@@ -1665,69 +1748,120 @@ function add(){
   }
   feed.appendChild(el);
   while(feed.children.length>4)feed.removeChild(feed.firstChild);
+  if(L.spread!=null){
+    sprd.textContent=L.spread;
+    gapBar.style.width=(L.gap*100).toFixed(1)+'%';
+    spreadBox.classList.toggle('closed',L.gap===0);
+  }
   if(n<D.lines.length)setTimeout(add,L.hold||1500);
 }
 if(matchMedia('(prefers-reduced-motion: reduce)').matches){
-  while(n<D.lines.length)add.call(null);
+  while(n<D.lines.length)add();
+}else{setTimeout(add,420)}
+
+/* The steps are a numbered sequence and the panels are lists, so both earn a
+   stagger. The delay is capped: a reader who scrolls fast must never wait. */
+var reveal=[].slice.call(document.querySelectorAll('.st,.pr,.jobs,.wheel'));
+if(!('IntersectionObserver' in window)){
+  reveal.forEach(function(el){el.classList.add('in')});
 }else{
-  setTimeout(add,420);
+  var io=new IntersectionObserver(function(es){
+    es.forEach(function(e){
+      if(!e.isIntersecting)return;
+      var i=[].slice.call(e.target.parentNode.children).indexOf(e.target);
+      e.target.style.transitionDelay=Math.min(i*55,330)+'ms';
+      e.target.classList.add('in');
+      io.unobserve(e.target);
+    });
+  },{threshold:.12});
+  reveal.forEach(function(el){io.observe(el)});
 }
 })();
 </script>"""
 
 
 def build_landing(db_path: str, roster) -> str:
+    from exchange.books import entries_for
+
     summary, _trades, events = load(db_path)
     failures = failure_threads(events)
     desk = board(events)
+    sale = auction(events)
+    rail_map = rails(events)
     first = _page_name(roster[0])
 
-    # The hero deal: the longest real negotiation that reached a confirmed
-    # payment. Found by shape, so a different run still finds its own best
-    # story rather than showing an empty box.
-    rail_map = rails(events)
-    candidates = [r for r in rail_map.values()
-                  if len(r["talk"]) >= 4 and any(
-                      s["key"] == "paid" and any(
-                          str(x).startswith("pay_") for x in s["lines"])
-                      for s in r["stations"])]
-    hero = max(candidates, key=lambda r: len(r["talk"]), default=None)
+    # Every figure below is counted from the log at build time. Nothing on
+    # this page is illustrative.
+    relationships = len({(r["buyer"], s["head"])
+                         for r in rail_map.values()
+                         for s in r["stations"]
+                         if s["key"] == "picked" and s["head"].startswith("m_")})
+    book_entries = sum(len(entries_for(events, m).entries) for m in roster)
+
+    hero = _hero_deal(rail_map)
     deal = _deal_payload(hero)
 
     return (
         '<!doctype html>\n<html lang="en"><head><meta charset="utf-8">'
         '<meta name="viewport" content="width=device-width,initial-scale=1">'
         '<meta name="color-scheme" content="dark light">'
+        '<meta name="description" content="Every business on Razorpay gets an '
+        'agent that buys, sells, keeps the books, and bids for what is working '
+        'across the network.">'
         '<title>Agent Exchange</title>'
         f'<style>{LANDING_CSS.replace("__FONT__", _font_data_uri())}</style>'
         "</head><body>"
 
-        # --- the machines' world -------------------------------------------
+        # ---- hero: the hook ------------------------------------------------
         + '<section class="band dark"><div class="in hero"><div>'
-        + "<h1>Machines that close deals, and money that <em>proves it</em>.</h1>"
-        + '<p class="say">Every Razorpay merchant gets an agent. The agents '
-          'find each other, argue about price in plain English, and settle '
-          'real payments — and not one rupee moves until a policy gate has '
-          'recorded its ruling.</p>'
+        + "<h1>The best campaign in your category is <em>for sale</em>. "
+          "Your agent is already bidding.</h1>"
+        + '<p class="say">Every business on Razorpay gets an agent. It buys '
+          'your supplies, argues down your prices, keeps your books, and bids '
+          'for what is working across the rest of the network. <b>When your '
+          'own win is the thing being sold, you are paid for it.</b></p>'
         + f'<div class="tape">'
-          f'<span><b class="m">{rupees(summary.value_paise)}</b> settled '
+          f'<span><b class="m num">{rupees(summary.value_paise)}</b> settled '
           f'between agents</span>'
-          f'<span><b>{summary.merchants}</b> merchants</span>'
-          f'<span><b>{summary.gate_allow + summary.gate_deny}</b> rulings '
-          f'recorded</span>'
-          f'<span><b>{len(failures)}</b> mismatches repaired</span></div>'
+          f'<span><b class="num">{summary.merchants}</b> merchants</span>'
+          f'<span><b class="num">{relationships}</b> trading relationships '
+          f'formed</span>'
+          f'<span><b class="num">{summary.gate_allow + summary.gate_deny}</b> '
+          f'rulings recorded</span></div>'
         + f"</div>{_deal_card(hero)}</div></section>"
 
-        # --- what happens to every trade ------------------------------------
+        # ---- the leverage --------------------------------------------------
         + '<section class="band dark" style="padding-top:0"><div class="in">'
-        + '<div class="leadin"><h2>Every trade takes the same six steps.</h2>'
-          '<p>You learn the shape once. A trade that breaks grows three more '
-          'steps out of the fifth one; a trade a person typed differs only at '
-          'the first.</p></div>'
+        + '<div class="lead"><h2>One shop cannot see the market. '
+          '<em>A network can.</em></h2>'
+          '<p>Razorpay already sits between every business on it. Your '
+          'suppliers are on it. So are your buyers, and so is every merchant '
+          'who has already tried the thing you are about to try. The network '
+          'is there; nobody has switched it on.</p></div>'
         + _steps_html()
         + "</div></section>"
 
-        # --- the merchants' world -------------------------------------------
+        # ---- what your agent does (merchant world) -------------------------
+        + '<section class="band light"><div class="in">'
+        + '<div class="lead"><h2>Four jobs, running while you are asleep.</h2>'
+          '<p>Your broker is four parts with separate memories. Three of them '
+          'act. The fourth only watches, and remembers.</p></div>'
+        + _jobs_html(summary, relationships, book_entries, sale)
+        + "</div></section>"
+
+        # ---- the flywheel --------------------------------------------------
+        + '<section class="band dark"><div class="in">'
+        + '<div class="lead"><h2>And you are paid when your win '
+          '<em>is the thing being sold</em>.</h2>'
+          '<p>Razorpay can see what is working across the whole client base — '
+          'no single merchant can. It sells that as market intelligence, in '
+          'points rather than cash, by sealed auction. The merchants whose '
+          'trading produced the insight take a share of what it fetches, '
+          'without ever being named.</p></div>'
+        + _flywheel_html(sale)
+        + "</div></section>"
+
+        # ---- the merchant door ---------------------------------------------
         + '<section class="band light"><div class="in door"><div class="sell">'
         + "<h2>Your agents, and your books.</h2>"
         + "<p>See what your broker did with your money, then check any of it "
@@ -1744,31 +1878,47 @@ def build_landing(db_path: str, roster) -> str:
           f'{_icon("arrow", 18)}</a>'
         + f"</div>{_books_proof(events, roster)}</div></section>"
 
-        # --- the house's world ----------------------------------------------
+        # ---- the house door ------------------------------------------------
         + '<section class="band dark"><div class="in door"><div class="sell">'
         + "<h2>The desk.</h2>"
         + "<p>The live floor, and the board that ranks which campaigns are "
           "climbing across the whole client base. Staff only — that ranking is "
           "the one thing a merchant cannot see for itself, which is exactly "
-          "why it is worth something.</p>"
+          "why it is worth bidding for.</p>"
         + '<ul class="pts">'
           f'<li>{_icon("chart")}<span>Every agent and every ruling, as it '
           f'happens</span></li>'
           f'<li>{_icon("ledger")}<span>Trending client campaigns, ranked from '
           f'the whole book</span></li>'
-          f'<li>{_icon("shield")}<span>The sealed-bid auction that sells '
+          f'<li>{_icon("gavel")}<span>The sealed-bid auction that sells '
           f'them</span></li></ul>'
         + f'<a class="enter" href="desk.html">Enter the desk'
           f'{_icon("arrow", 18)}</a>'
         + f"</div>{_board_proof(desk)}</div></section>"
 
-        + '<footer>Every figure on this page is backed by a numbered event on '
-          'the audit trail. The negotiation above is quoted, not written.'
-          "</footer>"
+        + f'<footer>{summary.gate_allow} money actions allowed, '
+          f'{summary.gate_deny} refused, {len(failures)} payment mismatches '
+          f'caught and repaired without anyone watching.<br>'
+          f'Every figure on this page is counted from the audit trail. The '
+          f'negotiation above is quoted, not written.</footer>'
 
         + f'<script type="application/json" id="deal">{deal}</script>'
         + LANDING_JS + "</body></html>"
     )
+
+
+def _hero_deal(rail_map):
+    """The longest real negotiation that reached a confirmed payment.
+
+    Found by shape, so a different run finds its own best story rather than
+    rendering an empty box.
+    """
+    candidates = [r for r in rail_map.values()
+                  if len(r["talk"]) >= 4 and any(
+                      s["key"] == "paid" and any(
+                          str(x).startswith("pay_") for x in s["lines"])
+                      for s in r["stations"])]
+    return max(candidates, key=lambda r: len(r["talk"]), default=None)
 
 
 def _deal_card(hero) -> str:
@@ -1778,23 +1928,31 @@ def _deal_card(hero) -> str:
         '<div class="deal"><div class="dh"><span class="dot"></span>'
         'live negotiation'
         f'<span class="want">{esc(hero["need"])}</span></div>'
+        '<div class="spread"><span class="lab">spread</span>'
+        '<span class="track"><i id="gap"></i></span>'
+        '<span class="val" id="sprd">&mdash;</span></div>'
         '<div class="feed" id="feed"></div></div>')
 
 
 def _deal_payload(hero) -> str:
     """The hero negotiation, as lines the page plays.
 
-    Prices are converted from paise once, here, so the page never does
-    arithmetic on money it was handed.
+    Prices convert from paise once, here, so the page never does arithmetic
+    on money. The spread is computed here for the same reason.
     """
     if hero is None:
         return json.dumps({"lines": []})
 
-    lines = []
+    lines, last, opening = [], {}, None
     for n, turn in enumerate(hero["talk"]):
         said = str(turn["said"])
-        # the model prefixes its own offer; the number is already in the price
         said = said.split("—", 1)[-1].split(" - ", 1)[-1].strip()
+        last[turn["who"]] = turn["price"] or 0
+        spread = None
+        if len(last) == 2:
+            spread = abs(list(last.values())[0] - list(last.values())[1])
+            if opening is None and spread:
+                opening = spread
         lines.append({
             "kind": "offer",
             "who": turn["who"],
@@ -1802,6 +1960,9 @@ def _deal_payload(hero) -> str:
             "said": _clip_words(said, 104),
             "done": n == len(hero["talk"]) - 1,
             "hold": 1700,
+            "spread": (f'₹{spread / 100:,.2f}' if spread is not None else None),
+            "gap": (round(spread / opening, 4)
+                    if spread is not None and opening else 0),
         })
 
     gate = next((s for s in hero["stations"] if s["key"] == "gate"), None)
@@ -1816,10 +1977,72 @@ def _deal_payload(hero) -> str:
     return json.dumps({"lines": lines}, separators=(",", ":"))
 
 
+def _jobs_html(summary, relationships, book_entries, sale) -> str:
+    won = f'{sale["price"]} points' if sale else "—"
+    jobs = (
+        ("swap", "Buys and sells for you",
+         "Posts what you need in plain words, finds who has it, argues the "
+         "price down, and settles on Razorpay.",
+         rupees(summary.value_paise), f"settled across {summary.completed} "
+         f"payments"),
+        ("link", "Makes the connections",
+         "Unknown suppliers are tried deliberately, with a small cap, so the "
+         "market never freezes into the same few cliques.",
+         str(relationships), "counterparties found with no introduction"),
+        ("ledger", "Keeps your books",
+         "Every buy and sell lands in a ledger with the counterparty, the "
+         "unit price, and the payment id — and syncs to your Google Sheet.",
+         str(book_entries), "entries kept without anyone typing"),
+        ("gavel", "Bids for what is working",
+         "Sealed-bid auctions for market intelligence, paid in points you "
+         "earned by trading well, not in cash.",
+         won, "for the last lot, at the runner-up's price"),
+    )
+    return '<div class="jobs">' + "".join(
+        f'<article class="job">{_icon(icon, 22)}<h3>{esc(title)}</h3>'
+        f'<p>{esc(body)}</p>'
+        f'<div class="ev"><b>{esc(figure)}</b><span>{esc(caption)}</span></div>'
+        f"</article>"
+        for icon, title, body, figure, caption in jobs) + "</div>"
+
+
+def _flywheel_html(sale) -> str:
+    if not sale:
+        return ('<p class="pull">The privacy floor refused to publish this '
+                'one. A floor that refuses is the control working.</p>')
+
+    paid_each = (sale["royalties"][0].payload.get("amount")
+                 if sale["royalties"] else 0)
+    steps = (
+        ("You trade", "Your settled deals are part of what the house can see.",
+         f'{sale["contributors"]} merchants'),
+        ("The house finds a pattern",
+         "Never from one business, and never naming one.",
+         "anonymised"),
+        ("Agents bid, sealed",
+         "Highest bid wins and pays the runner-up's price, so guessing at "
+         "rivals is pointless and honest valuation wins.",
+         f'{len(sale["bids"])} bids'),
+        ("You are paid",
+         "Everyone whose trading produced the insight takes a share of what "
+         "it fetched.",
+         f'{paid_each} points each'),
+    )
+    wheel = '<div class="wheel">' + "".join(
+        f'<div class="wf"><div class="n">{n + 1}</div><h3>{esc(t)}</h3>'
+        f'<p>{esc(d)}</p><div class="fig">{esc(f)}</div></div>'
+        for n, (t, d, f) in enumerate(steps)) + "</div>"
+
+    return wheel + (
+        '<p class="pull">Razorpay is the platform. Merchants are the creators. '
+        '<span>Their wins are the content.</span> Other merchants pay to '
+        'watch, and the revenue is shared.</p>')
+
+
 def _steps_html() -> str:
     steps = (
-        ("wants", "A merchant needs something, in plain words."),
-        ("picks", "Three sellers surface; the agent argues for one."),
+        ("wants", "You need something, in plain words."),
+        ("picks", "Three sellers surface; your agent argues for one."),
         ("negotiates", "Offers go back and forth until somebody yields."),
         ("the gate", "The ruling is recorded before any money moves."),
         ("pays", "A real Razorpay order, and a real payment id back."),
@@ -1827,13 +2050,11 @@ def _steps_html() -> str:
     )
     return '<div class="steps">' + "".join(
         f'<div class="st"><div class="n">{n + 1}</div>'
-        f'<div class="t">{esc(name)}</div>'
-        f'<div class="d">{esc(why)}</div></div>'
+        f'<div class="t">{esc(name)}</div><div class="d">{esc(why)}</div></div>'
         for n, (name, why) in enumerate(steps)) + "</div>"
 
 
 def _books_proof(events, roster) -> str:
-    """A real merchant's books, as the fragment that sells the merchant page."""
     from exchange.books import entries_for
 
     best = max((entries_for(events, a) for a in roster),
@@ -1842,24 +2063,22 @@ def _books_proof(events, roster) -> str:
         return ""
     rows = "".join(
         f'<div class="pr"><span class="nm">{esc(_clip_words(e.item, 32))}'
-        f"</span>"
-        f'<span class="v">₹{e.amount_inr:,.0f}</span></div>'
+        f'</span><span class="v">₹{e.amount_inr:,.0f}</span></div>'
         for e in best.entries[:5])
     return (
         '<div class="proof"><div class="ph">'
         f'{esc(best.actor_id[2:].replace("_", " "))} &middot; books</div>'
         f'<div class="pb">{rows}'
         f'<div class="pr"><span class="nm">confirmed by Razorpay</span>'
-        f'<span class="v">₹{best.settled_inr:,.0f}</span></div>'
-        "</div></div>")
+        f'<span class="v">₹{best.settled_inr:,.0f}</span></div></div></div>')
 
 
 def _board_proof(desk) -> str:
     if not desk:
         return ""
     rows = "".join(
-        f'<div class="pr"><span class="nm"><span class="rk">'
-        f'{row["rank"]}</span>{esc(row["campaign"])}</span>'
+        f'<div class="pr"><span class="nm"><span class="rk">{row["rank"]}'
+        f'</span>{esc(row["campaign"])}</span>'
         f'<span class="v">{row["movement"]:.1f}&times;</span></div>'
         for row in desk["rows"][:5])
     return ('<div class="proof"><div class="ph">trending client campaigns'

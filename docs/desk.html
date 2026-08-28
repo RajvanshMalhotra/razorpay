@@ -8,6 +8,11 @@
   --serif:"Iowan Old Style","Palatino Linotype",Palatino,Georgia,serif;
 }
 *{box-sizing:border-box}
+/* The other half of the landing page's door: arriving here cross-fades in
+   rather than cutting, so entering the desk reads as continuous. */
+@view-transition{navigation:auto}
+::view-transition-old(root),::view-transition-new(root){
+  animation-duration:.34s;animation-timing-function:cubic-bezier(.16,1,.3,1)}
 html,body{margin:0;height:100%}
 body{background:var(--bg);color:var(--white);font-family:var(--mono);
   font-size:13px;line-height:1.45;-webkit-font-smoothing:antialiased;
