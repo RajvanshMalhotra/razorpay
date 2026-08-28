@@ -1845,12 +1845,12 @@ if(place){
     });
     setTimeout(function(){
       verdict.innerHTML=iWon
-        ? 'You won it — and you pay <b>'+pays+'</b>, not your '+mine+
-          '. The runner-up sets the price, which is why bidding what it is '+
-          'truly worth to you is the winning move.'
-        : '<i>'+esc(all[0].who)+'</i> outbid you at '+all[0].amt+
-          '. Bidding higher than your honest valuation is the only way to '+
-          'lose money here, so the rule does that thinking for you.';
+        ? 'You won it \u2014 and you pay <b>'+pays+'</b>, not your '+mine+
+          '. The runner-up sets the price, so bidding what it is genuinely '+
+          'worth to you always pays off.'
+        : '<i>'+esc(all[0].who)+'</i> took it at '+all[0].amt+
+          '. Bid what it is genuinely worth to you and the rule protects '+
+          'you either way \u2014 you never overpay to win.';
     },90+all.length*85);
   });
   input.addEventListener('keydown',function(e){
@@ -2231,8 +2231,8 @@ def build_landing(db_path: str, roster) -> str:
 
         # ---- the leverage --------------------------------------------------
         + '<section class="band dark" style="padding-top:0"><div class="in">'
-        + '<div class="lead"><h2>One shop cannot see the market. '
-          '<em>A network can.</em></h2>'
+        + '<div class="lead"><h2>One shop sees its own sales. '
+          '<em>A network sees the market.</em></h2>'
           '<p>Every line here is a trade that happened. Nobody made an '
           'introduction &mdash; the agents found each other. Touch any '
           'merchant to see who its agent reached and what it paid.</p></div>'
@@ -2243,9 +2243,10 @@ def build_landing(db_path: str, roster) -> str:
 
         # ---- what your agent does (merchant world) -------------------------
         + '<section class="band light"><div class="in">'
-        + '<div class="lead"><h2>Four jobs, running while you are asleep.</h2>'
-          '<p>Your broker is four parts with separate memories. Three of them '
-          'act. The fourth only watches, and remembers.</p></div>'
+        + '<div class="lead"><h2>Four jobs your agent takes off your desk.</h2>'
+          '<p>Your broker is four parts, each with its own memory. Three of '
+          'them act on your behalf. The fourth watches every deal and keeps '
+          'what is worth remembering.</p></div>'
         + _jobs_html(summary, relationships, book_entries, sale)
         + "</div></section>"
 
@@ -2253,8 +2254,8 @@ def build_landing(db_path: str, roster) -> str:
         + '<section class="band dark"><div class="in">'
         + '<div class="lead"><h2>Try winning one.</h2>'
           '<p>Eight agents bid on this lot in sealed envelopes. Put your own '
-          'number in and open them &mdash; the same rule is applied to your '
-          'bid as was applied to theirs.</p></div>'
+          'number in and open them &mdash; your bid gets the same rule '
+          'theirs did.</p></div>'
         + _auction_html(sale)
         + '<div style="height:clamp(52px,7vw,90px)"></div>'
         + '<div class="lead"><h2>And you are paid when your win '
@@ -2288,9 +2289,9 @@ def build_landing(db_path: str, roster) -> str:
         + '<section class="band dark"><div class="in door"><div class="sell">'
         + "<h2>The desk.</h2>"
         + "<p>The live floor, and the board that ranks which campaigns are "
-          "climbing across the whole client base. Staff only — that ranking is "
-          "the one thing a merchant cannot see for itself, which is exactly "
-          "why it is worth bidding for.</p>"
+          "climbing across the whole client base. Staff only \u2014 seeing "
+          "every client at once is what makes that ranking worth bidding "
+          "for.</p>"
         + '<ul class="pts">'
           f'<li>{_icon("chart")}<span>Every agent and every ruling, as it '
           f'happens</span></li>'
@@ -2394,8 +2395,8 @@ def _jobs_html(summary, relationships, book_entries, sale) -> str:
          rupees(summary.value_paise), f"settled across {summary.completed} "
          f"payments"),
         ("link", "Makes the connections",
-         "Unknown suppliers are tried deliberately, with a small cap, so the "
-         "market never freezes into the same few cliques.",
+         "New suppliers get a deliberate first try, with a small cap, so a "
+         "good one can earn its way in on results.",
          str(relationships), "counterparties found with no introduction"),
         ("ledger", "Keeps your books",
          "Every buy and sell lands in a ledger with the counterparty, the "
