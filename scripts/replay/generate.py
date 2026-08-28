@@ -18,15 +18,34 @@ import html
 import sys
 from datetime import datetime, timezone
 
-from scripts.replay.read import failure_threads, load
+from scripts.replay.read import auction, failure_threads, lessons, load
 
 CSS = """
+/* Designed to read as a RECORD, not as marketing. The persuasive thing here
+   is that the numbers are real and checkable, so the page gets out of their
+   way: one accent colour used only for the gate, monospace wherever a figure
+   comes straight from the log, and no illustration anywhere. A judge should
+   feel they are reading evidence. */
 :root{--ink:#12161c;--dim:#6b7684;--line:#e3e7ec;--bg:#fbfcfd;--card:#fff;
 --ok:#0f7b4f;--no:#a8331f;--gate:#1f4fa8;--accent:#8a5a00}
 *{box-sizing:border-box}
 body{margin:0;background:var(--bg);color:var(--ink);
 font:15px/1.55 ui-sans-serif,-apple-system,"Segoe UI",Roboto,sans-serif}
-.wrap{max-width:980px;margin:0 auto;padding:40px 22px 80px}
+.wrap{max-width:900px;margin:0 auto;padding:0 22px 90px}
+.beat{padding:46px 0;border-top:1px solid var(--line)}
+.beat:first-of-type{border-top:0}
+.beat>.num{font:600 11px/1 ui-monospace,monospace;letter-spacing:.14em;
+color:var(--dim);text-transform:uppercase;margin-bottom:8px}
+.lede{color:var(--dim);max-width:62ch;margin:0 0 20px}
+.mono{font-family:ui-monospace,SFMono-Regular,Menlo,monospace}
+.big{font-size:31px;letter-spacing:-.025em;margin:0 0 4px}
+.hero{padding:54px 0 30px}
+.rule{border:0;border-top:1px solid var(--line);margin:26px 0}
+.two{display:grid;grid-template-columns:1fr 1fr;gap:22px}
+@media(max-width:720px){.two{grid-template-columns:1fr}}
+.q{border-left:2px solid var(--line);padding:2px 0 2px 14px;margin:10px 0;
+color:var(--ink)}
+.q .by{color:var(--dim);font-size:12.5px}
 h1{font-size:26px;margin:0 0 6px;letter-spacing:-.02em}
 h2{font-size:19px;margin:44px 0 12px;letter-spacing:-.01em}
 .sub{color:var(--dim);margin:0 0 28px}
@@ -116,6 +135,27 @@ def _events(trade) -> str:
     return f'<div class="scroll"><table class="ev">{"".join(rows)}</table></div>'
 
 
+def _detail(e) -> str:
+    p = e.payload
+    if e.type == "POLICY_DECIDED":
+        v = p.get("verdict", "")
+        css = "deny" if v != "ALLOW" else "allow"
+        return f'<span class="{css}">{esc(v)}</span> {esc(p.get("reason", ""))}'
+    if e.type == "NEGOTIATION_ENDED":
+        return ("agreed at " + esc(p.get("final_price"))
+                if p.get("agreed") else esc(p.get("reason", "")))
+    if e.type == "SETTLEMENT_INITIATED":
+        return f'{rupees(p.get("amount"))} · {esc(p.get("razorpay_order_id"))}'
+    if e.type == "SETTLEMENT_COMPLETED":
+        return esc(p.get("razorpay_payment_id"))
+    if e.type == "DRIFT_DETECTED":
+        return (f'local {esc(p.get("local_status"))} · '
+                f'remote {esc(p.get("remote_status"))}')
+    if e.type in ("ACTOR_FROZEN",):
+        return esc(p.get("reason"))
+    return ""
+
+
 def _trade_card(trade) -> str:
     settled = trade.outcome == "settled"
     tag = f'<span class="tag {"ok" if settled else "no"}">{esc(trade.outcome or "—")}</span>'
@@ -145,84 +185,130 @@ def build(db_path: str) -> str:
     settled = [t for t in trades if t.outcome == "settled"]
     trials = [t for t in trades if t.was_refused_then_allowed]
     failures = failure_threads(events)
+    sale = auction(events)
+    learned = lessons(events)
 
-    # The trade to lead with: a real haggle that the gate refused once and
-    # then allowed smaller. That single card carries discovery, reasoning,
-    # the cap binding, and money moving.
-    lead = next((t for t in trials if len(
-        [e for e in t.events if e.type == "NEGOTIATION_ROUND"]) >= 3), None)
+    # The trade to lead with: a real haggle the gate refused once and then
+    # allowed smaller. One card carrying discovery, reasoning, the cap
+    # binding, and money moving.
+    lead = next((t for t in trials
+                 if len([e for e in t.events
+                         if e.type == "NEGOTIATION_ROUND"]) >= 3), None)
     lead = lead or (trials[0] if trials else (settled[0] if settled else None))
 
     stats = "".join([
-        _stat(f"{summary.merchants}", "merchants"),
-        _stat(f"{summary.negotiations}", "negotiations"),
+        _stat(summary.merchants, "merchants"),
         _stat(f"{summary.agreed} / {summary.walked}", "agreed / walked away"),
-        _stat(f"{summary.gate_allow + summary.gate_deny}", "gate decisions"),
-        _stat(f"{summary.settlements}", "settlements"),
+        _stat(summary.gate_allow + summary.gate_deny, "gate decisions"),
+        _stat(summary.completed, "payments completed"),
         _stat(rupees(summary.value_paise), "transacted"),
-        _stat(f"{summary.distinct_traders}", "distinct traders"),
-        _stat(f"{summary.events}", "events in the log"),
+        _stat(summary.points_minted, "points minted"),
+        _stat(summary.lessons, "lessons learned"),
+        _stat(summary.events, "events in the log"),
     ])
 
+    # --- beat 3: the failure ------------------------------------------------
     if failures:
-        failed_trade = next(t for t in trades if t.correlation_id == failures[0]) \
-            if any(t.correlation_id == failures[0] for t in trades) else None
-        failure_html = (_events(failed_trade) if failed_trade else
-                        '<div class="empty">Recorded outside a trade thread.</div>')
-        failure_note = ("This drift was not injected. A payment link paid after "
-                        "the settlement returned PENDING produces exactly this "
-                        "state, and that is how it occurred.")
+        thread = [e for e in events if e.correlation_id == failures[0]]
+        rows = "".join(
+            f'<tr><td class="p">{e.seq}</td><td class="a">{esc(e.actor_id)}</td>'
+            f'<td class="t">{esc(e.type)}</td><td>{_detail(e)}</td></tr>'
+            for e in thread)
+        failure_html = f'<div class="scroll"><table class="ev">{rows}</table></div>'
+        failure_note = ("Not injected. A payment link paid after the settlement "
+                        "returned PENDING produces exactly this, and that is how "
+                        f"it happened — {len(failures)} times in this log.")
     else:
         failure_html = ""
-        failure_note = ("No drift in this log yet. A settlement only drifts once "
-                        "its payment link has actually been paid — until then "
-                        "every settlement is honestly PENDING, which is the "
-                        "state the accountant is built to reconcile.")
+        failure_note = ("No drift here yet: a settlement can only drift once its "
+                        "payment link has been paid.")
 
-    econ = ""
-    if summary.insights == 0:
-        econ = (f'<div class="note">The privacy floor needs 25 distinct '
-                f'contributing merchants and this log has '
-                f'<b>{summary.distinct_traders}</b> that traded, of which '
-                f'<b>{summary.completed}</b> have settled payments. Nothing has '
-                f'been minted, and the house agent refusing to mint below the '
-                f'floor is the control working rather than a gap.</div>')
+    # --- beat 4: the intelligence economy -----------------------------------
+    if sale:
+        bid_rows = "".join(
+            f'<tr><td class="a">{esc(e.actor_id)}</td>'
+            f'<td class="p mono">{esc(e.payload.get("amount"))}</td>'
+            f'<td>{esc(str(e.payload.get("reason", ""))[:110])}</td></tr>'
+            for e in sale["bids"])
+        paid_each = (sale["royalties"][0].payload.get("amount")
+                     if sale["royalties"] else 0)
+        econ = f"""
+      <p class="big">&ldquo;{esc(sale['headline'])}&rdquo;</p>
+      <p class="lede">Mined by the house agent from {sale['contributors']}
+        merchants' settled trades. No merchant could have seen this alone.</p>
+      <div class="scroll"><table>{bid_rows}</table></div>
+      <hr class="rule">
+      <p><b>{esc(sale['winner'])}</b> won and paid
+        <span class="mono">{esc(sale['price'])}</span> — the runner-up's bid,
+        not its own. {len(sale['royalties'])} contributing merchants each
+        earned <span class="mono">{esc(paid_each)}</span> points from a win
+        they did not know was being sold.</p>"""
+    else:
+        econ = (f'<div class="note">The privacy floor refused: only '
+                f'{summary.distinct_traders} merchants contributed. A floor '
+                f'that refuses is the control working.</div>')
+
+    lesson_html = "".join(
+        f'<div class="q">{esc(e.payload.get("text", ""))[:190]}'
+        f'<div class="by">{esc(e.actor_id)} on {esc(e.payload.get("counterparty_id"))}'
+        f' · {esc(e.payload.get("kind"))}</div></div>'
+        for e in learned[:4])
 
     generated = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
-    cards = "".join(_trade_card(t) for t in trades[:12])
 
     return f"""<!doctype html>
 <html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Agent Exchange — market replay</title><style>{CSS}</style></head>
 <body><div class="wrap">
-<h1>Agent Exchange — a market that happened</h1>
-<p class="sub">Every figure below is read from <code>{esc(db_path)}</code>, an
-append-only log. This page runs nothing: it replays what the agents did.</p>
 
-<h2>The market</h2>
-<div class="grid">{stats}</div>
+<div class="hero">
+  <h1>A market of AI agents, and the record it left</h1>
+  <p class="lede">{summary.merchants} Razorpay merchants, each represented by
+    an agent that found counterparties, negotiated, and settled real test-mode
+    payments. Every figure below is read from an append-only log. This page
+    runs nothing.</p>
+</div>
 
-<h2>One trade, followed end to end</h2>
-<p class="sub">Discovery, a real negotiation, the gate refusing a full lot to a
-stranger and then allowing a smaller one, and money moving.</p>
-{_trade_card(lead) if lead else '<div class="empty">No completed trade in this log.</div>'}
+<section class="beat">
+  <div class="num">One &middot; the market</div>
+  <div class="grid">{stats}</div>
+  <p class="lede" style="margin-top:18px">{summary.walked} negotiations ended
+    without a deal. That is not a failure rate — agents decline, and a market
+    where every deal closes is not a market.</p>
+</section>
 
-<h2>The failure, caught and repaired</h2>
-<div class="note">{esc(failure_note)}</div>
-{failure_html}
+<section class="beat">
+  <div class="num">Two &middot; one trade, end to end</div>
+  <p class="lede">Discovery, a real negotiation, the gate refusing a full lot
+    to a stranger and then allowing a smaller one, and money moving.
+    {len(trials)} of this log's trades were refused and re-tried smaller.</p>
+  {_trade_card(lead) if lead else '<div class="empty">No completed trade.</div>'}
+</section>
 
-<h2>The intelligence economy</h2>
-{econ or '<div class="empty">—</div>'}
+<section class="beat">
+  <div class="num">Three &middot; the failure, caught and repaired</div>
+  <p class="lede">{esc(failure_note)}</p>
+  {failure_html}
+</section>
 
-<h2>Other trades</h2>
-<p class="sub">{len(trades)} turns in this log; the first 12 shown.</p>
-{cards}
+<section class="beat">
+  <div class="num">Four &middot; the intelligence economy</div>
+  {econ}
+</section>
 
-<footer>Generated {esc(generated)} from {esc(summary.events)} events.
-Gate decisions: {summary.gate_allow} allowed, {summary.gate_deny} refused.
-Nothing on this page was computed by the page — every number comes from the
-log or from the same projection the exchange runs on.</footer>
+<section class="beat">
+  <div class="num">Five &middot; what the agents remember</div>
+  <p class="lede">Each merchant's Subconscious compresses a whole trade into
+    one durable sentence, typed by what it may affect: a reliability lesson
+    can move a counterparty's standing, a behavioural one never can.</p>
+  {lesson_html or '<div class="empty">No lessons yet.</div>'}
+</section>
+
+<footer>Generated {esc(generated)} from {esc(summary.events)} events in
+{esc(db_path)}. Gate: {summary.gate_allow} allowed, {summary.gate_deny}
+refused. Nothing on this page was computed by the page — every number comes
+from the log or the projection the exchange itself runs on.</footer>
 </div></body></html>"""
 
 

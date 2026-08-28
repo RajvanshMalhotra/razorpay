@@ -123,6 +123,38 @@ def load(db_path: str):
     return summary, list(trades.values()), events
 
 
+def auction(events):
+    """The one insight lot, its bids, and where the royalties went.
+
+    Returned as raw events rather than a summary: the persuasive thing about
+    an auction is the numbers, and a summary is a place for them to drift.
+    """
+    minted = next((e for e in events if e.type == "INSIGHT_MINTED"), None)
+    if minted is None:
+        return None
+    corr = minted.correlation_id
+    thread = [e for e in events if e.correlation_id == corr]
+    bids = [e for e in thread if e.type == "BID_PLACED"]
+    cleared = next((e for e in thread if e.type == "AUCTION_CLEARED"), None)
+    royalties = [e for e in thread if e.type == "CREDITS_TRANSFERRED"
+                 and e.payload.get("from_actor_id") == "house"]
+    return {
+        "headline": (minted.payload.get("spec") or minted.payload).get("headline"),
+        "contributors": len((minted.payload.get("spec") or minted.payload)
+                            .get("contributor_ids") or ()),
+        "bids": sorted(bids, key=lambda e: e.payload.get("amount", 0), reverse=True),
+        "winner": cleared.payload.get("winner_id") if cleared else None,
+        "price": cleared.payload.get("price") if cleared else None,
+        "royalties": royalties,
+        "correlation_id": corr,
+    }
+
+
+def lessons(events, limit: int = 6):
+    """What merchants learned, in their own words."""
+    return [e for e in events if e.type == "LESSON_CONSOLIDATED"][:limit]
+
+
 def failure_threads(events) -> list[str]:
     """Correlations where the accountant caught and repaired a drift.
 
