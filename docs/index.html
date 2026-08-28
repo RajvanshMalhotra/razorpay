@@ -22,8 +22,8 @@
   /* Manila notepad. Warm, slightly uneven, with the grain of real stock
      rather than a flat wash — the texture is generated, so the page still
      opens from disk with nothing to fetch. */
-  --paper:oklch(92.4% .014 84); --card:oklch(96% .009 86);
-  --pline:oklch(86% .016 82); --pedge:oklch(78% .02 80);
+  --paper:oklch(97.3% .012 86); --card:oklch(98.4% .009 87);
+  --pline:oklch(90% .014 84); --pedge:oklch(82% .018 82);
   --ink:oklch(22% .014 72); --body:oklch(41% .017 76);
   --soft:oklch(50% .019 78); --faint:oklch(58% .021 80);
 
@@ -42,7 +42,6 @@
   --flare:oklch(70% .19 25); --iris:oklch(86% .16 92);
 
   /* Graph paper, and the one thing yellow genuinely does on paper. */
-  --dot:color-mix(in oklab,var(--ink) 17%,transparent);
   --hi:oklch(89% .17 96);
   --iris-wash:color-mix(in oklab,var(--iris) 14%,transparent);
   --mint-wash:color-mix(in oklab,var(--mint) 13%,transparent);
@@ -61,15 +60,12 @@ body{margin:0;color:var(--ink);font-family:var(--sans);font-size:16px;
   line-height:1.6;-webkit-font-smoothing:antialiased;
   background-color:var(--paper);
   background-image:
-    radial-gradient(circle at 1px 1px,var(--dot) 1px,transparent 0),
-    url("data:image/svg+xml,%3Csvg%20xmlns%3D%27http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%27%20width%3D%27220%27%20height%3D%27220%27%3E%3Cfilter%20id%3D%27f%27%3E%3CfeTurbulence%20type%3D%27fractalNoise%27%20baseFrequency%3D%27.9%27%20numOctaves%3D%273%27%20stitchTiles%3D%27stitch%27%2F%3E%3CfeColorMatrix%20type%3D%27saturate%27%20values%3D%270%27%2F%3E%3C%2Ffilter%3E%3Crect%20width%3D%27220%27%20height%3D%27220%27%20filter%3D%27url%28%2523f%29%27%20opacity%3D%27.38%27%2F%3E%3C%2Fsvg%3E"),
-    url("data:image/svg+xml,%3Csvg%20xmlns%3D%27http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%27%20width%3D%27840%27%20height%3D%27840%27%3E%3Cfilter%20id%3D%27c%27%3E%3CfeTurbulence%20type%3D%27fractalNoise%27%20baseFrequency%3D%27.006%20.011%27%20numOctaves%3D%275%27%20seed%3D%2711%27%20stitchTiles%3D%27stitch%27%2F%3E%3CfeColorMatrix%20type%3D%27saturate%27%20values%3D%270%27%2F%3E%3C%2Ffilter%3E%3Crect%20width%3D%27840%27%20height%3D%27840%27%20filter%3D%27url%28%2523c%29%27%20opacity%3D%27.62%27%2F%3E%3C%2Fsvg%3E");
-  background-size:26px 26px,220px 220px,840px 840px;
-  background-blend-mode:normal,soft-light,soft-light;
+    url("data:image/svg+xml,%3Csvg%20xmlns%3D%27http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%27%20width%3D%27200%27%20height%3D%27200%27%3E%3Cfilter%20id%3D%27f%27%3E%3CfeTurbulence%20type%3D%27fractalNoise%27%20baseFrequency%3D%27.95%27%20numOctaves%3D%273%27%20stitchTiles%3D%27stitch%27%2F%3E%3CfeColorMatrix%20type%3D%27saturate%27%20values%3D%270%27%2F%3E%3CfeComponentTransfer%3E%3CfeFuncA%20type%3D%27discrete%27%20tableValues%3D%271%27%2F%3E%3C%2FfeComponentTransfer%3E%3C%2Ffilter%3E%3Crect%20width%3D%27200%27%20height%3D%27200%27%20filter%3D%27url%28%2523f%29%27%20opacity%3D%27.4%27%2F%3E%3C%2Fsvg%3E"),
+    url("data:image/svg+xml,%3Csvg%20xmlns%3D%27http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%27%20width%3D%27840%27%20height%3D%27840%27%3E%3Cfilter%20id%3D%27c%27%3E%3CfeTurbulence%20type%3D%27fractalNoise%27%20baseFrequency%3D%27.005%20.009%27%20numOctaves%3D%276%27%20seed%3D%2711%27%20stitchTiles%3D%27stitch%27%2F%3E%3CfeColorMatrix%20type%3D%27saturate%27%20values%3D%270%27%2F%3E%3CfeComponentTransfer%3E%3CfeFuncA%20type%3D%27discrete%27%20tableValues%3D%271%27%2F%3E%3C%2FfeComponentTransfer%3E%3C%2Ffilter%3E%3Crect%20width%3D%27840%27%20height%3D%27840%27%20filter%3D%27url%28%2523c%29%27%20opacity%3D%27.78%27%2F%3E%3C%2Fsvg%3E"),
+    url("data:image/svg+xml,%3Csvg%20xmlns%3D%27http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%27%20width%3D%271400%27%20height%3D%271400%27%3E%3Cfilter%20id%3D%27d%27%3E%3CfeTurbulence%20type%3D%27fractalNoise%27%20baseFrequency%3D%27.0016%20.0032%27%20numOctaves%3D%274%27%20seed%3D%275%27%20stitchTiles%3D%27stitch%27%2F%3E%3CfeColorMatrix%20type%3D%27saturate%27%20values%3D%270%27%2F%3E%3CfeComponentTransfer%3E%3CfeFuncA%20type%3D%27discrete%27%20tableValues%3D%271%27%2F%3E%3C%2FfeComponentTransfer%3E%3C%2Ffilter%3E%3Crect%20width%3D%271400%27%20height%3D%271400%27%20filter%3D%27url%28%2523d%29%27%20opacity%3D%27.5%27%2F%3E%3C%2Fsvg%3E");
+  background-size:200px 200px,840px 840px,1400px 1400px;
+  background-blend-mode:soft-light,soft-light,soft-light;
   background-attachment:fixed}
-/* The white bands are sheets laid on the grid, so the page has a floor and
-   the content has somewhere to sit. */
-.light{box-shadow:0 1px 0 var(--pline) inset}
 ::selection{background:var(--blue);color:#fff}
 :focus-visible{outline:2px solid var(--blue);outline-offset:3px}
 html{scrollbar-color:var(--pedge) var(--paper)}
@@ -80,10 +76,7 @@ h1,h2,h3{font-family:var(--disp);font-weight:600;letter-spacing:-.028em;
 
 .band{padding:clamp(60px,8vw,110px) clamp(20px,5vw,64px)}
 .in{max-width:1180px;margin:0 auto}
-.dark{background:transparent;color:var(--ink)}
-.light{background:color-mix(in oklab,var(--card) 88%,transparent);
-  color:var(--ink);border-block:1px solid var(--pline);
-  backdrop-filter:saturate(112%)}
+.dark,.light{background:transparent;color:var(--ink)}
 
 /* --- hero ----------------------------------------------------------------- */
 .hero{display:grid;grid-template-columns:minmax(0,1.05fr) minmax(0,.95fr);
