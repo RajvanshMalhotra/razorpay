@@ -274,3 +274,43 @@ def tape(events, limit: int = 420):
         })
     step = max(1, len(out) // limit)
     return out[::step][:limit]
+
+
+def storefront(events):
+    """The recorded human purchase — the one trade a person drove.
+
+    Kept whole rather than summarised: the claim it supports is that a person
+    reaches the same machinery, and the evidence for that is the identical
+    event sequence on its own correlation id.
+    """
+    threads = {}
+    for e in events:
+        if e.correlation_id.startswith("shop_"):
+            threads.setdefault(e.correlation_id, []).append(e)
+    # the one that actually settled, else the longest attempt
+    settled = [t for t in threads.values()
+               if any(x.type == "SETTLEMENT_INITIATED" for x in t)]
+    chosen = (settled or sorted(threads.values(), key=len, reverse=True) or [[]])[0]
+    query = next((e.payload.get("asset_query", {}).get("text", "")
+                  for e in chosen if e.type == "ORDER_POSTED"), "")
+    return {
+        "query": query,
+        "rows": [{"actor": e.actor_id, "type": e.type,
+                  "says": SAYS.get(e.type, e.type), "seq": e.seq}
+                 for e in chosen],
+    }
+
+
+def catalogue(events, limit: int = 40):
+    """What is actually for sale, so the storefront box can answer honestly."""
+    out = {}
+    for e in events:
+        if e.type == "ASSET_LISTED":
+            p = e.payload
+            out[p.get("asset_id")] = {"title": p.get("title", ""),
+                                      "seller": e.actor_id}
+    for e in events:
+        if e.type == "ORDER_POSTED" and e.payload.get("asset_ref") in out:
+            out[e.payload["asset_ref"]]["price"] = e.payload.get("limit_price")
+            out[e.payload["asset_ref"]]["qty"] = e.payload.get("qty")
+    return [v | {"id": k} for k, v in out.items() if v.get("price")][:limit]

@@ -20,6 +20,10 @@ from datetime import datetime, timezone
 
 from scripts.replay.read import auction, failure_threads, lessons, load, tape
 
+
+def state_actors(events):
+    return {e.actor_id for e in events if e.actor_id.startswith('m_')}
+
 CSS = """
 /* A TERMINAL, not a document. The content is a market log: thousands of
    figures, timestamps, verdicts and counterparties. Instrumentation is the
@@ -139,6 +143,86 @@ summary:focus-visible{outline:1px solid var(--amber);outline-offset:2px}
 footer{border-top:1px solid var(--line);margin-top:18px;padding:12px 2px;
   color:var(--faint);font-size:11px;letter-spacing:.04em;line-height:1.7}
 @media(prefers-reduced-motion:reduce){*{transition-duration:.01ms!important}}
+
+/* --- THE WORKSPACE ---------------------------------------------------- */
+/* Not a page you scroll: a desk you sit at. Every pane is a standing
+   instrument, and the tape at the centre drives all of them — as events
+   stream, the leaderboard climbs, the gate log fills, the negotiation
+   updates. One clock, many readouts, which is what makes it a terminal
+   rather than a set of charts that happen to share a background. */
+.desk{display:grid;gap:10px;grid-template-columns:210px minmax(0,1fr) 290px;
+  grid-template-areas:
+    "roster floor  board"
+    "roster nego   gate"
+    "shop   shop   intel";
+  align-items:start}
+@media(max-width:1180px){
+  .desk{grid-template-columns:minmax(0,1fr) 300px;
+    grid-template-areas:"floor board" "nego gate" "shop intel" "roster roster"}}
+@media(max-width:820px){
+  .desk{grid-template-columns:minmax(0,1fr);
+    grid-template-areas:"floor" "nego" "board" "gate" "shop" "intel" "roster"}}
+.a-roster{grid-area:roster} .a-floor{grid-area:floor} .a-board{grid-area:board}
+.a-nego{grid-area:nego} .a-gate{grid-area:gate} .a-shop{grid-area:shop}
+.a-intel{grid-area:intel}
+.pane{border:1px solid var(--line);background:var(--panel);position:relative;
+  display:flex;flex-direction:column;min-width:0}
+.pane::before,.pane::after{content:"";position:absolute;width:6px;height:6px;
+  border-color:var(--faint);border-style:solid;pointer-events:none}
+.pane::before{top:-1px;left:-1px;border-width:1px 0 0 1px}
+.pane::after{bottom:-1px;right:-1px;border-width:0 1px 1px 0}
+.ph{display:flex;gap:9px;align-items:baseline;padding:7px 11px;
+  border-bottom:1px solid var(--line);background:var(--raised);
+  font-size:10.5px;letter-spacing:.1em;text-transform:uppercase}
+.ph b{color:var(--amber);font-weight:600}
+.ph span{color:var(--dim);font-weight:600}
+.ph em{margin-left:auto;font-style:normal;color:var(--faint);font-size:10px}
+.pc{padding:9px 11px;overflow-y:auto;min-height:0}
+.h150{max-height:150px} .h210{max-height:210px} .h250{max-height:250px}
+.h300{max-height:300px}
+
+/* readouts inside panes */
+.lb{display:grid;grid-template-columns:18px 1fr auto;gap:8px;
+  padding:3px 0;font-size:12px;align-items:baseline}
+.lb .r{color:var(--faint);text-align:right}
+.lb .n{color:var(--blue);overflow:hidden;text-overflow:ellipsis;
+  white-space:nowrap}
+.lb .v{color:var(--amber);font-weight:600}
+.lb.up .v{color:var(--green)}
+.mrow{display:flex;gap:7px;align-items:center;padding:2.5px 0;font-size:11.5px}
+.mrow .st{width:6px;height:6px;border-radius:50%;background:var(--faint);
+  flex:none}
+.mrow.act .st{background:var(--green)} .mrow.frz .st{background:var(--red)}
+.mrow .nm{color:var(--dim);overflow:hidden;text-overflow:ellipsis;
+  white-space:nowrap}
+.mrow.act .nm{color:var(--ink)}
+.nline{display:grid;grid-template-columns:auto auto 1fr;gap:9px;padding:3px 0;
+  font-size:12px;align-items:baseline}
+.nline .who{color:var(--blue);white-space:nowrap}
+.nline .px{color:var(--ink);font-weight:600;white-space:nowrap}
+.nline .msg{color:var(--dim);overflow:hidden;text-overflow:ellipsis;
+  white-space:nowrap}
+.grow{display:grid;grid-template-columns:auto 1fr;gap:9px;padding:3px 0;
+  font-size:11.5px;align-items:baseline}
+.empty{color:var(--faint);font-size:11.5px;padding:6px 0}
+
+/* the storefront box */
+.shopbar{display:flex;gap:8px;padding:9px 11px;border-bottom:1px solid var(--line)}
+.shopbar input{flex:1;min-width:0;font:inherit;font-size:13px;
+  background:var(--bg);border:1px solid var(--line);color:var(--ink);
+  padding:7px 10px}
+.shopbar input:focus{outline:none;border-color:var(--amber)}
+.shopbar input::placeholder{color:var(--faint)}
+.shopbar button{font:inherit;font-size:11px;letter-spacing:.09em;
+  text-transform:uppercase;background:transparent;border:1px solid var(--line);
+  color:var(--ink);padding:0 14px;cursor:pointer}
+.shopbar button:hover{border-color:var(--amber);color:var(--amber)}
+.shopbar button:focus-visible{outline:1px solid var(--amber);outline-offset:2px}
+.hit{display:grid;grid-template-columns:1fr auto auto;gap:10px;padding:4px 0;
+  font-size:12px;align-items:baseline;border-bottom:1px solid rgba(28,36,46,.5)}
+.hit .t{color:var(--ink);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.hit .s{color:var(--blue);white-space:nowrap}
+.hit .p{color:var(--amber);white-space:nowrap}
 
 /* --- THE TAPE: the page's one signature ------------------------------- */
 /* A terminal's identity is the stream, and "watch the agents run" IS the
@@ -271,6 +355,236 @@ def _tape(rows) -> str:
   }} else {{play()}}
 }})();
 </script>"""
+
+
+ENGINE = r'''<script>
+(function(){
+var M=JSON.parse(document.getElementById('mkt').textContent),
+    rows=M.rows,i=0,rate=4,timer=null,pts={},ga=0,gd=0,negoKey=null;
+var $=function(id){return document.getElementById(id)};
+var st=$('st'),ct=$('ct'),pp=$('pp'),rs=$('rs'),board=$('board'),
+    nego=$('nego'),negowho=$('negowho'),gate=$('gate');
+var reduce=matchMedia('(prefers-reduced-motion: reduce)').matches;
+function esc(t){var d=document.createElement('div');d.textContent=t==null?'':t;
+  return d.innerHTML}
+
+function merchant(id,cls){
+  var el=document.querySelector('[data-m="'+CSS.escape(id)+'"]');
+  if(!el)return; el.classList.remove('act','frz');
+  if(cls)el.classList.add(cls);
+  if(cls==='act')setTimeout(function(){el.classList.remove('act')},2600);
+}
+function leader(){
+  var top=Object.keys(pts).map(function(k){return[k,pts[k]]})
+    .sort(function(a,b){return b[1]-a[1]}).slice(0,9);
+  if(!top.length)return;
+  board.innerHTML=top.map(function(p,n){
+    return '<div class="lb'+(n===0?' up':'')+'"><span class="r">'+(n+1)+
+      '</span><span class="n">'+esc(p[0])+'</span><span class="v">'+
+      p[1].toLocaleString()+'</span></div>'}).join('');
+}
+function gateRow(r){
+  if(gate.querySelector('.empty'))gate.innerHTML='';
+  var ok=/ALLOW/.test(r.detail);
+  ok?ga++:gd++; $('ga').textContent=ga; $('gd').textContent=gd;
+  var d=document.createElement('div');
+  d.className='grow';
+  d.innerHTML='<span class="'+(ok?'allow':'deny')+'">'+(ok?'ALLOW':'DENY')+
+    '</span><span class="msg" style="color:var(--dim);overflow:hidden;'+
+    'text-overflow:ellipsis;white-space:nowrap">'+
+    esc(r.detail.replace(/^(ALLOW|DENY)\s*—\s*/,''))+'</span>';
+  gate.insertBefore(d,gate.firstChild);
+  while(gate.children.length>40)gate.removeChild(gate.lastChild);
+}
+function negoRow(r){
+  var key=r.actor;
+  if(nego.querySelector('.empty'))nego.innerHTML='';
+  var d=document.createElement('div');d.className='nline';
+  var parts=String(r.detail).split(' — ');
+  d.innerHTML='<span class="who">'+esc(r.actor)+'</span>'+
+    '<span class="px">'+esc(parts[0])+'</span>'+
+    '<span class="msg">'+esc(parts.slice(1).join(' — '))+'</span>';
+  nego.appendChild(d); nego.scrollTop=nego.scrollHeight;
+  negowho.textContent='in progress';
+  while(nego.children.length>14)nego.removeChild(nego.firstChild);
+}
+function step(){
+  if(i>=rows.length){stop();pp.textContent='replay';
+    pp.setAttribute('aria-pressed','false');return}
+  var r=rows[i++];
+  var el=document.createElement('div');
+  el.className='row '+(r.tone||'')+' new';
+  el.innerHTML='<span class="s">'+r.seq+'</span><span class="w">'+
+    esc(r.actor)+'</span><span class="x">'+esc(r.says)+'</span>'+
+    '<span class="d">'+esc(r.detail)+'</span>';
+  st.appendChild(el);
+  setTimeout(function(){el.classList.remove('new')},400);
+  while(st.children.length>120)st.removeChild(st.firstChild);
+  st.scrollTop=st.scrollHeight; ct.textContent=i;
+
+  if(r.type==='POLICY_DECIDED')gateRow(r);
+  else if(r.type==='NEGOTIATION_ROUND')negoRow(r);
+  else if(r.type==='NEGOTIATION_ENDED'){
+    negowho.textContent=/agreed/.test(r.detail)?'agreed':'no deal';}
+  else if(r.type==='POINTS_MINTED'){
+    var n=parseInt(r.detail,10)||0; pts[r.actor]=(pts[r.actor]||0)+n; leader();}
+  else if(r.type==='ACTOR_FROZEN'){merchant(r.actor,'frz');}
+  else if(r.type==='ACTOR_RESUMED'){merchant(r.actor,'act');}
+  else if(r.type==='INSIGHT_MINTED'||r.type==='AUCTION_CLEARED'||
+          r.type==='BID_PLACED'){
+    var box=$('intel'),body=$('intelbody');
+    var e0=box.querySelector('.empty'); if(e0)e0.remove();
+    body.hidden=false;
+    if(r.type==='BID_PLACED'){
+      var b=document.createElement('div');b.className='lb';
+      b.innerHTML='<span class="r"></span><span class="n">'+esc(r.actor)+
+        '</span><span class="v">'+esc(r.detail)+'</span>';
+      $('bids').appendChild(b);}
+    if(r.type==='AUCTION_CLEARED'){
+      var w=document.createElement('div');w.className='lb up';
+      w.innerHTML='<span class="r">&#10003;</span><span class="n">'+
+        esc(r.detail)+'</span><span class="v"></span>';
+      $('bids').appendChild(w);}
+  }
+  if(r.actor&&r.actor.indexOf('m_')===0)merchant(r.actor,'act');
+}
+function play(){stop();timer=setInterval(step,Math.max(14,300/rate))}
+function stop(){if(timer)clearInterval(timer);timer=null}
+function restart(){stop();st.innerHTML='';nego.innerHTML='';gate.innerHTML='';
+  board.innerHTML='';pts={};ga=gd=0;$('ga').textContent=0;$('gd').textContent=0;
+  i=0;ct.textContent=0;play();pp.textContent='pause';
+  pp.setAttribute('aria-pressed','true')}
+pp.addEventListener('click',function(){
+  if(timer){stop();pp.textContent='play';pp.setAttribute('aria-pressed','false')}
+  else if(i>=rows.length)restart();
+  else{play();pp.textContent='pause';pp.setAttribute('aria-pressed','true')}});
+rs.addEventListener('click',restart);
+[].forEach.call(document.querySelectorAll('[data-rate]'),function(b){
+  b.addEventListener('click',function(){rate=+b.dataset.rate;
+    [].forEach.call(document.querySelectorAll('[data-rate]'),function(o){
+      o.setAttribute('aria-pressed',o===b?'true':'false')});
+    if(timer)play();})});
+
+/* --- the storefront ---------------------------------------------------
+   This searches the REAL catalogue read out of the log, then shows the
+   purchase a person actually made. It does not pretend to run an agent in
+   the browser: the honest claim is that a person reaches the same order
+   book, and the evidence is the recorded thread. */
+var q=$('q'),hits=$('hits');
+function search(){
+  var terms=(q.value||q.placeholder).toLowerCase().split(/\s+/)
+    .filter(function(w){return w.length>3});
+  var found=M.cat.map(function(c){
+    var t=c.title.toLowerCase(),n=0;
+    terms.forEach(function(w){if(t.indexOf(w)>=0)n++});
+    return[c,n]}).filter(function(p){return p[1]>0})
+    .sort(function(a,b){return b[1]-a[1]}).slice(0,6);
+  if(!found.length){hits.innerHTML='<div class="empty">Nothing on the book '+
+    'matches that. The agents only stock what merchants actually listed.</div>';
+    return}
+  hits.innerHTML=found.map(function(p){var c=p[0];
+    return '<div class="hit"><span class="t">'+esc(c.title)+
+      '</span><span class="s">'+esc(c.seller)+'</span><span class="p">'+
+      (c.price/100).toFixed(2)+'</span></div>'}).join('')+
+    '<div style="margin-top:9px;font-size:11px;letter-spacing:.06em;'+
+    'text-transform:uppercase;color:var(--faint)">the purchase a person '+
+    'actually made</div>'+
+    M.shop.rows.map(function(r){
+      return '<div class="grow"><span style="color:var(--faint)">'+r.seq+
+        '</span><span style="color:var(--dim)">'+esc(r.says)+'</span></div>'
+    }).join('');
+}
+$('go').addEventListener('click',search);
+q.addEventListener('keydown',function(e){if(e.key==='Enter')search()});
+
+if(reduce){while(i<rows.length)step();stop();pp.textContent='replay';
+  pp.setAttribute('aria-pressed','false')}else{play()}
+})();
+</script>
+'''
+
+
+def _desk(rows, merchants, cat, sf, sale) -> str:
+    """The workspace. One clock, many readouts.
+
+    The tape drives every pane: as events stream, the leaderboard climbs, the
+    gate log fills, the negotiation updates, merchants light up and freeze.
+    That shared clock is what makes this a terminal rather than a set of
+    charts that happen to share a background.
+    """
+    import json
+
+    data = json.dumps({"rows": rows, "merchants": merchants,
+                       "cat": cat, "shop": sf}, separators=(",", ":"))
+    mrows = "".join(
+        f'<div class="mrow" data-m="{esc(m)}"><span class="st"></span>'
+        f'<span class="nm">{esc(m)}</span></div>' for m in merchants)
+    hl = esc(sale["headline"]) if sale else "nothing minted yet"
+    return f"""<div class="desk">
+
+<section class="pane a-roster"><div class="ph"><b>A</b><span>merchants</span>
+  <em id="mcount">{len(merchants)}</em></div>
+  <div class="pc h300" id="mlist">{mrows}</div></section>
+
+<section class="pane a-floor"><div class="ph"><b>B</b><span>trading floor</span>
+  <em><span id="ct">0</span> / {len(rows)} events</em></div>
+  <div class="ctl">
+    <button id="pp" aria-pressed="true">pause</button>
+    <button data-rate="1">1&times;</button>
+    <button data-rate="4" aria-pressed="true">4&times;</button>
+    <button data-rate="20">20&times;</button>
+    <button id="rs">restart</button>
+  </div>
+  <div class="pc stream h250" id="st" role="log" aria-live="polite"
+       aria-label="Market events in the order they happened"></div>
+  <div class="legend">
+    <i><b style="background:var(--green)"></b>allowed</i>
+    <i><b style="background:var(--red)"></b>refused</i>
+    <i><b style="background:var(--amber)"></b>money moved</i>
+  </div></section>
+
+<section class="pane a-board"><div class="ph"><b>C</b><span>leaderboard</span>
+  <em>points earned</em></div>
+  <div class="pc h250" id="board">
+    <div class="empty">Points are minted when a trade settles. Watch them
+      arrive.</div></div></section>
+
+<section class="pane a-nego"><div class="ph"><b>D</b><span>live negotiation</span>
+  <em id="negowho">waiting</em></div>
+  <div class="pc h210" id="nego">
+    <div class="empty">The current haggle appears here as it happens.</div>
+  </div></section>
+
+<section class="pane a-gate"><div class="ph"><b>E</b><span>the gate</span>
+  <em><span id="ga">0</span> allowed / <span id="gd">0</span> refused</em></div>
+  <div class="pc h210" id="gate">
+    <div class="empty">Every money action is ruled on before it happens.</div>
+  </div></section>
+
+<section class="pane a-shop"><div class="ph"><b>F</b><span>storefront</span>
+  <em>a person buys, in plain language</em></div>
+  <div class="shopbar">
+    <input id="q" placeholder="{esc(sf['query'] or 'what do you need?')}"
+      aria-label="Describe what you need">
+    <button id="go">search</button>
+  </div>
+  <div class="pc h210" id="hits">
+    <div class="empty">Type what you need. This searches the same order book
+      the agents trade on &mdash; then shows the purchase a person actually
+      made through it.</div></div></section>
+
+<section class="pane a-intel"><div class="ph"><b>G</b><span>intelligence</span>
+  <em>second price, sealed bids</em></div>
+  <div class="pc h210" id="intel">
+    <div class="empty">Mined from settled trades once the privacy floor is
+      met.</div>
+    <div id="intelbody" hidden><p class="lede"
+      style="font-size:12.5px;margin:0 0 8px">&ldquo;{hl}&rdquo;</p>
+      <div id="bids"></div></div>
+  </div></section>
+
+</div>
+<script id="mkt" type="application/json">{data}</script>""" + ENGINE
 
 
 def _panel(idx: str, title: str, body: str, note: str = "") -> str:
@@ -451,7 +765,11 @@ def build(db_path: str) -> str:
         for e in learned[:4])
 
     generated = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
-    tape_html = _tape(tape(events))
+    from scripts.replay.read import catalogue, storefront
+
+    merchants = sorted(state_actors(events))
+    tape_html = _desk(tape(events), merchants, catalogue(events),
+                      storefront(events), sale)
 
     beat1 = (f'<div class="grid">{stats}</div>'
              f'<p class="lede" style="margin-top:12px">{summary.walked} of '
