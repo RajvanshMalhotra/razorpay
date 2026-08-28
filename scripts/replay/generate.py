@@ -27,9 +27,9 @@ client-side check is not access control, and dressing one up as if it were
 would be the only dishonest thing on an otherwise checkable pair of pages.
 
 ONE LAYOUT, LEARNED ONCE. Every trade travels the same rail — wants, picked,
-haggled, the gate, paid, remembered. The interesting cases are not different
-screens: a trade that breaks grows three more stations out of the fifth one; a
-trade a person typed differs only at the first.
+negotiated, the gate, paid, remembered. The interesting cases are not
+different screens: a trade that breaks grows three more stations out of the
+fifth one; a trade a person typed differs only at the first.
 
 EVERY STATION IS STAMPED WITH ITS EVENT NUMBER. That number is the argument in
 its smallest form — look it up in the log and you find exactly what the
@@ -388,7 +388,7 @@ def _footer(db_path, summary) -> str:
 # it once and leaves it still; the desk redraws it as the tape moves.
 
 RAIL_JS = r"""
-var CAPS={wants:'wants',picked:'picked',haggled:'haggled',gate:'the gate',
+var CAPS={wants:'wants',picked:'picked',haggled:'negotiated',gate:'the gate',
   paid:'paid',broke:'books disagree',froze:'froze',repaired:'repaired',
   remembered:'remembered'};
 var GLYPH={wants:'○',picked:'→',haggled:'⇄',gate:'✓',
@@ -1414,7 +1414,7 @@ def _board_html(desk, sale, summary) -> str:
 # =============================================================================
 #
 # THE PAGE IS SPLIT INTO THE TWO WORLDS IT LEADS TO. Dark is the machine side,
-# where agents haggle and the house watches the whole book. Light is the
+# where agents negotiate and the house watches the whole book. Light is the
 # merchant side. You scroll out of one and into the other, and each door sits
 # inside its own world — so clicking through is visually continuous rather
 # than a jump. The inversion is the structure, and it encodes the product's
@@ -1704,7 +1704,7 @@ def build_landing(db_path: str, roster) -> str:
 
         # --- the machines' world -------------------------------------------
         + '<section class="band dark"><div class="in hero"><div>'
-        + "<h1>Machines that haggle, and money that <em>proves it</em>.</h1>"
+        + "<h1>Machines that close deals, and money that <em>proves it</em>.</h1>"
         + '<p class="say">Every Razorpay merchant gets an agent. The agents '
           'find each other, argue about price in plain English, and settle '
           'real payments — and not one rupee moves until a policy gate has '
@@ -1820,7 +1820,7 @@ def _steps_html() -> str:
     steps = (
         ("wants", "A merchant needs something, in plain words."),
         ("picks", "Three sellers surface; the agent argues for one."),
-        ("haggles", "Offers go back and forth until somebody yields."),
+        ("negotiates", "Offers go back and forth until somebody yields."),
         ("the gate", "The ruling is recorded before any money moves."),
         ("pays", "A real Razorpay order, and a real payment id back."),
         ("remembers", "One sentence kept, read before the next deal."),
