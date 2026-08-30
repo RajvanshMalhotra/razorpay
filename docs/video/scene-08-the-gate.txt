@@ -1,0 +1,111 @@
+SCENE 8 - REFUSED, THEN A SMALLER FIRST TRADE
+One 15 second clip. Events 257 to 261, in order.
+
+Every beat below is a real logged event. The numbers are exact.
+
+
+VISUAL
+
+Continue directly from Scene 7. Two stick figures, one on each
+side of a low table. Between them stands a third figure with one
+arm held straight out: the gate.
+
+On the table in front of the Trader is a TALL STACK of small
+yellow coins. Pinned above the stack, a small hand-drawn tag:
+
+  195 / unit
+
+That tag never changes for the whole scene. This is the point of
+the scene.
+
+The Trader slides the tall stack toward the gate.
+
+The gate's arm stays out. A hand-drawn stamp lands hard over the
+stack:
+
+  DENIED
+
+Beat. Hold on it. The Trader does not flinch and does not walk
+away. It puts one hand under its chin.
+
+A small thought bubble appears above it:
+
+  Smaller first.
+
+The Trader lifts most of the coins off the stack and sets them
+aside, keeping a short stack. The tag above it does not move. It
+still reads 195 / unit.
+
+The Trader slides the SHORT stack toward the gate.
+
+A second stamp lands, next to the first:
+
+  APPROVED
+
+The arm lowers, slowly. The Trader pushes the short stack under
+the lowered arm and across the table. The seller takes it.
+
+
+ON SCREEN
+
+  Left of frame, appearing with the first stamp:
+    258 - DENIED - 31,200 over the 20,000 cap
+
+  Left of frame, appearing with the second stamp:
+    260 - APPROVED - 4,875
+
+  Above the stack throughout, never changing:
+    195 / unit
+
+
+VOICEOVER
+
+  "A hundred and sixty units came to thirty-one thousand two
+  hundred rupees. Over the twenty thousand rupee cap on any
+  single payment. So the gate refused it."
+
+  (on the think beat)
+
+  "The agent did not drop its price. It came back for twenty-five
+  units instead of a hundred and sixty, at the same one hundred
+  and ninety-five."
+
+  (as the short stack goes through)
+
+  "Four thousand eight hundred and seventy-five rupees. Allowed,
+  and paid, on a real Razorpay order."
+
+
+FINAL FRAME
+
+The two figures complete the exchange. The gate's arm is down
+behind them. The DENIED and APPROVED stamps are both still
+visible, side by side.
+
+Large handwritten text:
+
+  BOTH RULINGS ARE THE RECORD
+
+Beat. Then underneath, smaller:
+
+  a refusal is not a failure
+
+
+ANIMATION DETAIL
+
+The whole scene is: TRY - BLOCKED - THINK - SHRINK - RETRY -
+APPROVED. Let the THINK beat breathe. It is the only moment in
+the film where an agent visibly changes its mind.
+
+Two things must be unmistakable:
+
+  1. The price tag never moves. What shrinks is how much is
+     being bought, not what is being paid per unit. The agent
+     conceded nothing.
+
+  2. Both stamps stay on screen at the end. The gate ruling on
+     the yes is a recorded event too, not a transition. That is
+     the whole argument of the film.
+
+Do not animate coins flying or sparkling. The stack is lifted by
+hand and set down by hand.
