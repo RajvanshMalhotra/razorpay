@@ -1065,6 +1065,14 @@ def _sheet_link(actor_id: str):
     import os
     import pathlib as _p
 
+    # Load .env here rather than relying on the caller's environment. A
+    # plain rebuild would otherwise silently drop every sheet link and the
+    # pages would quietly regress to the setup instructions.
+    try:
+        from dotenv import load_dotenv
+        load_dotenv(_p.Path(__file__).resolve().parents[2] / ".env")
+    except ImportError:
+        pass
     sheet_id = os.environ.get("GOOGLE_SHEET_ID")
     if not sheet_id:
         return None
