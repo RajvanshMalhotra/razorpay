@@ -1,201 +1,255 @@
 THE AGENT EXCHANGE - VIDEO SCRIPT
+Eighteen scenes. Each one is a single 15 second clip: one action,
+about thirty words. Nothing is meant to happen fast.
 
 Style for every scene: 2D hand-drawn stick figure animation on a
 plain white background. Black ink lines with uneven hand-drawn
 weight. Simple round heads, dot eyes, no faces. Flat, no shading,
 no gradients, no 3D. One accent colour only, a warm yellow.
-Locked-off camera. Calm, plain, confident tone. No stock footage,
-no corporate imagery, no people.
+Locked-off camera, no zoom. Movements are slow and deliberate,
+with long pauses. Calm, unhurried, confident.
 
 
 SCENE 1
 
 VISUAL: One stick figure stands alone behind a small counter. It
-looks left, then right. Nobody comes. It shrugs.
+slowly looks left. Long pause. It slowly looks right. Nobody
+comes. It shrugs. Hold on the still frame.
 
-ON SCREEN: Every business needs suppliers. Finding them, checking
-them, and arguing the price takes time nobody has.
+ON SCREEN: Finding suppliers takes time nobody has
 
 NARRATION: Every business needs suppliers, and needs buyers.
-Finding them, checking whether they are real, and arguing the
-price takes time a small business does not have.
+Finding them, and checking whether they are real, takes time a
+small business does not have.
 
 
 SCENE 2
 
 VISUAL: Wide shot of forty tiny stick figures, each alone behind
-its own small counter, evenly spaced. None of them face each
-other. They are completely still.
+its own small counter, evenly spaced across the frame. None of
+them face each other. They stay completely still for the whole
+clip except for one slow blink.
 
-ON SCREEN: So most trade with whoever they already know, at
-whatever price is listed.
+ON SCREEN: So most trade with whoever they already know
 
 NARRATION: So most of them trade with whoever they already know,
-at whatever price is listed.
+at whatever price happens to be listed. Nobody has time to look
+any further than that.
 
 
 SCENE 3
 
-VISUAL: The same grid of forty figures. A single warm yellow line
-draws itself from one figure to another. Then a second line, then
-several more, until a sparse web connects most of them.
+VISUAL: The same grid of forty figures. One single warm yellow
+line draws itself slowly from one figure to another across the
+frame. Nothing else moves. Hold.
 
-ON SCREEN: Razorpay already sits between all of them.
+ON SCREEN: Razorpay already sits between all of them
 
-NARRATION: Razorpay already sits between all of them. It already
-knows who is real and who pays.
+NARRATION: But Razorpay already sits between all of them. It
+already knows who is real. It already knows who actually pays.
 
 
 SCENE 4
 
-VISUAL: Full white frame. The words appear, and a warm yellow
-rule draws itself underneath, left to right.
+VISUAL: The same grid. More warm yellow lines draw themselves on,
+one after another, slowly, until a web connects most of the
+figures. The figures stay still.
 
 ON SCREEN: THE AGENT EXCHANGE
 
 NARRATION: So we built the Agent Exchange. Every merchant gets an
 agent. It finds who to deal with on that network, argues the
-price down, settles on real Razorpay payments, and writes the
-books. And every rupee it moves is checked against a limit you
-set, ruled on before it moves, and written to a log you can read
-back.
+price down, and settles on real Razorpay payments.
 
 
 SCENE 5
 
-VISUAL: SCREEN RECORDING. The exchange landing page loading, with
-a yellow highlighter drawing across the headline.
+VISUAL: A stick figure offers a small yellow parcel to another
+stick figure. A third figure stands between them with one arm
+held straight out like a barrier. The parcel stops at the arm.
+Long hold. Nothing else happens.
 
-ON SCREEN: read from the event log - nothing here was typed by hand
+ON SCREEN: Every rupee is ruled on before it moves
 
-NARRATION: This is a real run. Thirty-two businesses. Nine
-hundred and sixty-eight recorded events. Not one figure on screen
-was typed by hand.
+NARRATION: And every rupee it moves is checked against a limit
+you set, ruled on before it moves, and written to a log you can
+read back afterwards.
 
 
 SCENE 6
 
-VISUAL: SCREEN RECORDING. A ring of thirty-two merchant names
-with lines drawn between the ones that traded. Two of them light
-up in turn.
+VISUAL: SCREEN RECORDING of the exchange landing page. Do not
+generate this.
 
-ON SCREEN: 1 - It finds who to deal with
+ON SCREEN: nothing here was typed by hand
 
-NARRATION: Thirty-two businesses. Thirty-six trading
-relationships. And nobody made a single introduction.
+NARRATION: This is a real run. Thirty-two businesses. Nine
+hundred and sixty-eight recorded events. Not one figure you are
+about to see was typed by hand.
 
 
 SCENE 7
 
-VISUAL: Two stick figures face each other in profile. Empty
-speech bubbles pop above them in turn, left then right, each one
-slightly smaller than the last. Then cut to a SCREEN RECORDING of
-the real quoted offers scrolling.
+VISUAL: SCREEN RECORDING of a ring of merchant names with lines
+between the ones that traded. Do not generate this.
 
-ON SCREEN: 2 - It argues the price
-Then, in the speech bubbles as they pop: 200, 205, 190, 195, 180,
-190, 170, 185
+ON SCREEN: 1 - It finds who to deal with
 
-NARRATION: This is what that looks like. Two agents, arguing
-about price, in plain English. And these are their actual words,
-quoted from the log. Five rounds, closing from two hundred rupees
-a unit to a hundred and eighty-five.
+NARRATION: Thirty-two businesses, and thirty-six trading
+relationships between them. Nobody made a single introduction.
+The agents found each other.
 
 
 SCENE 8
 
-VISUAL: A stick figure offers a small yellow parcel to another. A
-third figure stands between them with one arm held straight out
-like a barrier. The parcel stops at the arm and waits. The arm
-lowers. The parcel passes. Then hold on a SCREEN RECORDING of the
-audit trail, one station at a time.
+VISUAL: Two stick figures face each other in profile, one on each
+side of the frame. An empty speech bubble pops above the left
+one. Pause. An empty bubble pops above the right one. Pause. Two
+more, slowly, each smaller than the last.
 
-ON SCREEN: 3 - Every rupee is ruled on first
+ON SCREEN: 2 - It argues the price
+In the bubbles as they pop: 200, 205, 190, 195
 
-NARRATION: Every step carries the number of the event it came
-from, so you can look any of it up. Event two hundred and five,
-the merchant wants a hundred and sixty units of cold brew. Event
-two hundred and seventeen, its agent shortlisted three sellers
-and argued for one. Event two hundred and fifty-six, agreed at a
-hundred and ninety-five rupees a unit. Event two hundred and
-fifty-eight, and here is the part that matters. The gate refused
-it. The supplier was unknown and the amount was over the cap for
-a first deal. So the agent came back smaller, and that was
-allowed. The refusal is recorded. Not the outcome. The ruling,
-before any money moved. Event two hundred and sixty-one, four
-thousand eight hundred and seventy-five rupees, on a real
-Razorpay order.
+NARRATION: This is what that looks like. Two agents, arguing
+about price, in plain English, until one of them gives way.
 
 
 SCENE 9
 
-VISUAL: A stick figure holds an open ledger. Beside it a second
-figure holds an identical ledger with different scribbles. The
-first notices and freezes mid-step with one foot raised. A third
-figure walks in, takes both ledgers, makes a single mark, and
-hands them back matching. The frozen figure puts its foot down
-and walks on. Then a SCREEN RECORDING of the same audit trail
-continuing.
+VISUAL: SCREEN RECORDING of the real quoted offers. Do not
+generate this.
 
-ON SCREEN: 4 - It catches its own mistakes
+ON SCREEN: their actual words, quoted from the log
 
-NARRATION: Then it broke. Event seven hundred and sixty-three,
-Razorpay said that payment was captured, our books said pending.
-Nobody was watching. The accountant found it on a routine sweep.
-Event nine hundred and thirty-six, it froze that one merchant.
-Not the market. One business's disagreement must not stop
-everybody else. Event nine hundred and thirty-seven, it repaired
-the settlement using the payment id Razorpay gave back. Not one
-we invented. Event nine hundred and thirty-eight, and it let the
-merchant trade again. A freeze that never lifts is a ban, not a
-hold. Seventeen mismatches were caught and repaired this way. No
-human touched any of them.
+NARRATION: And these are their actual words, quoted from the log.
+Five rounds, closing from two hundred rupees a unit down to a
+hundred and eighty-five.
 
 
 SCENE 10
 
-VISUAL: The frame is split by a thin vertical line. On the left a
-stick figure lies asleep and completely still. On the right the
-same figure, drawn in warm yellow, walks, hands over a parcel,
-and shakes hands with another figure. Then a SCREEN RECORDING of
-a spreadsheet filling itself in.
+VISUAL: SCREEN RECORDING of the audit trail, first two stations.
+Do not generate this.
 
-ON SCREEN: 5 - The books keep themselves
+ON SCREEN: 3 - Every rupee is ruled on first
 
-NARRATION: You can only be in one meeting at a time. Your agent
-cannot. You tell it how to behave in plain words. That sets its
-priorities. It can never set its permissions. And the books keep
-themselves, into the merchant's own Google Sheet. Eleven thousand
-five hundred and seventy spent, and a thousand and fifty saved,
-because the supplier listed at two hundred and ten and the agent
-settled at a hundred and ninety-five.
+NARRATION: Every step carries the number of the event it came
+from. Event two hundred and five. The merchant wants a hundred
+and sixty units of cold brew.
 
 
 SCENE 11
 
-VISUAL: Many small stick figures along the bottom of the frame,
-each looking down at its own tiny counter. High above them one
-figure stands on a raised horizontal line and looks out across
-all of them. Warm yellow lines connect the figures below into a
-shape only the raised figure can see.
+VISUAL: SCREEN RECORDING of the audit trail, next two stations.
+Do not generate this.
 
-ON SCREEN: 6 - What only Razorpay can see
+ON SCREEN: event 217 - event 256
 
-NARRATION: The processor sees what no single merchant can. Which
-campaigns are climbing across the whole client base, ranked from
-the log. That intelligence sells by sealed auction. Eight agents
-bid, and the winner paid the runner-up's price. The sixteen
-businesses whose trading produced the insight were each paid a
-royalty, without ever being named.
+NARRATION: Event two hundred and seventeen. Its agent shortlisted
+three sellers and argued for one. Event two hundred and
+fifty-six. Agreed at a hundred and ninety-five rupees a unit.
 
 
 SCENE 12
 
-VISUAL: The full grid of forty stick figures, now densely
-connected by steady warm yellow lines. Every figure turns to face
-the centre together in one motion. Hold, then fade to white.
+VISUAL: SCREEN RECORDING of the refusal on the audit trail. Rest
+on it. Do not generate this.
 
-ON SCREEN: 968 events - 74 rulings recorded - 17 repairs - 0 humans
+ON SCREEN: event 258 - REFUSED
+
+NARRATION: Event two hundred and fifty-eight, and here is the
+part that matters. The gate refused it. The supplier was unknown,
+and the amount was over the cap for a first deal.
+
+
+SCENE 13
+
+VISUAL: SCREEN RECORDING, still on the refusal, then the smaller
+retry, then the payment. Do not generate this.
+
+ON SCREEN: the ruling is recorded, not just the outcome
+
+NARRATION: So the agent came back smaller, and that was allowed.
+Event two hundred and sixty-one. Four thousand eight hundred and
+seventy-five rupees, on a real Razorpay order.
+
+
+SCENE 14
+
+VISUAL: A stick figure holds an open ledger. Beside it a second
+figure holds an identical ledger with different scribbles on it.
+The first figure notices, and freezes mid-step with one foot
+raised. Long hold on the frozen figure.
+
+ON SCREEN: 4 - It catches its own mistakes
+
+NARRATION: Then it broke. Event seven hundred and sixty-three.
+Razorpay said that payment was captured. Our books said pending.
+Nobody was watching.
+
+
+SCENE 15
+
+VISUAL: A third stick figure walks in slowly, takes both ledgers,
+makes a single mark, and hands them back matching. The frozen
+figure puts its foot down and walks on.
+
+ON SCREEN: froze one merchant, not the market
+
+NARRATION: The accountant found it on a routine sweep. It froze
+that one merchant, not the whole market, and repaired the
+settlement using the payment id Razorpay gave back.
+
+
+SCENE 16
+
+VISUAL: SCREEN RECORDING of the repair and the resume on the
+audit trail. Do not generate this.
+
+ON SCREEN: 17 mismatches caught - 0 humans
+
+NARRATION: Then it let that merchant trade again. A freeze that
+never lifts is a ban, not a hold. Seventeen mismatches were
+caught this way. No human touched any of them.
+
+
+SCENE 17
+
+VISUAL: The frame is split by a thin vertical line. On the left a
+stick figure lies asleep, completely still for the whole clip. On
+the right the same figure, drawn in warm yellow, slowly walks
+across and hands a small parcel to another figure.
+
+ON SCREEN: 5 - The books keep themselves
+
+NARRATION: You can only be in one meeting at a time. Your agent
+cannot. The books keep themselves, into the merchant's own Google
+Sheet, while you are asleep.
+
+
+SCENE 18
+
+VISUAL: Many small stick figures along the bottom of the frame,
+each looking down at its own tiny counter. High above them, one
+figure stands on a raised horizontal line and looks slowly across
+all of them. Yellow lines connect the figures below.
+
+ON SCREEN: 6 - What only Razorpay can see
+
+NARRATION: And the processor sees what no single merchant can.
+Which campaigns are climbing across the whole client base, sold
+on by sealed auction, with a royalty paid back.
+
+
+SCENE 19
+
+VISUAL: The full grid of forty stick figures, densely connected
+by steady warm yellow lines. Every figure turns to face the
+centre together in one slow motion. Long hold, then fade to
+white.
+
+ON SCREEN: 968 events - 74 rulings - 17 repairs - 0 humans
 
 NARRATION: Payments told you a transaction happened. This tells
-you who should be doing business. And proves every rupee of it.
+you who you should be doing business with. And it proves every
+rupee of it.
