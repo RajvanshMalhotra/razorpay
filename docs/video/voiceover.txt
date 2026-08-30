@@ -5,18 +5,27 @@ Every number is read from the run log and is correct as written.
 
 VO 1  (over shots 1A and 1B)
 
-Every business on Razorpay is already connected to every other one.
-Money moves between them all day.
+Every business needs suppliers, and needs buyers. Finding them,
+checking whether they are real, and arguing the price takes time a
+small business does not have.
 
-Nobody has ever used that network to introduce them.
+So most of them trade with whoever they already know, at whatever
+price is listed.
 
 ------------------------------------------------------------------
 VO 2  (over shot 2)
 
-So we gave every merchant an agent. It finds who to deal with,
-argues the price down, settles on real Razorpay payments, and keeps
-the books.
+Razorpay already sits between all of them. It already knows who is
+real and who pays.
 
+So we built the Agent Exchange. Every merchant gets an agent. It
+finds who to deal with on that network, argues the price down,
+settles on real Razorpay payments, and writes the books.
+
+And every rupee it moves is checked against a limit you set, ruled
+on before it moves, and written to a log you can read back.
+
+------------------------------------------------------------------
 VO 2b  (over the first screen recording)
 
 This is a real run. Thirty-two businesses. Nine hundred and
