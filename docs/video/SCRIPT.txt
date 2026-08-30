@@ -1,0 +1,430 @@
+==================================================================
+THE AGENT EXCHANGE - COMPLETE SHOOTING SCRIPT
+Razorpay Hackathon, Track 01. Runtime 4:53.
+Plain ASCII throughout. Nothing here needs assembling.
+==================================================================
+
+HOW TO READ THIS
+
+  [ANIM]   generate in Runway / Kling / Veo. Prompt is in
+           docs/video/prompts/shot-N.txt (shot-N-veo.txt for Veo).
+  [SCREEN] record yourself off the real product. Cannot be
+           generated, and that is the point of it.
+  [CARD]   black type on plain white, made in the editor. The
+           video models render letters as garbage, so every word
+           on screen is cut in afterwards.
+  [VO]     narration. Numbers are written as they are read aloud.
+
+Every number spoken is read from the run log and is correct as
+written. If a number on screen ever disagrees with the narration,
+the screen is right - regenerate the pages and fix the narration.
+
+Beats marked >> CUT FIRST << are what to drop for a 3:00 version.
+Chapters 3 and 4 are the graded bar. Never cut those.
+
+==================================================================
+SCENE 1 - THE PROBLEM                              0:00 - 0:17
+==================================================================
+
+0:00  [ANIM] shot-1a  (5s, hold to 9s)
+      One figure alone behind a counter. Looks left, looks
+      right. Nobody comes. Shrugs.
+                                              >> CUT FIRST <<
+
+      [CARD] lower third, appears line by line
+
+        Every business needs suppliers.
+        Finding them, checking them, and
+        arguing the price takes time
+        nobody has.
+
+      [VO]
+      Every business needs suppliers, and needs buyers. Finding
+      them, checking whether they are real, and arguing the
+      price takes time a small business does not have.
+
+------------------------------------------------------------------
+0:09  [ANIM] shot-1b  (5s, hold to 8s)
+      Forty tiny figures, each alone behind its own counter.
+      None facing each other. One slow blink.
+
+      [CARD] lower third
+
+        So most trade with whoever they
+        already know, at whatever price
+        is listed.
+
+      [VO]
+      So most of them trade with whoever they already know, at
+      whatever price is listed.
+
+==================================================================
+SCENE 2 - THE ASSET, AND THE PRODUCT               0:17 - 1:00
+==================================================================
+
+0:17  [ANIM] shot-2  (6s, hold to 8s)
+      The yellow lines begin drawing between the figures.
+
+      [CARD] lower third
+
+        Razorpay already sits between
+        all of them.
+
+      [VO]
+      Razorpay already sits between all of them. It already
+      knows who is real and who pays.
+
+------------------------------------------------------------------
+0:25  [CARD] full frame, white, hold 5s
+      The only card with a rule under it. The rule is warm
+      yellow and draws itself on, left to right.
+
+        THE AGENT EXCHANGE
+        ------------------
+
+      [VO]
+      So we built the Agent Exchange.
+
+------------------------------------------------------------------
+0:30  [ANIM] shot-2 continues, the web filling in   (12s)
+
+      [VO]
+      Every merchant gets an agent. It finds who to deal with on
+      that network, argues the price down, settles on real
+      Razorpay payments, and writes the books.
+
+------------------------------------------------------------------
+0:42  [ANIM] shot-2 final frame, frozen             (9s)
+
+      [VO]
+      And every rupee it moves is checked against a limit you
+      set, ruled on before it moves, and written to a log you
+      can read back.
+
+      This is the promise the rest of the film pays off. It is
+      the track's bar stated out loud, early, on purpose.
+
+------------------------------------------------------------------
+0:51  [SCREEN] CLIP 1  (9s)
+      File: docs/index.html
+      Reload and record from the top. Let the yellow highlighter
+      finish drawing across "a seat on the exchange". Hold two
+      seconds after it lands.
+
+      [VO]
+      This is a real run. Thirty-two businesses. Nine hundred
+      and sixty-eight recorded events. Not one figure on screen
+      was typed by hand.
+
+==================================================================
+CHAPTER 1 - IT FINDS WHO TO DEAL WITH              1:00 - 1:14
+==================================================================
+
+1:00  [CARD] full frame, hold 2s. Number in warm yellow.
+
+        1    It finds who to deal with
+
+------------------------------------------------------------------
+1:02  [SCREEN] CLIP 3  (12s)
+      File: docs/index.html
+      Scroll to the network ring. Let it tour itself once, then
+      hover "bl thirdwave" and hold four seconds. Then hover
+      "packmate".
+
+      [VO]
+      Thirty-two businesses. Thirty-six trading relationships.
+      And nobody made a single introduction.
+
+      Let the ring run in silence after the line lands. The
+      motion is the argument.
+
+==================================================================
+CHAPTER 2 - IT ARGUES THE PRICE                    1:14 - 1:34
+==================================================================
+
+1:14  [CARD] hold 2s
+
+        2    It argues the price
+
+------------------------------------------------------------------
+1:16  [ANIM] shot-3  (6s, hold to 7s)             >> CUT FIRST <<
+      Two figures in profile. Empty speech bubbles pop above
+      them in turn, each smaller than the last.
+
+      IN POST: drop the real prices into the empty bubbles,
+      timed to each pop -
+
+        200, 205, 190, 195, 180, 190, 170, 185
+
+      Those are the actual offers from the log, rupees per unit.
+      The bubbles are generated empty on purpose: these models
+      render digits as convincing gibberish, which is the worst
+      possible thing in a film arguing its numbers are real.
+
+      [VO]
+      This is what that looks like. Two agents, arguing about
+      price, in plain English.
+
+------------------------------------------------------------------
+1:23  [SCREEN] CLIP 2  (11s)
+      File: docs/m-bl-thirdwave.html
+      Tab: "Where the money went". Scroll to "How your agent
+      argued for you" and let the offers sit on screen.
+
+      [VO]
+      And these are their actual words, quoted from the log.
+      Five rounds, closing from two hundred rupees a unit to a
+      hundred and eighty-five.
+
+==================================================================
+CHAPTER 3 - EVERY RUPEE IS RULED ON FIRST          1:34 - 2:30
+THE GRADED CORE. DO NOT RUSH IT. DO NOT CUT IT.
+==================================================================
+
+1:34  [CARD] hold 2s
+
+        3    Every rupee is ruled on first
+
+------------------------------------------------------------------
+1:36  [ANIM] shot-4  (5s, hold to 7s)
+      One figure offers a yellow parcel to another. A third
+      figure stands between them with one arm straight out. The
+      parcel stops at the arm. Two beats. The arm lowers. The
+      parcel passes.
+
+      [VO]
+      Every step carries the number of the event it came from,
+      so you can look any of it up.
+
+------------------------------------------------------------------
+1:43  [SCREEN] CLIP 4, PART ONE  (47s)
+      File: docs/m-bl-thirdwave.html
+      Tab: "Where the money went", first trade (cold brew).
+      Stations one through five. Rest roughly nine seconds on
+      each. Do not speed this up. Do not cut away mid-station.
+
+      [VO]
+      Event two hundred and five. The merchant wants a hundred
+      and sixty units of cold brew.
+
+      Event two hundred and seventeen. Its agent shortlisted
+      three sellers and argued for one.
+
+      Event two hundred and fifty-six. Agreed at a hundred and
+      ninety-five rupees a unit.
+
+      Event two hundred and fifty-eight. And here is the part
+      that matters. The gate refused it. Powerbank was an
+      unknown supplier, and the amount was over the cap for a
+      first deal. So the agent came back smaller, and that was
+      allowed.
+
+      The refusal is recorded. Not the outcome. The ruling,
+      before any money moved.
+
+      Event two hundred and sixty-one. Four thousand eight
+      hundred and seventy-five rupees, on a real Razorpay order.
+
+==================================================================
+CHAPTER 4 - IT CATCHES ITS OWN MISTAKES            2:30 - 3:21
+THE TRACK ASKS FOR ONE FAILURE HANDLED GRACEFULLY. THIS IS IT.
+==================================================================
+
+2:30  [CARD] hold 2s
+
+        4    It catches its own mistakes
+
+------------------------------------------------------------------
+2:32  [ANIM] shot-5  (6s, hold to 8s)
+      A figure holds a ledger. Beside it a second figure holds
+      an identical ledger with different scribbles. The first
+      notices and freezes mid-step, one foot raised. A third
+      figure walks in, takes both, makes one mark, hands them
+      back matching. The frozen figure puts its foot down and
+      walks on.
+
+      [VO]
+      Then it broke.
+
+      Event seven hundred and sixty-three. Razorpay said that
+      payment was captured. Our books said pending. Nobody was
+      watching. The accountant found it on a routine sweep.
+
+------------------------------------------------------------------
+2:40  [SCREEN] CLIP 4, PART TWO  (41s)
+      Same rail, stations six through nine. Roughly ten seconds
+      on each.
+
+      [VO]
+      Event nine hundred and thirty-six. It froze that one
+      merchant. Not the market. One business's disagreement
+      must not stop everybody else.
+
+      Event nine hundred and thirty-seven. It repaired the
+      settlement using the payment id Razorpay gave back. Not
+      one we invented. A repair that invents an id is a machine
+      for asserting payments that never happened.
+
+      Event nine hundred and thirty-eight. And it let the
+      merchant trade again. A freeze that never lifts is a ban,
+      not a hold.
+
+      Seventeen mismatches were caught and repaired this way.
+      No human touched any of them.
+
+==================================================================
+CHAPTER 5 - THE BOOKS KEEP THEMSELVES              3:21 - 4:08
+==================================================================
+
+3:21  [CARD] hold 2s
+
+        5    The books keep themselves
+
+------------------------------------------------------------------
+3:23  [ANIM] shot-6  (5s, hold to 7s)
+      Frame split by a thin vertical line. Left: a figure
+      asleep, completely still. Right: the same figure in
+      yellow, walking, handing over a parcel, shaking hands.
+
+      [VO]
+      You can only be in one meeting at a time. Your agent
+      cannot.
+
+------------------------------------------------------------------
+3:30  [SCREEN] CLIP 5A  (18s)                     >> CUT FIRST <<
+      File: docs/m-bl-thirdwave.html
+      Tab: "My agents". Show the four role cards, then scroll to
+      "How your agent behaves" and tap two setting chips so the
+      brief updates live on camera.
+
+      [VO]
+      It is four parts with separate memories. Three act. The
+      fourth only watches, and remembers.
+
+      And you tell it how to behave, in plain words. That sets
+      its priorities. It can never set its permissions. No
+      brief here can raise a spending limit.
+
+------------------------------------------------------------------
+3:48  [SCREEN] CLIP 5B  (20s)
+      The Google Sheet, bl_thirdwave tab. Hold on the six
+      coloured cards, then scroll to "Your deals" and rest on
+      the "You saved" column.
+
+      [VO]
+      The books keep themselves, into the merchant's own Google
+      Sheet.
+
+      Eleven thousand five hundred and seventy spent. And the
+      number only the agent knows: a thousand and fifty saved,
+      because the supplier listed at two hundred and ten and
+      the agent settled at a hundred and ninety-five.
+
+==================================================================
+CHAPTER 6 - WHAT ONLY RAZORPAY CAN SEE             4:08 - 4:37
+==================================================================
+
+4:08  [CARD] hold 2s
+
+        6    What only Razorpay can see
+
+------------------------------------------------------------------
+4:10  [ANIM] shot-7  (5s, hold to 7s)
+      Many small figures along the bottom, each looking down at
+      its own counter. High above, one figure on a raised line
+      looks out across all of them. Yellow lines connect the
+      figures below into a shape only the raised one can see.
+
+      [VO]
+      The processor sees what no single merchant can.
+
+------------------------------------------------------------------
+4:17  [SCREEN] CLIP 6  (20s)
+      File: docs/desk.html
+      Type the passcode and enter. Leave the passcode screen up
+      for a beat - it says out loud that the gate is a stage
+      prop, not access control, and a judge noticing you were
+      honest about it is worth the second it costs. Let the live
+      floor run three seconds, then switch to "The board".
+
+      [VO]
+      Which campaigns are climbing across the whole client base,
+      ranked from the log, with the press that explains each
+      one.
+
+      That intelligence sells by sealed auction. Eight agents
+      bid. The winner paid the runner-up's price. And the
+      sixteen businesses whose trading produced the insight were
+      each paid a royalty, without ever being named.
+
+==================================================================
+SCENE 9 - CLOSE                                    4:37 - 4:53
+==================================================================
+
+4:37  [ANIM] shot-8  (6s, hold to 9s)
+      The full grid of forty figures, now densely connected by
+      steady yellow lines. Every figure turns to face the centre
+      together in one motion. Hold, then fade to white.
+
+      [VO]
+      Payments told you a transaction happened.
+
+      This tells you who should be doing business. And proves
+      every rupee of it.
+
+------------------------------------------------------------------
+4:46  [CARD] black type on white, hold 4s
+
+        968 events . 74 rulings recorded . 17 repairs . 0 humans
+
+------------------------------------------------------------------
+4:50  [CARD] same white, after a one second beat, hold 3s
+
+        Built for Razorpay Hackathon - Track 01
+
+      END. 4:53.
+
+==================================================================
+IF YOU NEED 3:00
+==================================================================
+
+Drop every beat marked >> CUT FIRST << (shot 1A, shot 3, and
+CLIP 5A) - that is 33 seconds.
+
+Then take the remaining 80 from narration, not from picture:
+
+  VO 4  - fold events 217 and 256 into one line: "Its agent
+          shortlisted three sellers and settled at a hundred
+          and ninety-five." Saves 12s.
+  VO 5  - keep the four event numbers, drop the sentences
+          explaining why each rule exists. Saves 18s.
+  VO 7  - keep the auction, drop the royalty sentence. Saves
+          10s.
+  Scene 2 - let the title card carry "argues the price down,
+          settles on real Razorpay payments, and writes the
+          books" as type instead of speech. Saves 12s.
+  CLIP 3 - trim the ring tour to 8s. Saves 4s.
+  Scene 1 - open on shot 1B directly. Saves 9s.
+  Close  - single closing card, drop the beat. Saves 4s.
+
+That lands at 3:04. Do not buy the last four seconds out of
+Chapter 3 or Chapter 4.
+
+==================================================================
+CAPTURE SETTINGS
+==================================================================
+
+Record at 1600x1000 or wider. Below about 1000 pixels wide the
+network ring and the desk collapse to the mobile layout and lose
+the density that makes the point.
+
+Let animations finish before cutting. The highlighter takes about
+one second. The negotiation replays over about twelve. The ring
+tours every 1.15 seconds. Cutting mid-motion reads as a glitch.
+
+A thin strip along the bottom of every screen recording, small
+mono type:
+
+  read from the event log . nothing on this screen was typed by hand
+
+So that no frame of real product is ever unlabelled.

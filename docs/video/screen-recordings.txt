@@ -1,6 +1,7 @@
 AGENT EXCHANGE - SCREEN RECORDINGS TO CAPTURE
 The video tool is right: it cannot generate these. They are captures
-of the real product, and that is the point of them. Six clips.
+of the real product, and that is the point of them. Six clips. docs/video/SCRIPT.txt is the
+authority on timing; this file is the capture checklist.
 ==================================================================
 
 CLIP 1  - 6 seconds  - goes after VO 2
@@ -19,11 +20,13 @@ CLIP 3  - 12 seconds - goes under VO 3c
   Scroll to the network ring. Let it tour itself once, then hover
   "bl thirdwave" and hold four seconds. Then hover "packmate".
 
-CLIP 4  - 25 seconds - goes under VO 4 and VO 5. THE GRADED CORE.
+CLIP 4  - TWO captures, 47s and 41s. THE GRADED CORE.
   File: docs/m-bl-thirdwave.html
   Tab: "Where the money went", first trade (cold brew).
-  Rest four seconds on each station in order. Do not speed this up.
-  Stations 1-5 carry VO 4. Stations 6-9 carry VO 5.
+  Part one: stations 1-5, about nine seconds each, under VO 4.
+  Part two: stations 6-9, about ten seconds each, under VO 5.
+  These were budgeted at 25s total, against 103s of narration.
+  Do not speed this up to fit. Do not cut away mid-station.
 
 CLIP 5  - 14 seconds - goes under VO 6b and VO 6c
   File: docs/m-bl-thirdwave.html
