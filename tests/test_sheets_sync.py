@@ -79,16 +79,29 @@ def _events():
                      amount=300_000, base=200, ask="ord_a"))
 
 
-INDEX = "All businesses"
+INDEX = "Overview"
 
 
 # --- what lands in the sheet -------------------------------------------------
+
+MARKET_TABS = ("Overview", "Campaign board", "Auction", "Negotiations",
+               "Gate decisions", "Who dealt with whom", "What agents learned")
+
 
 def test_each_merchant_gets_its_own_tab(book):
     pushed = push_to_sheet(_events(), "key.json", "sheet123")
 
     assert sorted(pushed) == ["m_a", "m_b", "m_c"]
-    assert sorted(book.tabs) == sorted([INDEX, "a", "b", "c"])
+    assert {"a", "b", "c"} <= set(book.tabs)
+
+
+def test_the_market_gets_its_own_tabs_too(book):
+    """A merchant's ledger is three lines. What the agents actually did —
+    every offer, every ruling, every counterparty and the reason for it — is
+    the bulk of the record and belongs in the workbook, not only on a page."""
+    push_to_sheet(_events(), "key.json", "sheet123")
+
+    assert set(MARKET_TABS) <= set(book.tabs)
 
 
 def test_the_ledger_header_is_readable_not_machine_readable(book):
@@ -122,8 +135,8 @@ def test_the_workbook_opens_on_an_index(book):
 
     grid = book.values[INDEX]
     assert grid[0][0].startswith("Agent Exchange")
-    assert grid[3][0] == "Business"
-    assert {r[0] for r in grid[4:]} == {"A", "B", "C"}
+    header = grid.index([h for h in grid if h and h[0] == "Business"][0])
+    assert {r[0] for r in grid[header + 1:]} == {"A", "B", "C"}
 
 
 def test_the_tab_holds_the_same_grid_the_page_shows(book):
