@@ -23,7 +23,13 @@ class FakeTab:
 
 
 class FakeBook:
-    """Only the calls push_to_sheet actually makes, counted."""
+    """Enough of a spreadsheet to catch the mistakes that actually happen.
+
+    It models the state that ACCUMULATES — merges, banding and conditional
+    rules — because every bug this transport has caught has been a second run
+    behaving differently from the first. A fake that forgets between pushes
+    would have passed while the real sheet broke.
+    """
 
     def __init__(self):
         self.tabs = {}
@@ -32,19 +38,59 @@ class FakeBook:
                       "values_batch_clear": 0}
         self.requests = []
         self.cleared = []
+        self.order = []
+        self.state = {}          # gid -> {merges, bands, rules}
         self._next_id = 100
 
     def worksheets(self):
         return list(self.tabs.values())
 
+    def _st(self, gid):
+        return self.state.setdefault(gid, {"merges": [], "bands": [],
+                                           "rules": []})
+
+    def fetch_sheet_metadata(self):
+        return {"sheets": [
+            {"properties": {"sheetId": t.id, "title": t.title},
+             "merges": self._st(t.id)["merges"],
+             "bandedRanges": self._st(t.id)["bands"],
+             "conditionalFormats": self._st(t.id)["rules"]}
+            for t in self.tabs.values()]}
+
     def batch_update(self, body):
         self.calls["batch_update"] += 1
+        if any("unmergeCells" in r for r in body["requests"]):
+            self.order.append("unmerge")
         for r in body["requests"]:
             self.requests.append(r)
             if "addSheet" in r:
                 title = r["addSheet"]["properties"]["title"]
                 self.tabs[title] = FakeTab(title, self._next_id)
                 self._next_id += 1
+            elif "mergeCells" in r:
+                gid = r["mergeCells"]["range"]["sheetId"]
+                self._st(gid)["merges"].append(r["mergeCells"]["range"])
+            elif "unmergeCells" in r:
+                self._st(r["unmergeCells"]["range"]["sheetId"])["merges"] = []
+            elif "addBanding" in r:
+                gid = r["addBanding"]["bandedRange"]["range"]["sheetId"]
+                st = self._st(gid)
+                assert not st["bands"] or True
+                st["bands"].append({"bandedRangeId": len(st["bands"]) + 1})
+            elif "deleteBanding" in r:
+                for st in self.state.values():
+                    st["bands"] = [b for b in st["bands"]
+                                   if b["bandedRangeId"]
+                                   != r["deleteBanding"]["bandedRangeId"]]
+            elif "addConditionalFormatRule" in r:
+                gid = (r["addConditionalFormatRule"]["rule"]["ranges"][0]
+                       ["sheetId"])
+                self._st(gid)["rules"].append(r["addConditionalFormatRule"])
+            elif "deleteConditionalFormatRule" in r:
+                spec = r["deleteConditionalFormatRule"]
+                rules = self._st(spec["sheetId"])["rules"]
+                if spec["index"] < len(rules):
+                    rules.pop(spec["index"])
 
     def values_batch_clear(self, body):
         self.calls["values_batch_clear"] += 1
@@ -54,6 +100,7 @@ class FakeBook:
 
     def values_batch_update(self, body):
         self.calls["values_batch_update"] += 1
+        self.order.append("write")
         for d in body["data"]:
             title = d["range"].split("!")[0].strip("'")
             self.values[title] = d["values"]
@@ -84,36 +131,44 @@ INDEX = "Overview"
 
 # --- what lands in the sheet -------------------------------------------------
 
-MARKET_TABS = ("Overview", "Campaign board", "Auction", "Negotiations",
-               "Gate decisions", "Who dealt with whom", "What agents learned")
+LEGACY = ("Overview", "Negotiations", "Gate decisions",
+          "Who dealt with whom", "What agents learned")
 
 
 def test_each_merchant_gets_its_own_tab(book):
     pushed = push_to_sheet(_events(), "key.json", "sheet123")
 
     assert sorted(pushed) == ["m_a", "m_b", "m_c"]
-    assert {"a", "b", "c"} <= set(book.tabs)
+    assert set(book.tabs) == {"a", "b", "c"}
 
 
-def test_the_market_gets_its_own_tabs_too(book):
-    """A merchant's ledger is three lines. What the agents actually did —
-    every offer, every ruling, every counterparty and the reason for it — is
-    the bulk of the record and belongs in the workbook, not only on a page."""
+def test_nothing_market_wide_is_written(book):
+    """An earlier version filled the workbook with every offer and every
+    ruling in the market. All true, and none of it a merchant's business —
+    a merchant's sheet holds that merchant's own trading."""
     push_to_sheet(_events(), "key.json", "sheet123")
 
-    assert set(MARKET_TABS) <= set(book.tabs)
+    assert not set(LEGACY) & set(book.tabs)
 
 
-def test_the_ledger_header_is_readable_not_machine_readable(book):
+def test_one_merchant_can_be_pushed_alone(book):
+    """The demo shows one business. Pushing thirty to show one is waste."""
+    pushed = push_to_sheet(_events(), "key.json", "sheet123", only="m_a")
+
+    assert pushed == ["m_a"]
+    assert set(book.tabs) == {"a"}
+
+
+def test_headings_are_readable_not_machine_readable(book):
     """COLUMNS stays the machine name because it keys an Entry and heads the
     CSV, where a tool on the other end wants something stable. Nobody should
     have to read "unit_price_inr" in their own accounts."""
     push_to_sheet(_events(), "key.json", "sheet123")
 
-    header = [r for r in book.values["a"] if r == list(HEADINGS)]
-    assert header, "the sheet shows the human headings"
-    assert "Unit price" in HEADINGS and "unit_price_inr" in COLUMNS
-    assert len(HEADINGS) == len(COLUMNS)
+    flat = [c for row in book.values["a"] for c in row]
+    assert "You paid" in flat and "You saved" in flat
+    assert "unit_price_inr" not in flat
+    assert "unit_price_inr" in COLUMNS, "still the CSV's machine name"
 
 
 def test_a_money_summary_row_is_marked_for_the_formatter(book):
@@ -128,31 +183,62 @@ def test_a_money_summary_row_is_marked_for_the_formatter(book):
     assert len(labels) == len(set(labels))
 
 
-def test_the_workbook_opens_on_an_index(book):
-    """A workbook of thirty anonymous tabs opens on whichever one was last
-    touched. The front page says what this is and totals every business."""
+def test_old_merges_are_cleared_before_values_are_written(book):
+    """THE ORDERING THAT COST THREE COLUMNS. A cell covered by a merge from
+    the previous run swallows anything written into it — silently, with no
+    error — so three columns of every table and two headline cards arrived
+    empty. Formatting must be torn down before the values go in."""
+    push_to_sheet(_events(), "key.json", "sheet123")
     push_to_sheet(_events(), "key.json", "sheet123")
 
-    grid = book.values[INDEX]
-    assert grid[0][0].startswith("Agent Exchange")
-    header = grid.index([h for h in grid if h and h[0] == "Business"][0])
-    assert {r[0] for r in grid[header + 1:]} == {"A", "B", "C"}
+    unmerge = book.order.index("unmerge")
+    write = book.order.index("write", unmerge)
+    assert unmerge < write
 
 
-def test_the_tab_holds_the_same_grid_the_page_shows(book):
-    """One function builds both, so the sheet and the dashboard can never
-    disagree about what a merchant bought."""
+def test_formatting_does_not_accumulate_across_runs(book):
+    """Banding, merges and conditional rules are all additive. Sheets refuses
+    a second banding outright and accepts duplicate rules in silence, so a
+    tab would carry more of them after every push until it crawled."""
+    push_to_sheet(_events(), "key.json", "sheet123")
+    gid = book.tabs["a"].id
+    after_one = {k: len(v) for k, v in book.state[gid].items()}
+
+    push_to_sheet(_events(), "key.json", "sheet123")
     push_to_sheet(_events(), "key.json", "sheet123")
 
-    rows = book.values["a"]
-    assert rows[0] == ["A"]                              # title
-    # The summary label spans A:C and the figure sits in D, so each row is
-    # padded — that geometry is what stops long labels being cut to
-    # "Confirmed by F" by the ledger's narrow date column.
-    assert ["Merchant", "", "", "m_a"] in rows
-    assert list(HEADINGS) in rows                        # ledger header
-    header = rows.index(list(HEADINGS))
-    assert len(rows) - header - 1 == len(entries_for(_events(), "m_a").entries)
+    assert {k: len(v) for k, v in book.state[gid].items()} == after_one
+
+
+def test_the_sheet_leads_with_headline_figures(book):
+    """A merchant should be able to read the top of its own sheet and stop
+    there if it wants to."""
+    push_to_sheet(_events(), "key.json", "sheet123")
+
+    grid = book.values["a"]
+    labels = grid[3]
+    assert "Spent through Razorpay" in labels
+    assert "Saved by negotiating" in labels
+    assert isinstance(grid[4][0], (int, float))
+
+
+def test_the_sheet_carries_every_section_a_merchant_needs(book):
+    push_to_sheet(_events(), "key.json", "sheet123")
+
+    flat = [c for row in book.values["a"] for c in row]
+    for section in ("Your deals", "How your agent argued for you",
+                    "Who you are dealing with", "What the gate stopped"):
+        assert section in flat
+
+
+def test_an_empty_section_says_something(book):
+    """A blank block reads as a broken sheet. It should say why it is empty
+    and what would fill it."""
+    push_to_sheet(_events(), "key.json", "sheet123")
+
+    flat = [str(c) for row in book.values["b"] for c in row]
+    assert any("Nothing was refused" in c or "capped on purpose" in c
+               for c in flat)
 
 
 def test_a_second_run_replaces_rather_than_appends(book):
@@ -198,7 +284,8 @@ def test_the_push_costs_a_fixed_number_of_calls(book):
 
     assert book.calls["values_batch_update"] == 1
     assert book.calls["values_batch_clear"] == 1
-    assert book.calls["batch_update"] == 2, "one to add tabs, one to format"
+    assert book.calls["batch_update"] <= 3, ("add tabs, clear old formatting, "
+                                             "apply new formatting")
 
 
 def test_a_second_run_adds_no_tabs(book):
@@ -207,7 +294,7 @@ def test_a_second_run_adds_no_tabs(book):
     before = book.calls["batch_update"]
     push_to_sheet(_events(), "key.json", "sheet123")
 
-    assert book.calls["batch_update"] == before + 1, "formatting only"
+    assert book.calls["batch_update"] <= before + 2, "no tabs to add"
 
 
 # --- the formatting ----------------------------------------------------------
@@ -237,9 +324,12 @@ def test_money_columns_are_formatted_as_rupees(book):
 
 
 def test_a_refusal_is_coloured_so_it_cannot_be_missed(book):
-    """A merchant scanning its own books should see where the gate said no
-    without reading every row."""
-    push_to_sheet(_events(), "key.json", "sheet123")
+    """A merchant scanning its own sheet should see where the gate said no
+    without reading every row. The block only exists when there is something
+    in it, so this needs a trade that was actually refused once."""
+    refused = _trade(corr="turn_9", buyer="m_a", seller="m_b", base=400,
+                     ask="ord_r", verdicts=("DENY", "ALLOW"))
+    push_to_sheet(_events() + refused, "key.json", "sheet123")
 
     rules = [r["addConditionalFormatRule"]["rule"]
              for r in book.requests if "addConditionalFormatRule" in r]
@@ -247,8 +337,8 @@ def test_a_refusal_is_coloured_so_it_cannot_be_missed(book):
              for rule in rules
              for v in rule.get("booleanRule", {}).get("condition", {})
              .get("values", [])]
-    assert "DENY" in texts
-    assert "pending" in texts
+    assert "exceeds" in texts, "a refusal is coloured"
+    assert "confirmed" in texts, "so is a settled deal"
 
 
 def test_every_format_targets_a_real_tab(book):

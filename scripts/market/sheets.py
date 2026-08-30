@@ -76,53 +76,73 @@ def write_csvs(events, out_dir: pathlib.Path) -> tuple[int, pathlib.Path]:
 
 TABS_FILE = "sheet-tabs.json"
 
-# Tabs earlier versions of this program created. If one is no
-# longer written to it holds stale figures, so it is removed —
-# and only ever these, never a sheet the operator made.
-LEGACY_TABS = ("All businesses",)
+# Tabs earlier versions of this program created. If one is no longer written
+# to it holds stale figures, so it is removed — and only ever these, never a
+# sheet the operator made.
+LEGACY_TABS = ("All businesses", "Overview", "Campaign board", "Auction",
+               "Negotiations", "Gate decisions", "Who dealt with whom",
+               "What agents learned")
 
-# One palette, applied by meaning. A tone names what a value IS — good, bad,
-# waiting, worth noting — and the formatter decides what that looks like, so
-# no tab picks its own colours.
-INK = {"red": .10, "green": .12, "blue": .16}
-PAPER = {"red": .99, "green": .99, "blue": .98}
-BAND = {"red": .96, "green": .96, "blue": .94}
-RULE = {"red": .87, "green": .87, "blue": .85}
+# One palette, applied by meaning. A tone names what a value IS; the renderer
+# decides what that looks like, so no block picks its own colours.
+INK = {"red": .09, "green": .11, "blue": .15}
+PAPER = {"red": 1.0, "green": 1.0, "blue": 1.0}
+BAND = {"red": .97, "green": .97, "blue": .96}
+RULE = {"red": .87, "green": .87, "blue": .86}
 WHITE = {"red": 1.0, "green": 1.0, "blue": 1.0}
-QUIET = {"red": .42, "green": .42, "blue": .42}
-TONES = {"good": {"red": .05, "green": .45, "blue": .30},
-         "bad": {"red": .70, "green": .15, "blue": .10},
-         "warn": {"red": .60, "green": .40, "blue": .02},
-         "info": {"red": .10, "green": .32, "blue": .70}}
+QUIET = {"red": .44, "green": .44, "blue": .44}
+BRAND = {"red": .13, "green": .35, "blue": .74}
+BRAND_WASH = {"red": .90, "green": .94, "blue": 1.0}
+GOOD = {"red": .04, "green": .45, "blue": .29}
+GOOD_WASH = {"red": .89, "green": .96, "blue": .93}
+WARN = {"red": .62, "green": .38, "blue": .02}
+WARN_WASH = {"red": 1.0, "green": .96, "blue": .87}
+BAD = {"red": .70, "green": .14, "blue": .10}
+TONES = {"good": GOOD, "bad": BAD, "warn": WARN, "info": BRAND}
+CARD_TONE = {"money": (BRAND, BRAND_WASH), "good": (GOOD, GOOD_WASH),
+             "warn": (WARN, WARN_WASH), "count": (INK, BAND)}
 
 RUPEES = "\u20b9#,##0.00"
 RUPEES_ROUND = "\u20b9#,##0"
+CARD_SPAN = 2          # columns per headline card
 
 
-def table_grid(t) -> tuple:
-    """(grid, header_row). Title, subtitle, optional summary, then the table."""
-    grid = [[t.title], [t.subtitle], []]
-    for label, value, _is_money in t.summary:
-        grid.append([label, "", "", value])
-    if t.summary:
+def sheet_grid(sheet) -> tuple:
+    """(grid, layout). Layout records where each piece landed, so the
+    formatter never has to guess a row number."""
+    grid = [[sheet.title], [sheet.subtitle], []]
+    layout = {"cards": len(grid), "blocks": []}
+
+    labels, values = [], []
+    for label, value, _kind in sheet.cards:
+        labels += [label] + [""] * (CARD_SPAN - 1)
+        values += [value] + [""] * (CARD_SPAN - 1)
+    grid += [labels, values, []]
+
+    for block in sheet.blocks:
+        grid.append([block.heading])
+        grid.append([block.note])
+        head = len(grid)
+        grid.append(list(block.headings))
+        rows = [list(r) for r in block.rows] or [[block.empty]]
+        grid.extend(rows)
         grid.append([])
-    header = len(grid)
-    grid.append(list(t.headings))
-    grid.extend(list(r) for r in t.rows)
-    return grid, header
+        layout["blocks"].append(
+            {"block": block, "title": head - 2, "head": head,
+             "first": head + 1, "last": head + 1 + len(rows),
+             "empty": not block.rows})
+    return grid, layout
 
 
-def table_requests(gid: int, t, grid: list, header: int) -> list:
-    """Everything that turns one table into something worth reading."""
-    ncols = max(len(t.headings), 5)
-    rows = len(grid)
-    first = header + 1
-    col = {name: i for i, name in enumerate(t.headings)}
+def sheet_requests(gid: int, sheet, grid: list, layout: dict) -> list:
+    """Everything that turns one merchant's sheet into a dashboard."""
+    span = max(len(b.headings) for b in sheet.blocks) if sheet.blocks else 6
+    span = max(span, len(sheet.cards) * CARD_SPAN)
     rng = lambda r0, r1, c0=0, c1=None: {
         "sheetId": gid, "startRowIndex": r0, "endRowIndex": r1,
-        "startColumnIndex": c0,
-        "endColumnIndex": ncols if c1 is None else c1}
+        "startColumnIndex": c0, "endColumnIndex": span if c1 is None else c1}
 
+    cards_row = layout["cards"]
     req = [
         {"repeatCell": {
             "range": {"sheetId": gid},
@@ -133,140 +153,198 @@ def table_requests(gid: int, t, grid: list, header: int) -> list:
                 "verticalAlignment": "TOP"}},
             "fields": "userEnteredFormat(backgroundColor,textFormat,"
                       "verticalAlignment)"}},
+        # the masthead
         {"repeatCell": {
             "range": rng(0, 1, 0, 1),
             "cell": {"userEnteredFormat": {"textFormat": {
-                "fontSize": 17, "bold": True}}},
+                "fontSize": 20, "bold": True}}},
             "fields": "userEnteredFormat.textFormat"}},
         {"repeatCell": {
             "range": rng(1, 2, 0, 1),
             "cell": {"userEnteredFormat": {"textFormat": {
-                "fontSize": 9, "italic": True, "foregroundColor": QUIET}}},
+                "fontSize": 10, "italic": True, "foregroundColor": QUIET}}},
             "fields": "userEnteredFormat.textFormat"}},
-        {"mergeCells": {"range": rng(0, 1, 0, min(ncols, 6)),
+        {"mergeCells": {"range": rng(0, 1, 0, min(span, 5)),
                         "mergeType": "MERGE_ROWS"}},
-        {"mergeCells": {"range": rng(1, 2, 0, min(ncols, 8)),
+        {"mergeCells": {"range": rng(1, 2, 0, min(span, 9)),
                         "mergeType": "MERGE_ROWS"}},
-        # the header: dark, and it stays put when you scroll
+        {"updateDimensionProperties": {
+            "range": {"sheetId": gid, "dimension": "ROWS",
+                      "startIndex": cards_row + 1, "endIndex": cards_row + 2},
+            "properties": {"pixelSize": 46}, "fields": "pixelSize"}},
+        {"updateSheetProperties": {
+            "properties": {"sheetId": gid, "gridProperties": {
+                "frozenRowCount": cards_row + 2}},
+            "fields": "gridProperties.frozenRowCount"}},
+    ]
+
+    # THE HEADLINE CARDS. Each is two merged columns: a small grey label above
+    # a large figure in the colour of what it means. Spent is brand blue,
+    # saved is green, still-to-clear is amber — a merchant should be able to
+    # read the top of this sheet in one glance and stop there if it wants.
+    for i, (_label, value, kind) in enumerate(sheet.cards):
+        c0 = i * CARD_SPAN
+        strong, wash = CARD_TONE.get(kind, (INK, BAND))
+        req += [
+            {"mergeCells": {"range": rng(cards_row, cards_row + 1,
+                                         c0, c0 + CARD_SPAN),
+                            "mergeType": "MERGE_ROWS"}},
+            {"mergeCells": {"range": rng(cards_row + 1, cards_row + 2,
+                                         c0, c0 + CARD_SPAN),
+                            "mergeType": "MERGE_ROWS"}},
+            {"repeatCell": {
+                "range": rng(cards_row, cards_row + 1, c0, c0 + CARD_SPAN),
+                "cell": {"userEnteredFormat": {
+                    "backgroundColor": wash,
+                    "horizontalAlignment": "LEFT",
+                    "verticalAlignment": "MIDDLE",
+                    "textFormat": {"fontSize": 9, "bold": True,
+                                   "foregroundColor": QUIET}}},
+                "fields": "userEnteredFormat(backgroundColor,"
+                          "horizontalAlignment,verticalAlignment,textFormat)"}},
+            {"repeatCell": {
+                "range": rng(cards_row + 1, cards_row + 2, c0, c0 + CARD_SPAN),
+                "cell": {"userEnteredFormat": {
+                    "backgroundColor": wash,
+                    "horizontalAlignment": "LEFT",
+                    "verticalAlignment": "MIDDLE",
+                    # Every card but a count is money. "Still to clear"
+                    # was warn-toned and so fell through to a plain number,
+                    # printing 6,695 beside ₹11,570 as if it were a quantity.
+                    "numberFormat": ({"type": "NUMBER", "pattern": "#,##0"}
+                                     if kind == "count"
+                                     else {"type": "CURRENCY",
+                                           "pattern": RUPEES_ROUND}),
+                    "textFormat": {"fontSize": 18, "bold": True,
+                                   "foregroundColor": strong}}},
+                "fields": "userEnteredFormat(backgroundColor,"
+                          "horizontalAlignment,verticalAlignment,"
+                          "numberFormat,textFormat)"}},
+        ]
+
+    for spec in layout["blocks"]:
+        req += _block_requests(gid, rng, span, spec)
+
+    # column widths come from the widest block that defines each column
+    widths = {}
+    for b in sheet.blocks:
+        for i, w in enumerate(b.widths):
+            widths[i] = max(widths.get(i, 0), w)
+    for i, w in widths.items():
+        if i < span:
+            req.append({"updateDimensionProperties": {
+                "range": {"sheetId": gid, "dimension": "COLUMNS",
+                          "startIndex": i, "endIndex": i + 1},
+                "properties": {"pixelSize": w}, "fields": "pixelSize"}})
+    return req
+
+
+def _block_requests(gid, rng, span, spec) -> list:
+    b, head = spec["block"], spec["head"]
+    first, last, title = spec["first"], spec["last"], spec["title"]
+    col = {n: i for i, n in enumerate(b.headings)}
+    ncols = len(b.headings)
+
+    req = [
+        # a section band, so the eye can find where one table stops
         {"repeatCell": {
-            "range": rng(header, header + 1),
+            "range": rng(title, title + 1),
+            "cell": {"userEnteredFormat": {
+                "backgroundColor": BRAND,
+                "verticalAlignment": "MIDDLE",
+                "textFormat": {"fontSize": 13, "bold": True,
+                               "foregroundColor": WHITE}}},
+            "fields": "userEnteredFormat(backgroundColor,verticalAlignment,"
+                      "textFormat)"}},
+        {"mergeCells": {"range": rng(title, title + 1, 0, span),
+                        "mergeType": "MERGE_ROWS"}},
+        {"updateDimensionProperties": {
+            "range": {"sheetId": gid, "dimension": "ROWS",
+                      "startIndex": title, "endIndex": title + 1},
+            "properties": {"pixelSize": 34}, "fields": "pixelSize"}},
+        {"repeatCell": {
+            "range": rng(title + 1, title + 2),
+            "cell": {"userEnteredFormat": {
+                "textFormat": {"fontSize": 9, "italic": True,
+                               "foregroundColor": QUIET}}},
+            "fields": "userEnteredFormat.textFormat"}},
+        {"mergeCells": {"range": rng(title + 1, title + 2, 0, span),
+                        "mergeType": "MERGE_ROWS"}},
+        {"repeatCell": {
+            "range": rng(head, head + 1, 0, ncols),
             "cell": {"userEnteredFormat": {
                 "backgroundColor": INK,
-                "horizontalAlignment": "LEFT",
                 "verticalAlignment": "MIDDLE",
                 "textFormat": {"bold": True, "fontSize": 9,
                                "foregroundColor": WHITE}}},
-            "fields": "userEnteredFormat(backgroundColor,horizontalAlignment,"
-                      "verticalAlignment,textFormat)"}},
+            "fields": "userEnteredFormat(backgroundColor,verticalAlignment,"
+                      "textFormat)"}},
         {"updateDimensionProperties": {
             "range": {"sheetId": gid, "dimension": "ROWS",
-                      "startIndex": header, "endIndex": header + 1},
-            "properties": {"pixelSize": 30}, "fields": "pixelSize"}},
-        # Rows only. A frozen first column would cut through the merged
-        # title and the merged summary labels, and Sheets rejects the whole
-        # batch rather than the one request.
-        {"updateSheetProperties": {
-            "properties": {"sheetId": gid,
-                           "gridProperties": {"frozenRowCount": header + 1}},
-            "fields": "gridProperties.frozenRowCount"}},
+                      "startIndex": head, "endIndex": head + 1},
+            "properties": {"pixelSize": 28}, "fields": "pixelSize"}},
     ]
-    if rows > first:
-        req += [
-            {"addBanding": {"bandedRange": {
-                "range": rng(header, rows),
-                "rowProperties": {"headerColor": INK, "firstBandColor": PAPER,
-                                  "secondBandColor": BAND}}}},
-            {"updateBorders": {"range": rng(header, rows),
-                               "innerHorizontal": {"style": "SOLID",
-                                                   "width": 1,
-                                                   "color": RULE}}},
-        ]
+    if spec["empty"]:
+        req.append({"repeatCell": {
+            "range": rng(first, last, 0, 1),
+            "cell": {"userEnteredFormat": {"textFormat": {
+                "italic": True, "foregroundColor": QUIET}}},
+            "fields": "userEnteredFormat.textFormat"}})
+        return req
 
-    # THE SUMMARY CANNOT SHARE THE TABLE'S COLUMNS. The first column is
-    # narrow because it holds a date or a sequence number; a label like
-    # "Confirmed by Razorpay" needs three times that and was being cut to
-    # "Confirmed by F". Labels merge across A:C and figures across D:E.
-    if t.summary:
-        top, bottom = 3, 3 + len(t.summary)
-        req += [
-            {"repeatCell": {
-                "range": rng(top, bottom, 0, 1),
-                "cell": {"userEnteredFormat": {
-                    "backgroundColor": BAND,
-                    "textFormat": {"fontSize": 10, "foregroundColor": QUIET}}},
-                "fields": "userEnteredFormat(backgroundColor,textFormat)"}},
-            {"repeatCell": {
-                "range": rng(top, bottom, 3, 4),
-                "cell": {"userEnteredFormat": {
-                    "backgroundColor": BAND,
-                    "horizontalAlignment": "LEFT",
-                    "textFormat": {"bold": True, "fontSize": 12}}},
-                "fields": "userEnteredFormat(backgroundColor,"
-                          "horizontalAlignment,textFormat)"}},
-        ]
-        for i, (_l, _v, is_money) in enumerate(t.summary):
-            req.append({"mergeCells": {"range": rng(top + i, top + i + 1, 0, 3),
-                                       "mergeType": "MERGE_ROWS"}})
-            req.append({"mergeCells": {"range": rng(top + i, top + i + 1, 3, 5),
-                                       "mergeType": "MERGE_ROWS"}})
-            if is_money:
-                req.append({"repeatCell": {
-                    "range": rng(top + i, top + i + 1, 3, 4),
-                    "cell": {"userEnteredFormat": {"numberFormat": {
-                        "type": "CURRENCY", "pattern": RUPEES_ROUND}}},
-                    "fields": "userEnteredFormat.numberFormat"}})
-
-    for i, w in enumerate(t.widths[:ncols]):
-        req.append({"updateDimensionProperties": {
-            "range": {"sheetId": gid, "dimension": "COLUMNS",
-                      "startIndex": i, "endIndex": i + 1},
-            "properties": {"pixelSize": w}, "fields": "pixelSize"}})
-
-    for name in t.money:
+    req += [
+        {"addBanding": {"bandedRange": {
+            "range": rng(head, last, 0, ncols),
+            "rowProperties": {"headerColor": INK, "firstBandColor": PAPER,
+                              "secondBandColor": BAND}}}},
+        {"updateBorders": {"range": rng(head, last, 0, ncols),
+                           "innerHorizontal": {"style": "SOLID", "width": 1,
+                                               "color": RULE}}},
+    ]
+    for name in b.money:
         c = col[name]
         req.append({"repeatCell": {
-            "range": rng(first, rows, c, c + 1),
+            "range": rng(first, last, c, c + 1),
             "cell": {"userEnteredFormat": {
                 "horizontalAlignment": "RIGHT",
                 "numberFormat": {"type": "CURRENCY", "pattern": RUPEES}}},
             "fields": "userEnteredFormat(horizontalAlignment,numberFormat)"}})
-    for name in t.counts:
+    for name in b.counts:
         c = col[name]
         req.append({"repeatCell": {
-            "range": rng(first, rows, c, c + 1),
+            "range": rng(first, last, c, c + 1),
             "cell": {"userEnteredFormat": {
                 "horizontalAlignment": "RIGHT",
                 "numberFormat": {"type": "NUMBER", "pattern": "#,##0"}}},
             "fields": "userEnteredFormat(horizontalAlignment,numberFormat)"}})
-    # Identifiers are for looking up, not for reading.
-    for name in t.ident:
+    # A saving is the point of the whole thing, so it is green wherever it
+    # appears and not merely another number in a row.
+    if "You saved" in col:
+        c = col["You saved"]
+        req.append({"repeatCell": {
+            "range": rng(first, last, c, c + 1),
+            "cell": {"userEnteredFormat": {"textFormat": {
+                "bold": True, "foregroundColor": GOOD}}},
+            "fields": "userEnteredFormat.textFormat"}})
+    for name in b.ident:
         c = col[name]
         req.append({"repeatCell": {
-            "range": rng(first, rows, c, c + 1),
+            "range": rng(first, last, c, c + 1),
             "cell": {"userEnteredFormat": {"textFormat": {
                 "fontFamily": "Roboto Mono", "fontSize": 8,
                 "foregroundColor": QUIET}}},
             "fields": "userEnteredFormat.textFormat"}})
-    # Prose wraps; everything else is clipped, so one long sentence cannot
-    # make every row in the table tall.
-    for name in t.wrap:
+    for name in b.headings:
         c = col[name]
         req.append({"repeatCell": {
-            "range": rng(first, rows, c, c + 1),
-            "cell": {"userEnteredFormat": {"wrapStrategy": "WRAP"}},
+            "range": rng(first, last, c, c + 1),
+            "cell": {"userEnteredFormat": {
+                "wrapStrategy": "WRAP" if name in b.wrap else "CLIP"}},
             "fields": "userEnteredFormat.wrapStrategy"}})
-    for name in t.headings:
-        if name not in t.wrap:
-            c = col[name]
-            req.append({"repeatCell": {
-                "range": rng(first, rows, c, c + 1),
-                "cell": {"userEnteredFormat": {"wrapStrategy": "CLIP"}},
-                "fields": "userEnteredFormat.wrapStrategy"}})
-
-    for n, (name, contains, tone) in enumerate(t.rules):
+    for n, (name, contains, tone) in enumerate(b.rules):
         c = col[name]
         req.append({"addConditionalFormatRule": {"index": n, "rule": {
-            "ranges": [rng(first, rows, c, c + 1)],
+            "ranges": [rng(first, last, c, c + 1)],
             "booleanRule": {
                 "condition": {"type": "TEXT_CONTAINS",
                               "values": [{"userEnteredValue": contains}]},
@@ -283,8 +361,7 @@ def _cleanup_requests(book, sheet_ids: set) -> list:
     more of them after every run. Values are replaced on each push; the
     formatting has to be too.
 
-    Only tabs this program manages are touched. Anything the operator added
-    to a sheet of their own is left exactly as they left it.
+    Only tabs this program manages are touched.
     """
     try:
         meta = book.fetch_sheet_metadata()
@@ -309,77 +386,66 @@ def _cleanup_requests(book, sheet_ids: set) -> list:
 
 
 def push_to_sheet(events, key_file: str, sheet_id: str, limit: int | None = None,
-                  out_dir: pathlib.Path | None = None, roster=None):
-    """The whole market as a workbook: market-wide tabs, then one per business.
+                  out_dir: pathlib.Path | None = None, only: str | None = None):
+    """One tab per business, each a dashboard of that business's own trading.
 
-    THREE CALLS, NOT NINETY. An earlier version created, cleared and wrote
-    each tab one at a time — around two write requests per merchant against a
-    quota of sixty a minute, which worked only because the market is small.
-    Tabs are created in one batch, values written in one batch, and formatting
-    applied in one batch, so the cost does not grow with the roster.
-
-    Records each merchant's tab id on the way out, so a dashboard can link
-    straight to its own tab rather than to the top of a shared workbook.
+    THREE CALLS, NOT NINETY. Tabs are created in one batch, values written in
+    one batch, and formatting applied in one batch, so the cost does not grow
+    with the roster.
     """
     import gspread
     from google.oauth2.service_account import Credentials
 
-    from exchange.workbook import market_tables, merchant_table
+    from exchange.workbook import merchant_sheet
 
     scopes = ["https://www.googleapis.com/auth/spreadsheets"]
     creds = Credentials.from_service_account_file(key_file, scopes=scopes)
     book = gspread.authorize(creds).open_by_key(sheet_id)
 
-    roster = roster if roster is not None else merchants(events)
-    tables = list(market_tables(events, roster))
-    owners = {}
-    for actor in merchants(events)[:limit]:
-        books = entries_for(events, actor)
-        if books.entries:
-            table = merchant_table(books)
-            tables.append(table)
-            owners[actor] = table.key
-
-    built = {t.key: (t,) + table_grid(t) for t in tables}
+    roster = [only] if only else merchants(events)[:limit]
+    built, owners = {}, {}
+    for actor in roster:
+        if not entries_for(events, actor).entries:
+            continue
+        sheet = merchant_sheet(events, actor)
+        grid, layout = sheet_grid(sheet)
+        built[sheet.key] = (sheet, grid, layout)
+        owners[actor] = sheet.key
 
     existing = {w.title: w for w in book.worksheets()}
     adds = [{"addSheet": {"properties": {
                 "title": key,
-                "gridProperties": {"rowCount": max(len(grid) + 6, 40),
-                                   "columnCount": max(len(t.headings) + 1, 8)}}}}
-            for key, (t, grid, _h) in built.items() if key not in existing]
+                "gridProperties": {"rowCount": max(len(grid) + 8, 60),
+                                   "columnCount": 14}}}}
+            for key, (_s, grid, _l) in built.items() if key not in existing]
     if adds:
         book.batch_update({"requests": adds})
         existing = {w.title: w for w in book.worksheets()}
 
-    # Clearing first, so a shorter run cannot leave last run's rows stranded
-    # below the new ones where they read as real records.
+    # UNMERGE BEFORE WRITING, NOT AFTER. A cell covered by a merge from the
+    # previous run silently swallows anything written into it, so with the
+    # old layout's merges still in place three columns of every table and two
+    # of the headline cards arrived empty — no error, just missing. Clearing
+    # the formatting has to happen before the values, not alongside them.
+    stale = [existing[t].id for t in LEGACY_TABS
+             if t in existing and t not in built]
+    reset = [{"deleteSheet": {"sheetId": gid}} for gid in stale]
+    reset += _cleanup_requests(book, {existing[k].id for k in built
+                                      if k in existing})
+    if reset:
+        book.batch_update({"requests": reset})
+
+    # Then clear the values, so a shorter run cannot leave last run's rows
+    # stranded below the new ones where they read as real records.
     book.values_batch_clear({"ranges": [f"'{k}'" for k in built]})
     book.values_batch_update({
         "valueInputOption": "USER_ENTERED",
         "data": [{"range": f"'{k}'!A1", "values": grid}
-                 for k, (_t, grid, _h) in built.items()]})
+                 for k, (_s, grid, _l) in built.items()]})
 
-    # A tab an earlier version of this program created and no longer writes
-    # to would sit there forever holding stale figures. Only tabs we know we
-    # made are removed; the operator's own sheets are never touched.
-    stale = [existing[t].id for t in LEGACY_TABS
-             if t in existing and t not in built]
-    fmt = [{"deleteSheet": {"sheetId": gid}} for gid in stale]
-    for t in LEGACY_TABS:
-        existing.pop(t, None) if t in [k for k in existing
-                                       if k in LEGACY_TABS
-                                       and k not in built] else None
-
-    fmt += _cleanup_requests(book, {existing[k].id for k in built
-                                    if k in existing})
-    # The workbook should open on the front page, not on whichever tab was
-    # touched last. Moving it is non-destructive.
-    fmt.append({"updateSheetProperties": {
-        "properties": {"sheetId": existing[tables[0].key].id, "index": 0},
-        "fields": "index"}})
-    for key, (t, grid, header) in built.items():
-        fmt += table_requests(existing[key].id, t, grid, header)
+    fmt = []
+    for key, (sheet, grid, layout) in built.items():
+        fmt += sheet_requests(existing[key].id, sheet, grid, layout)
     book.batch_update({"requests": fmt})
 
     tabs = {actor: existing[key].id for actor, key in owners.items()}
@@ -388,8 +454,17 @@ def push_to_sheet(events, key_file: str, sheet_id: str, limit: int | None = None
         # duplicating a private workbook's identifier into a file that sits
         # beside generated pages is how it ends up somewhere it should not.
         out_dir.mkdir(parents=True, exist_ok=True)
-        (out_dir / TABS_FILE).write_text(
-            json.dumps(tabs, indent=2, sort_keys=True), encoding="utf-8")
+        existing_tabs = {}
+        tabs_path = out_dir / TABS_FILE
+        if tabs_path.exists():
+            try:
+                existing_tabs = json.loads(tabs_path.read_text())
+            except ValueError:
+                existing_tabs = {}
+        existing_tabs.update(tabs)
+        tabs_path.write_text(
+            json.dumps(existing_tabs, indent=2, sort_keys=True),
+            encoding="utf-8")
     return list(owners)
 
 
@@ -401,6 +476,9 @@ def main(argv=None) -> int:
                         help="also push to the Google Sheet in .env")
     parser.add_argument("--only", type=int, default=None,
                         help="push only the first N merchants")
+    parser.add_argument("--merchant", default=None,
+                        help="push one business only, e.g. m_bl_thirdwave — "
+                             "what a demo actually needs")
     args = parser.parse_args(argv)
 
     from dotenv import load_dotenv
@@ -449,7 +527,8 @@ def main(argv=None) -> int:
 
     try:
         pushed = push_to_sheet(events, key_file, sheet_id, args.only,
-                               out_dir=pathlib.Path(args.out))
+                               out_dir=pathlib.Path(args.out),
+                               only=args.merchant)
     except Exception as error:  # noqa: BLE001 — the cause belongs on screen
         print(f"\n  Google refused the sync: {type(error).__name__}: {error}")
         print("  The usual cause is the sheet not being shared with the "
