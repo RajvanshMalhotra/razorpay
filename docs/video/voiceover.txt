@@ -1,0 +1,137 @@
+AGENT EXCHANGE - VOICEOVER SCRIPT
+Plain ASCII. Short lines. Nothing here needs assembling.
+Every number is read from the run log and is correct as written.
+==================================================================
+
+VO 1  (over shots 1A and 1B)
+
+Every business on Razorpay is already connected to every other one.
+Money moves between them all day.
+
+Nobody has ever used that network to introduce them.
+
+------------------------------------------------------------------
+VO 2  (over shot 2)
+
+So we gave every merchant an agent. It finds who to deal with,
+argues the price down, settles on real Razorpay payments, and keeps
+the books.
+
+VO 2b  (over the first screen recording)
+
+This is a real run. Thirty-two businesses. Nine hundred and
+sixty-eight recorded events. Not one figure on screen was typed by
+hand.
+
+------------------------------------------------------------------
+VO 3  (over shot 3)
+
+This is what that looks like. Two agents, arguing about price, in
+plain English.
+
+VO 3b  (over the negotiation screen recording)
+
+And these are their actual words, quoted from the log. Five rounds,
+closing from two hundred rupees a unit to a hundred and eighty-five.
+
+VO 3c  (over the network ring screen recording)
+
+Thirty-two businesses. Thirty-six trading relationships. And nobody
+made a single introduction.
+
+------------------------------------------------------------------
+VO 4  (shot 4 plays under the first line, then cut to screen)
+
+Every step carries the number of the event it came from, so you can
+look any of it up.
+
+Event two hundred and five. The merchant wants a hundred and sixty
+units of cold brew.
+
+Event two hundred and seventeen. Its agent shortlisted three sellers
+and argued for one.
+
+Event two hundred and fifty-six. Agreed at a hundred and ninety-five
+rupees a unit.
+
+Event two hundred and fifty-eight. And here is the part that
+matters. The gate refused it. Powerbank was an unknown supplier, and
+the amount was over the cap for a first deal. So the agent came back
+smaller, and that was allowed.
+
+The refusal is recorded. Not the outcome. The ruling, before any
+money moved.
+
+Event two hundred and sixty-one. Four thousand eight hundred and
+seventy-five rupees, on a real Razorpay order.
+
+------------------------------------------------------------------
+VO 5  (shot 5, then the screen recording)
+
+Then it broke.
+
+Event seven hundred and sixty-three. Razorpay said that payment was
+captured. Our books said pending. Nobody was watching. The
+accountant found it on a routine sweep.
+
+Event nine hundred and thirty-six. It froze that one merchant. Not
+the market. One business's disagreement must not stop everybody
+else.
+
+Event nine hundred and thirty-seven. It repaired the settlement
+using the payment id Razorpay gave back. Not one we invented. A
+repair that invents an id is a machine for asserting payments that
+never happened.
+
+Event nine hundred and thirty-eight. And it let the merchant trade
+again. A freeze that never lifts is a ban, not a hold.
+
+Seventeen mismatches were caught and repaired this way. No human
+touched any of them.
+
+------------------------------------------------------------------
+VO 6  (over shot 6)
+
+You can only be in one meeting at a time. Your agent cannot.
+
+VO 6b  (over the four agent cards and the brief control)
+
+It is four parts with separate memories. Three act. The fourth only
+watches, and remembers.
+
+And you tell it how to behave, in plain words. That sets its
+priorities. It can never set its permissions. No brief here can
+raise a spending limit.
+
+VO 6c  (over the Google Sheet)
+
+The books keep themselves, into the merchant's own Google Sheet.
+
+Eleven thousand five hundred and seventy spent. And the number only
+the agent knows: a thousand and fifty saved, because the supplier
+listed at two hundred and ten and the agent settled at a hundred and
+ninety-five.
+
+------------------------------------------------------------------
+VO 7  (shot 7, then the desk screen recording)
+
+The processor sees what no single merchant can. Which campaigns are
+climbing across the whole client base, ranked from the log, with the
+press that explains each one.
+
+That intelligence sells by sealed auction. Eight agents bid. The
+winner paid the runner-up's price. And the sixteen businesses whose
+trading produced the insight were each paid a royalty, without ever
+being named.
+
+------------------------------------------------------------------
+VO 8  (over shot 8)
+
+Payments told you a transaction happened.
+
+This tells you who should be doing business. And proves every rupee
+of it.
+
+CLOSING CARD  (black type on white, held three seconds)
+
+968 events . 74 rulings recorded . 17 repairs . 0 humans
