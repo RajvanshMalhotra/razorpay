@@ -31,6 +31,16 @@ COLUMNS = (
     "razorpay_payment_id", "event", "correlation_id",
 )
 
+# What a person reads at the top of the ledger. COLUMNS stays the machine
+# name — it is the key into an Entry and the header of the CSV, where a tool
+# on the other end wants something stable — but nobody should have to read
+# "unit_price_inr" in their own accounts.
+HEADINGS = (
+    "Date", "Direction", "Counterparty", "Item", "Qty", "Unit price",
+    "Amount", "Status", "Gate ruling", "Razorpay order",
+    "Razorpay payment", "Event", "Trade id",
+)
+
 
 @dataclass
 class Entry:
@@ -88,16 +98,21 @@ class Books:
         pending = [e for e in self.entries if e.status == "pending"]
         refused = [e for e in self.entries if "DENY" in e.gate]
         counterparties = {e.counterparty for e in self.entries if e.counterparty}
+        # TWO ROWS USED TO READ "Awaiting confirmation" — one a sum of money
+        # and one a count of trades. Side by side in a narrow column they
+        # truncated to the same string, which is the worst kind of ambiguity
+        # in a book of accounts. The "(₹)" suffix marks a money row for the
+        # formatter, which then shows it as currency and drops the marker.
         return [
             ("Merchant", self.actor_id),
             ("Purchases (₹)", self.bought_inr),
             ("Sales (₹)", self.sold_inr),
             ("Net (₹)", self.net_inr),
             ("Confirmed by Razorpay (₹)", self.settled_inr),
-            ("Awaiting confirmation (₹)",
+            ("Value awaiting confirmation (₹)",
              round(sum(e.amount_inr for e in pending), 2)),
             ("Transactions", len(self.entries)),
-            ("Awaiting confirmation", len(pending)),
+            ("Of those, awaiting confirmation", len(pending)),
             ("Refused once by the gate", len(refused)),
             ("Counterparties dealt with", len(counterparties)),
         ]
