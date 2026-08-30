@@ -411,20 +411,38 @@ footer{
       <li class="refused">
         <span class="seq">258</span>
         <span><span class="what">The gate refuses it &nbsp;<span class="verdict d">DENY</span></span>
-        <span class="why">Powerbank is an unknown counterparty, and the amount is over
-        the trial cap for a first deal. The refusal is written down <em>before</em> any
-        money moves &mdash; the ruling is the record, not the outcome.</span></span>
+        <span class="why">160 units at &#8377;195 comes to &#8377;31,200 &mdash;
+        <em>&ldquo;Amount 3120000 exceeds per-transaction cap 2000000&rdquo;</em>. The
+        refusal is written down <em>before</em> any money moves; the ruling is the
+        record, not the outcome.</span></span>
+      </li>
+      <li>
+        <span class="seq">259</span>
+        <span><span class="what">Comes back smaller &mdash; not cheaper</span>
+        <span class="why">25 units instead of 160, at the same &#8377;195. The agent did
+        not concede a rupee on price; it bought a trial size. The log calls it exactly
+        that: <em>&ldquo;trial size 25 of 160&rdquo;</em>.</span></span>
+      </li>
+      <li class="paid">
+        <span class="seq">260</span>
+        <span><span class="what">The gate rules again &nbsp;<span class="verdict a">ALLOW</span></span>
+        <span class="why">&#8377;4,875 &mdash; under the &#8377;20,000 payment cap, and
+        under the &#8377;5,000 cap that applies because Powerbank has no track record
+        yet (<code>counterparty_confidence: 0.0</code>). <em>&ldquo;Within all configured
+        limits.&rdquo;</em></span></span>
       </li>
       <li class="paid">
         <span class="seq">261</span>
-        <span><span class="what">Comes back smaller, and pays</span>
+        <span><span class="what">Pays</span>
         <span class="why">&#8377;4,875 on a real Razorpay test-mode order, settlement
         <code>stl_87b9f1b75d0b</code>.</span></span>
       </li>
     </ol>
 
-    <div class="note">That settlement id is worth holding on to. It is the one that
-    breaks.</div>
+    <div class="note">Two caps were weighed and only one is named in the refusal. The
+    <b>&#8377;20,000 per-payment cap</b> is what stopped the first attempt; the
+    <b>&#8377;5,000 unknown-counterparty cap</b> is what set the size of the retry. And
+    that settlement id is worth holding on to &mdash; it is the one that breaks.</div>
   </div>
 </section>
 

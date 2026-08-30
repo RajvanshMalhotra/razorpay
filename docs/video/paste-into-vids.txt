@@ -158,8 +158,9 @@ on it. Do not generate this.
 ON SCREEN: event 258 - REFUSED
 
 NARRATION: Event two hundred and fifty-eight, and here is the
-part that matters. The gate refused it. The supplier was unknown,
-and the amount was over the cap for a first deal.
+part that matters. The gate refused it. Thirty-one thousand two
+hundred rupees was over the twenty thousand rupee cap on any one
+payment.
 
 
 SCENE 13
@@ -169,9 +170,9 @@ retry, then the payment. Do not generate this.
 
 ON SCREEN: the ruling is recorded, not just the outcome
 
-NARRATION: So the agent came back smaller, and that was allowed.
-Event two hundred and sixty-one. Four thousand eight hundred and
-seventy-five rupees, on a real Razorpay order.
+NARRATION: So the agent came back for twenty-five units instead
+of a hundred and sixty, at the same price. Four thousand eight
+hundred and seventy-five rupees. Allowed, and paid.
 
 
 SCENE 14
