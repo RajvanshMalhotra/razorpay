@@ -1,0 +1,10 @@
+2D hand-drawn stick figure animation. Plain white background. Black ink
+lines, uneven hand-drawn weight, slight boil between frames. Simple round
+heads, no faces except dot eyes. Flat, no shading, no gradient, no 3D. One
+accent colour only: warm yellow. Locked-off camera, no zoom, no parallax.
+12 frames per second. No text, no letters, no numbers, no watermark, no
+logos. Two stick figures face each other in profile, one on each side of
+the frame. Empty speech bubbles pop above them in turn: left, then right,
+then left, then right. Each bubble is slightly smaller than the one before
+it. The bubbles are outlined in black and completely empty inside. No
+dialogue, no voices, no music, no sound effects. Silent clip.

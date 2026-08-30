@@ -1,0 +1,9 @@
+2D hand-drawn stick figure animation. Plain white background. Black ink
+lines, uneven hand-drawn weight, slight boil between frames. Simple round
+heads, no faces except dot eyes. Flat, no shading, no gradient, no 3D. One
+accent colour only: warm yellow. Locked-off camera, no zoom, no parallax.
+12 frames per second. No text, no letters, no numbers, no watermark, no
+logos. The full grid of forty stick figures, now densely connected by
+steady warm yellow lines. Every figure turns to face the centre together
+in one motion. Hold on the final frame, then fade to white. No dialogue,
+no voices, no music, no sound effects. Silent clip.

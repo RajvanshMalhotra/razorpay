@@ -1,0 +1,10 @@
+2D hand-drawn stick figure animation. Plain white background. Black ink
+lines, uneven hand-drawn weight, slight boil between frames. Simple round
+heads, no faces except dot eyes. Flat, no shading, no gradient, no 3D. One
+accent colour only: warm yellow. Locked-off camera, no zoom, no parallax.
+12 frames per second. No text, no letters, no numbers, no watermark, no
+logos. The frame is split by a thin vertical line. On the left half a
+stick figure lies asleep and completely still. On the right half the same
+figure, drawn in warm yellow, moves briskly: walking, handing over a small
+parcel, then shaking hands with another figure. The sleeping half never
+moves.
