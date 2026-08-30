@@ -1,0 +1,705 @@
+<title>The Agent Exchange</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,600;9..144,800&family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+
+<style>
+:root{
+  /* Warm paper, carried over from the shipped pages so the write-up and
+     the product read as one thing. Neutrals are biased toward the gold
+     accent rather than sitting at a dead grey. */
+  --paper:oklch(97.3% .012 86);
+  --card:oklch(99% .006 87);
+  --sunk:oklch(95.4% .014 85);
+  --rule:oklch(89% .016 84);
+  --edge:oklch(83% .02 82);
+  --ink:oklch(22% .014 72);
+  --body:oklch(41% .017 76);
+  --soft:oklch(53% .019 78);
+  --faint:oklch(66% .018 80);
+  --gold:oklch(56% .14 82);
+  --hi:oklch(89% .17 96);
+  --allow:oklch(46% .11 155);
+  --deny:oklch(49% .16 32);
+  --allow-wash:color-mix(in oklab,var(--allow) 10%,transparent);
+  --deny-wash:color-mix(in oklab,var(--deny) 9%,transparent);
+  --gold-wash:color-mix(in oklab,var(--gold) 11%,transparent);
+
+  --disp:'Fraunces',"Iowan Old Style",Georgia,serif;
+  --sans:'IBM Plex Sans',-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
+  --mono:'IBM Plex Mono',ui-monospace,SFMono-Regular,Menlo,monospace;
+
+  --measure:66ch;
+  --rail:9.5rem;
+}
+@media (prefers-color-scheme:dark){
+  :root:not([data-theme="light"]){
+    --paper:oklch(17.5% .012 74);
+    --card:oklch(21% .014 74);
+    --sunk:oklch(20% .013 74);
+    --rule:oklch(28% .016 74);
+    --edge:oklch(36% .02 76);
+    --ink:oklch(94% .01 84);
+    --body:oklch(80% .014 82);
+    --soft:oklch(68% .016 80);
+    --faint:oklch(55% .016 78);
+    --gold:oklch(76% .13 84);
+    --hi:oklch(84% .16 96);
+    --allow:oklch(74% .13 155);
+    --deny:oklch(70% .15 32);
+  }
+}
+:root[data-theme="dark"]{
+  --paper:oklch(17.5% .012 74);
+  --card:oklch(21% .014 74);
+  --sunk:oklch(20% .013 74);
+  --rule:oklch(28% .016 74);
+  --edge:oklch(36% .02 76);
+  --ink:oklch(94% .01 84);
+  --body:oklch(80% .014 82);
+  --soft:oklch(68% .016 80);
+  --faint:oklch(55% .016 78);
+  --gold:oklch(76% .13 84);
+  --hi:oklch(84% .16 96);
+  --allow:oklch(74% .13 155);
+  --deny:oklch(70% .15 32);
+}
+
+*{box-sizing:border-box}
+body{
+  background:var(--paper);
+  color:var(--body);
+  font-family:var(--sans);
+  font-size:16.5px;
+  line-height:1.62;
+  margin:0;
+  padding:0 1.25rem 7rem;
+  -webkit-font-smoothing:antialiased;
+}
+.wrap{max-width:calc(var(--measure) + var(--rail) + 3.5rem);margin:0 auto}
+
+/* ---------------------------------------------------------------- masthead */
+header.top{
+  padding:clamp(3rem,9vw,6rem) 0 0;
+  margin-left:calc(var(--rail) + 3.5rem);
+}
+@media (max-width:820px){header.top{margin-left:0}}
+.eyebrow{
+  font-family:var(--mono);font-size:.7rem;font-weight:500;
+  letter-spacing:.14em;text-transform:uppercase;color:var(--gold);
+  margin:0 0 1.4rem;
+}
+h1{
+  font-family:var(--disp);
+  font-optical-sizing:auto;
+  font-weight:800;
+  font-size:clamp(2.6rem,6.5vw,4.1rem);
+  line-height:.98;
+  letter-spacing:-.022em;
+  color:var(--ink);
+  margin:0 0 1.5rem;
+  text-wrap:balance;
+}
+h1 .mark{
+  background:linear-gradient(transparent 62%,var(--hi) 62%,var(--hi) 94%,transparent 94%);
+  padding:0 .06em;
+}
+.standfirst{
+  font-size:1.16rem;line-height:1.55;color:var(--soft);
+  max-width:52ch;margin:0 0 2.5rem;
+}
+.stamp{
+  display:flex;flex-wrap:wrap;gap:.55rem 1.6rem;
+  font-family:var(--mono);font-size:.76rem;color:var(--faint);
+  padding:1rem 0;border-top:1px solid var(--rule);border-bottom:1px solid var(--rule);
+  margin-bottom:1rem;
+}
+.stamp b{color:var(--ink);font-weight:600;font-variant-numeric:tabular-nums}
+
+/* ------------------------------------------------------------------ layout */
+section{
+  display:grid;
+  grid-template-columns:var(--rail) minmax(0,var(--measure));
+  gap:0 3.5rem;
+  align-items:start;
+  padding-top:clamp(2.75rem,6vw,4.25rem);
+}
+@media (max-width:820px){
+  section{grid-template-columns:minmax(0,1fr);gap:0}
+}
+.rail{
+  font-family:var(--mono);font-size:.72rem;line-height:1.5;
+  color:var(--faint);text-align:right;
+  padding-top:.55rem;
+  position:sticky;top:1.5rem;
+}
+@media (max-width:820px){
+  .rail{text-align:left;position:static;padding:0 0 .7rem}
+}
+.rail .n{
+  display:block;color:var(--gold);font-weight:600;font-size:.78rem;
+  letter-spacing:.06em;
+}
+.rail .src{display:block;margin-top:.35rem;color:var(--faint)}
+
+h2{
+  font-family:var(--disp);font-weight:600;font-optical-sizing:auto;
+  font-size:clamp(1.6rem,3.4vw,2.05rem);line-height:1.12;
+  letter-spacing:-.014em;color:var(--ink);
+  margin:0 0 1.1rem;text-wrap:balance;
+}
+h3{
+  font-family:var(--sans);font-weight:600;font-size:.99rem;
+  color:var(--ink);margin:2rem 0 .6rem;
+  letter-spacing:-.004em;
+}
+p{margin:0 0 1.05rem}
+.col>p:last-child{margin-bottom:0}
+strong{color:var(--ink);font-weight:600}
+em{font-style:italic;color:var(--ink)}
+a{color:var(--gold);text-underline-offset:2px}
+a:focus-visible,summary:focus-visible{
+  outline:2px solid var(--gold);outline-offset:3px;border-radius:2px;
+}
+
+/* ---------------------------------------------------------------- ev tokens */
+.ev{
+  font-family:var(--mono);font-size:.86em;font-weight:500;
+  color:var(--ink);background:var(--gold-wash);
+  padding:.08em .38em;border-radius:2px;
+  white-space:nowrap;font-variant-numeric:tabular-nums;
+}
+code{
+  font-family:var(--mono);font-size:.86em;
+  background:var(--sunk);color:var(--ink);
+  padding:.1em .36em;border-radius:2px;
+  border:1px solid var(--rule);
+}
+.num{font-family:var(--mono);font-variant-numeric:tabular-nums;color:var(--ink);font-weight:500}
+
+/* ------------------------------------------------------------------- rail-9 */
+ol.stations{
+  list-style:none;margin:1.5rem 0 0;padding:0;
+  border-top:1px solid var(--rule);
+}
+ol.stations li{
+  display:grid;
+  grid-template-columns:4.6rem minmax(0,1fr);
+  gap:0 1.1rem;
+  padding:.85rem 0;
+  border-bottom:1px solid var(--rule);
+  align-items:baseline;
+}
+ol.stations .seq{
+  font-family:var(--mono);font-size:.8rem;font-weight:600;
+  color:var(--gold);font-variant-numeric:tabular-nums;
+}
+ol.stations .what{color:var(--ink);font-weight:500;display:block}
+ol.stations .why{color:var(--soft);font-size:.93rem;display:block;margin-top:.15rem}
+ol.stations li.refused{background:var(--deny-wash);
+  margin-inline:-.9rem;padding-inline:.9rem}
+ol.stations li.refused .seq{color:var(--deny)}
+ol.stations li.paid .seq{color:var(--allow)}
+
+/* -------------------------------------------------------------------- table */
+.tw{overflow-x:auto;margin:1.35rem 0 0;
+  border:1px solid var(--rule);border-radius:3px;background:var(--card)}
+table{border-collapse:collapse;width:100%;font-size:.9rem}
+th{
+  font-family:var(--mono);font-size:.68rem;font-weight:600;
+  letter-spacing:.1em;text-transform:uppercase;color:var(--faint);
+  text-align:left;padding:.7rem .95rem;
+  border-bottom:1px solid var(--rule);background:var(--sunk);
+  white-space:nowrap;
+}
+td{padding:.62rem .95rem;border-bottom:1px solid var(--rule);color:var(--body);
+  vertical-align:top}
+tr:last-child td{border-bottom:0}
+td.n{font-family:var(--mono);font-variant-numeric:tabular-nums;
+  color:var(--ink);white-space:nowrap;font-weight:500}
+td.t{color:var(--ink);font-weight:500}
+
+/* --------------------------------------------------------------------- note */
+.note{
+  border-left:2px solid var(--gold);
+  padding:.15rem 0 .15rem 1.1rem;
+  margin:1.35rem 0;color:var(--soft);font-size:.95rem;
+}
+.note b{color:var(--ink)}
+
+.verdict{
+  display:inline-flex;align-items:center;gap:.4rem;
+  font-family:var(--mono);font-size:.7rem;font-weight:600;
+  letter-spacing:.08em;padding:.16rem .45rem;border-radius:2px;
+}
+.verdict.a{color:var(--allow);background:var(--allow-wash)}
+.verdict.d{color:var(--deny);background:var(--deny-wash)}
+
+/* --------------------------------------------------------------------- grid */
+.parts{display:grid;grid-template-columns:repeat(auto-fit,minmax(215px,1fr));
+  gap:.8rem;margin-top:1.4rem}
+.part{
+  border:1px solid var(--rule);border-radius:3px;
+  background:var(--card);padding:.95rem 1.05rem;
+}
+.part h4{
+  font-family:var(--mono);font-size:.72rem;font-weight:600;letter-spacing:.09em;
+  text-transform:uppercase;color:var(--gold);margin:0 0 .45rem;
+}
+.part p{font-size:.92rem;margin:0;color:var(--soft)}
+.part p+p{margin-top:.5rem}
+
+.figs{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));
+  gap:.8rem;margin-top:1.4rem}
+.fig{border:1px solid var(--rule);border-radius:3px;background:var(--card);
+  padding:.9rem 1rem}
+.fig .v{font-family:var(--mono);font-size:1.5rem;font-weight:600;color:var(--ink);
+  font-variant-numeric:tabular-nums;line-height:1.1;display:block}
+.fig .k{font-size:.82rem;color:var(--soft);display:block;margin-top:.3rem}
+
+hr.div{border:0;border-top:1px solid var(--rule);margin:0;
+  grid-column:1/-1}
+
+footer{
+  margin:clamp(3.5rem,8vw,5.5rem) 0 0;
+  margin-left:calc(var(--rail) + 3.5rem);
+  padding-top:1.4rem;border-top:1px solid var(--rule);
+  font-family:var(--mono);font-size:.76rem;color:var(--faint);
+}
+@media (max-width:820px){footer{margin-left:0}}
+
+@media (prefers-reduced-motion:reduce){
+  *{animation:none!important;transition:none!important;scroll-behavior:auto!important}
+}
+</style>
+
+<div class="wrap">
+
+<header class="top">
+  <p class="eyebrow">Razorpay Hackathon &middot; Track 01 &middot; AI Growth &amp; Agentic Commerce</p>
+  <h1>Every merchant gets an agent that <span class="mark">trades for them</span>.</h1>
+  <p class="standfirst">Razorpay already sits between millions of businesses and knows
+  which of them are real and which of them pay. The Agent Exchange turns that position
+  into a market: brokers that find counterparties, argue price, settle on real Razorpay
+  test-mode payments, and keep books &mdash; with every rupee ruled on before it moves.</p>
+  <div class="stamp">
+    <span>run <b>runs/market.db</b></span>
+    <span><b>968</b> events</span>
+    <span><b>32</b> merchants</span>
+    <span><b>74</b> rulings</span>
+    <span><b>17</b> repairs</span>
+    <span><b>623</b> tests</span>
+  </div>
+</header>
+
+<!-- ============================================================ the problem -->
+<section>
+  <div class="rail"><span class="n">The gap</span></div>
+  <div class="col">
+    <h2>What this solves</h2>
+    <p>Every business needs suppliers and needs buyers. Finding them, checking whether
+    they are real, and arguing the price is work that a small business does not have
+    the hours for. So most of them trade with whoever they already know, at whatever
+    price happens to be listed &mdash; not because that is the best deal, but because
+    searching costs more than the saving.</p>
+    <p>The information to fix that already exists, and Razorpay already holds it. It
+    processes the payments between these businesses, so it knows who ships, who pays,
+    who pays late, and what things actually clear at. Nobody has ever used that position
+    to make an introduction.</p>
+    <p><strong>The Agent Exchange is that introduction, made automatically, and settled
+    for you.</strong> A merchant's agent finds who to deal with on the network, negotiates
+    in plain English, pays through Razorpay, writes the books, and files what it learned
+    about the counterparty for next time.</p>
+    <div class="note">The track's bar is <b>&ldquo;every money action explainable, bounded and
+    gated; show the audit trail and one failure handled gracefully.&rdquo;</b> That is not a
+    feature bolted on at the end here &mdash; it is the architecture. Nothing moves money
+    without first writing down why it was allowed to.</div>
+  </div>
+</section>
+
+<!-- ========================================================== what was built -->
+<section>
+  <div class="rail"><span class="n">Architecture</span><span class="src">13,973 lines<br>Python</span></div>
+  <div class="col">
+    <h2>What was built</h2>
+    <p>Three layers. An exchange core that no agent can write to except by appending an
+    event; one broker per merchant, split into four parts with separate memories; and
+    three house agents that belong to Razorpay rather than to any merchant.</p>
+
+    <h3>The broker &mdash; four parts, one merchant</h3>
+    <p>Three parts act. The fourth only watches. Each acting part holds its own context
+    and reports a summary upward, so the agent negotiating with one supplier cannot leak
+    what it paid another.</p>
+    <div class="parts">
+      <div class="part">
+        <h4>Trader</h4>
+        <p>Buys and sells. Posts what the business needs, shortlists sellers, and runs
+        the negotiation.</p>
+      </div>
+      <div class="part">
+        <h4>Scout</h4>
+        <p>Watches what is rising and bids on market intelligence in the house auctions.</p>
+      </div>
+      <div class="part">
+        <h4>Diplomat</h4>
+        <p>Holds the relationships. Advises on who to deal with &mdash; and never vetoes,
+        so it cannot freeze the market into cliques.</p>
+      </div>
+      <div class="part">
+        <h4>Subconscious</h4>
+        <p>Never acts. Consolidates what happened into durable lessons and puts the
+        relevant one into a sibling's context <em>before</em> it acts.</p>
+      </div>
+    </div>
+    <div class="note">In this run the Subconscious wrote <b>14 lessons</b>, in the plain
+    language it will read back later &mdash; <em>&ldquo;They paid the full 499800 paise and
+    completed settlement without any follow-up, so they honor their financial
+    commitments.&rdquo;</em></div>
+
+    <h3>The house &mdash; three agents that work for Razorpay</h3>
+    <div class="parts">
+      <div class="part">
+        <h4>Research desk</h4>
+        <p>Mines cross-merchant activity into ranked campaigns and market insight, with
+        press and public discussion attached.</p>
+      </div>
+      <div class="part">
+        <h4>Accountant</h4>
+        <p>Reconciles local books against Razorpay, freezes on drift, repairs from the
+        log, and mints points.</p>
+      </div>
+      <div class="part">
+        <h4>Auctioneer</h4>
+        <p>Sells insight lots by sealed second-price bid, and pays a royalty back to the
+        merchants whose trading produced them.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ================================================================ one trade -->
+<section>
+  <div class="rail"><span class="n">One trade</span><span class="src">correlation<br>thread</span></div>
+  <div class="col">
+    <h2>One trade, end to end</h2>
+    <p>This is the trade the demo follows. Every station carries the sequence number of
+    the event it came from, and one correlation id threads the whole story &mdash; so any
+    claim below can be looked up in the log rather than taken on trust.</p>
+    <p>A Bangalore coffee business, <code>m_bl_thirdwave</code>, needs cold brew
+    concentrate.</p>
+
+    <ol class="stations">
+      <li>
+        <span class="seq">205</span>
+        <span><span class="what">Posts what it needs</span>
+        <span class="why">A descriptive bid, not a listing reference: 160 units of cold
+        brew concentrate.</span></span>
+      </li>
+      <li>
+        <span class="seq">217</span>
+        <span><span class="what">Picks who to deal with</span>
+        <span class="why">Shortlists three sellers and argues for one, in writing:
+        <em>&ldquo;Seller m_powerbank offers the lowest price at 21,000 per unit, well
+        below my opening&hellip;&rdquo;</em> &mdash; &#8377;210 a unit.</span></span>
+      </li>
+      <li>
+        <span class="seq">256</span>
+        <span><span class="what">Talks end, agreed</span>
+        <span class="why">Settled at 19,500 paise &mdash; &#8377;195 a unit, down
+        &#8377;15 from the seller's own ask.</span></span>
+      </li>
+      <li class="refused">
+        <span class="seq">258</span>
+        <span><span class="what">The gate refuses it &nbsp;<span class="verdict d">DENY</span></span>
+        <span class="why">Powerbank is an unknown counterparty, and the amount is over
+        the trial cap for a first deal. The refusal is written down <em>before</em> any
+        money moves &mdash; the ruling is the record, not the outcome.</span></span>
+      </li>
+      <li class="paid">
+        <span class="seq">261</span>
+        <span><span class="what">Comes back smaller, and pays</span>
+        <span class="why">&#8377;4,875 on a real Razorpay test-mode order, settlement
+        <code>stl_87b9f1b75d0b</code>.</span></span>
+      </li>
+    </ol>
+
+    <div class="note">That settlement id is worth holding on to. It is the one that
+    breaks.</div>
+  </div>
+</section>
+
+<!-- ===================================================================== gate -->
+<section>
+  <div class="rail"><span class="n">The gate</span><span class="src">74 rulings<br>49 allowed<br>25 refused</span></div>
+  <div class="col">
+    <h2>Bounded and gated</h2>
+    <p>Every money action emits a <code>POLICY_DECIDED</code> event before it executes
+    &mdash; <em>including when the answer is yes</em>. That is the difference between a
+    gate and a wrapper: the audit trail shows the gate firing on all 74 decisions, not
+    just the 25 it refused.</p>
+    <p>The caps are configuration of the exchange, never an argument of a trade. An
+    agent cannot supply its own usage figure or assert its own standing, because a cap
+    the actor reports its own number for is not a cap.</p>
+
+    <div class="tw"><table>
+      <thead><tr><th>Limit</th><th>INR</th><th>What it stops</th></tr></thead>
+      <tbody>
+        <tr><td class="t">Per transaction</td><td class="n">&#8377;20,000</td>
+          <td>Any single runaway payment.</td></tr>
+        <tr><td class="t">Rolling window</td><td class="n">&#8377;1,00,000</td>
+          <td>A loop that stays under the per-transaction cap but drains the account.</td></tr>
+        <tr><td class="t">Unknown counterparty</td><td class="n">&#8377;5,000</td>
+          <td>A first deal with someone with no track record. Rises as they earn it.</td></tr>
+      </tbody>
+    </table></div>
+
+    <p style="margin-top:1.35rem">The refusals in this run read like real refusals,
+    with the arithmetic shown: <em>&ldquo;Amount 1350000 exceeds unknown counterparty cap
+    50&rdquo;</em>, <em>&ldquo;Amount 2205000 exceeds per-transaction cap
+    2000000&rdquo;</em>.</p>
+
+    <h3>Why the unknown-counterparty cap is not just a brake</h3>
+    <p>It is also what makes the market fair to newcomers. Relationship history creates
+    rich-get-richer bias that would freeze trading into cliques, so unknown counterparties
+    are scored <strong>optimistically</strong> &mdash; the Diplomat actively wants to try
+    them &mdash; and the cap is what makes that safe. A refused-then-retried-smaller trade
+    is the system working, not failing.</p>
+  </div>
+</section>
+
+<!-- ================================================================== failure -->
+<section>
+  <div class="rail"><span class="n">The failure</span><span class="src">graded<br>requirement</span></div>
+  <div class="col">
+    <h2>One failure, handled</h2>
+    <p>The track asks for one failure handled gracefully. This one was not staged as a
+    declined card &mdash; it is a genuine consistency failure between two systems, which
+    is the kind that actually costs businesses money because nobody is watching for it.</p>
+    <p>Razorpay captured the payment. Our books still said pending. Nothing was broken
+    loudly; the two records simply disagreed, and would have gone on disagreeing.</p>
+
+    <ol class="stations">
+      <li>
+        <span class="seq">763</span>
+        <span><span class="what">The accountant finds it</span>
+        <span class="why">On a routine sweep, not because anyone reported it.
+        <code>local_status: PENDING</code>, <code>remote_status: captured</code>.</span></span>
+      </li>
+      <li>
+        <span class="seq">936</span>
+        <span><span class="what">Freezes one merchant &mdash; not the market</span>
+        <span class="why"><em>&ldquo;books disagree on stl_87b9f1b75d0b&rdquo;</em>. One
+        business's disagreement must not stop everybody else trading.</span></span>
+      </li>
+      <li class="paid">
+        <span class="seq">937</span>
+        <span><span class="what">Repairs it with Razorpay's own id</span>
+        <span class="why"><code>pay_TV9vxLLDM2PvgD</code> &mdash; the payment id Razorpay
+        gave back, never one we generated. A repair that invents an id is a machine for
+        asserting payments that never happened.</span></span>
+      </li>
+      <li>
+        <span class="seq">938</span>
+        <span><span class="what">Lets the merchant trade again</span>
+        <span class="why">A freeze that never lifts is a ban, not a hold.</span></span>
+      </li>
+    </ol>
+
+    <div class="note"><b>21</b> settlements drifted across the run and <b>17</b> were
+    repaired this way, with no human involved. The other <b>4</b> could not be confirmed
+    because Razorpay rate-limited the reconciliation sweep &mdash;
+    <code>BadRequestError: Too many requests</code> &mdash; and the system recorded
+    <b>12</b> such failed checks rather than guessing. An unconfirmed settlement stays
+    unconfirmed.</div>
+  </div>
+</section>
+
+<!-- ================================================================ audit log -->
+<section>
+  <div class="rail"><span class="n">The record</span><span class="src">append-only<br>SQLite</span></div>
+  <div class="col">
+    <h2>Why any of this is checkable</h2>
+    <p>There is one source of truth: an append-only event log, enforced by a database
+    trigger rather than by convention. Order books, point balances, the relationship
+    graph and every page in the replay are <strong>projections</strong> of it &mdash;
+    computed by folding the log, never stored alongside it and never edited.</p>
+    <p>Each event carries <code>seq</code>, <code>ts</code>, <code>actor_id</code>,
+    <code>type</code>, <code>payload</code>, <code>causation_id</code> and
+    <code>correlation_id</code>. The correlation id is what lets one trade be followed
+    from a need through to a repaired settlement, which is exactly the thread shown
+    above.</p>
+
+    <div class="tw"><table>
+      <thead><tr><th>Event</th><th>Count</th><th>What it records</th></tr></thead>
+      <tbody>
+        <tr><td class="t">NEGOTIATION_ROUND</td><td class="n">180</td><td>A single offer, in the agent's own words.</td></tr>
+        <tr><td class="t">ORDER_POSTED</td><td class="n">105</td><td>A business saying what it needs or has.</td></tr>
+        <tr><td class="t">POLICY_DECIDED</td><td class="n">74</td><td>The gate ruling, before money moves.</td></tr>
+        <tr><td class="t">MATCH_PROPOSED</td><td class="n">74</td><td>Terms put to both sides.</td></tr>
+        <tr><td class="t">COUNTERPARTY_CHOSEN</td><td class="n">65</td><td>Who was picked, and the reasoning.</td></tr>
+        <tr><td class="t">SETTLEMENT_INITIATED</td><td class="n">49</td><td>Money committed against a Razorpay order.</td></tr>
+        <tr><td class="t">ASSET_LISTED</td><td class="n">35</td><td>Something offered for sale.</td></tr>
+        <tr><td class="t">SETTLEMENT_COMPLETED</td><td class="n">34</td><td>Payment confirmed.</td></tr>
+        <tr><td class="t">ACTOR_REGISTERED</td><td class="n">32</td><td>A merchant joining the exchange.</td></tr>
+        <tr><td class="t">POINTS_MINTED</td><td class="n">24</td><td>Broker skill rewarded.</td></tr>
+        <tr><td class="t">DRIFT_DETECTED</td><td class="n">21</td><td>Our books and Razorpay disagreeing.</td></tr>
+        <tr><td class="t">CREDITS_TRANSFERRED</td><td class="n">17</td><td>Play-money settlement, atomic.</td></tr>
+        <tr><td class="t">LESSON_CONSOLIDATED</td><td class="n">14</td><td>The Subconscious filing something durable.</td></tr>
+        <tr><td class="t">RECONCILE_CHECK_FAILED</td><td class="n">12</td><td>A check that could not be completed.</td></tr>
+        <tr><td class="t">SETTLEMENT_FAILED</td><td class="n">8</td><td>A payment that did not go through.</td></tr>
+        <tr><td class="t">BID_PLACED</td><td class="n">8</td><td>A sealed bid in an insight auction.</td></tr>
+        <tr><td class="t">CAMPAIGN_RANKED</td><td class="n">5</td><td>A campaign placed on the internal board.</td></tr>
+        <tr><td class="t">RECONCILED</td><td class="n">3</td><td>A full reconciliation sweep.</td></tr>
+        <tr><td class="t">PRIVACY_REFUSED</td><td class="n">2</td><td>Intelligence withheld for being too thin.</td></tr>
+        <tr><td class="t">ACTOR_FROZEN / RESUMED</td><td class="n">1 / 1</td><td>The freeze, and the lift.</td></tr>
+      </tbody>
+    </table></div>
+    <p style="margin-top:1.35rem;color:var(--soft);font-size:.93rem">26 event types in
+    all; the smaller ones are omitted here. Nothing in the replay pages is typed by hand
+    &mdash; if a figure on screen ever disagrees with a claim, the log is right.</p>
+  </div>
+</section>
+
+<!-- ============================================================= intelligence -->
+<section>
+  <div class="rail"><span class="n">The house</span><span class="src">Razorpay-only<br>desk</span></div>
+  <div class="col">
+    <h2>What only the processor can see</h2>
+    <p>No single merchant can see the market it is in. The processor can. The research
+    desk reads the whole log and ranks which campaigns are climbing across the client
+    base &mdash; measured as movement between early and late trading value, not as an
+    opinion.</p>
+
+    <div class="tw"><table>
+      <thead><tr><th>#</th><th>Campaign</th><th>Movement</th><th>Settled</th><th>Merchants</th></tr></thead>
+      <tbody>
+        <tr><td class="n">1</td><td class="t">Electronics Assembly</td><td class="n">1.997&times;</td><td class="n">3</td><td class="n">4</td></tr>
+        <tr><td class="n">2</td><td class="t">Shipping Supplies</td><td class="n">1.597&times;</td><td class="n">4</td><td class="n">4</td></tr>
+        <tr><td class="n">3</td><td class="t">Cold Brew Concentrate</td><td class="n">1.519&times;</td><td class="n">13</td><td class="n">6</td></tr>
+        <tr><td class="n">4</td><td class="t">Industrial Packaging</td><td class="n">1.497&times;</td><td class="n">5</td><td class="n">5</td></tr>
+        <tr><td class="n">5</td><td class="t">Apparel Manufacturing</td><td class="n">0.809&times;</td><td class="n">4</td><td class="n">4</td></tr>
+      </tbody>
+    </table></div>
+
+    <p style="margin-top:1.35rem">Each ranked campaign carries the real needs behind it
+    &mdash; <em>&ldquo;braided USB C cables one metre&rdquo;</em>, <em>&ldquo;lithium
+    cells 18650 grade A&rdquo;</em> &mdash; and press explaining the driver. The ranking
+    itself is arithmetic: the function that ranks can reach neither the model nor the
+    news, which is enforced by a test rather than by discipline.</p>
+
+    <h3>The privacy floor is a visible step</h3>
+    <p>Nothing is published from fewer than three merchants. Two campaigns were refused
+    on exactly that ground in this run &mdash; <em>&ldquo;ranked from 2 merchants, below
+    the board floor of 3&rdquo;</em> &mdash; and the refusal is logged as an event, so the
+    check can be seen working rather than promised.</p>
+
+    <h3>Intelligence sells by sealed auction</h3>
+    <p>One insight lot was minted from the trading of <strong>16</strong> merchants, none
+    of them named. Eight agents bid blind. It cleared to <code>m_western_ghats</code> at
+    <span class="num">1,500</span> points &mdash; the runner-up's price, so honest
+    valuation is the dominant strategy and the bidding reasoning stays legible. The
+    sixteen contributors were each paid a royalty for a win they never had to disclose.</p>
+  </div>
+</section>
+
+<!-- ==================================================================== books -->
+<section>
+  <div class="rail"><span class="n">The books</span><span class="src">Google Sheets<br>API</span></div>
+  <div class="col">
+    <h2>The books keep themselves</h2>
+    <p>Every settled trade is written into the merchant's own Google Sheet &mdash; not a
+    dashboard they have to log into, but the spreadsheet their accountant already uses.
+    One tab per business, four blocks: your deals, how your agent argued for you, who you
+    are dealing with, and what the gate stopped.</p>
+    <p>The column a merchant actually cares about is <strong>You saved</strong>, and it is
+    a number only the agent can know: the difference between the seller's own listed ask
+    and what was finally agreed. On the cold brew trade that is &#8377;15 a unit, because
+    Powerbank listed at &#8377;210 and the agent closed at &#8377;195.</p>
+    <div class="note">The sheet is written by the same fold over the same log. Quantity is
+    derived from the settled amount rather than stored separately, so
+    <b>qty &times; unit price = amount</b> always holds &mdash; the books cannot drift
+    from the payments even in principle.</div>
+
+    <h3>The merchant sets the priorities, never the permissions</h3>
+    <p>A business writes a brief in plain words &mdash; how hard to push, what to favour,
+    who to avoid. That brief is sanitised and composed into the Trader, Scout and Diplomat
+    prompts. It sets what the agent <em>wants</em>. It can never set what the agent is
+    <em>allowed</em> to do: no brief can raise a spending limit, claim system authority,
+    or invent a permission, and the sanitiser strips exactly those attempts.</p>
+  </div>
+</section>
+
+<!-- ================================================================== numbers -->
+<section>
+  <div class="rail"><span class="n">The run</span><span class="src">runs/market.db</span></div>
+  <div class="col">
+    <h2>The run, in numbers</h2>
+    <p>One market, run offline against Razorpay test mode, then replayed. Every figure
+    here is read from the log.</p>
+
+    <div class="figs">
+      <div class="fig"><span class="v">968</span><span class="k">recorded events</span></div>
+      <div class="fig"><span class="v">32</span><span class="k">merchant brokers</span></div>
+      <div class="fig"><span class="v">67</span><span class="k">negotiations</span></div>
+      <div class="fig"><span class="v">2.7</span><span class="k">rounds per negotiation</span></div>
+    </div>
+
+    <div class="tw" style="margin-top:1.2rem"><table>
+      <tbody>
+        <tr><td class="t">Committed on Razorpay orders</td><td class="n">&#8377;1,39,884</td></tr>
+        <tr><td class="t">Settled and confirmed</td><td class="n">&#8377;73,836</td></tr>
+        <tr><td class="t">Real Razorpay test-mode order ids</td><td class="n">32</td></tr>
+        <tr><td class="t">Razorpay payment links created</td><td class="n">23</td></tr>
+        <tr><td class="t">Credit-rail transfers (play money)</td><td class="n">17 &middot; 1,948 credits</td></tr>
+        <tr><td class="t">Gate rulings &mdash; allowed / refused</td><td class="n">49 / 25</td></tr>
+        <tr><td class="t">Drifts detected / repaired</td><td class="n">21 / 17</td></tr>
+        <tr><td class="t">Freezes / resumes</td><td class="n">1 / 1</td></tr>
+        <tr><td class="t">Points minted</td><td class="n">29,857</td></tr>
+        <tr><td class="t">Lessons filed by the Subconscious</td><td class="n">14</td></tr>
+        <tr><td class="t">Humans in any of it</td><td class="n">0</td></tr>
+      </tbody>
+    </table></div>
+
+    <div class="note">Committed and settled differ on purpose. A payment link that was
+    created but never paid is <b>committed, not settled</b>, and the books say so. Adding
+    the two together would double-count every trade, since both sides keep a copy.</div>
+  </div>
+</section>
+
+<!-- ==================================================================== built -->
+<section>
+  <div class="rail"><span class="n">How it runs</span><span class="src">623 tests<br>40 files</span></div>
+  <div class="col">
+    <h2>How it is built</h2>
+    <p>Python throughout, roughly 14,000 lines, with 623 tests. The market runs offline
+    for hours writing to the log; the replay is generated from that log afterwards as
+    static pages. That separation is deliberate &mdash; it means the demo cannot be
+    hostage to sampling luck, and it means the answer to <em>&ldquo;is this
+    staged?&rdquo;</em> is a real log with real Razorpay payment ids in it.</p>
+
+    <h3>Test mode, enforced rather than intended</h3>
+    <p>The configuration refuses to start on a key that does not begin
+    <code>rzp_test_</code>. Not a warning &mdash; it raises, and the run stops. Live
+    credentials cannot be used by accident.</p>
+
+    <h3>What is deliberately not here</h3>
+    <p>No autonomous outreach that joins Discord or Telegram servers or messages founders.
+    It breaks those platforms' terms, reads as a spambot, and cuts directly against the
+    &ldquo;bounded and gated&rdquo; bar this is built to meet. Growth signal comes from
+    public read-only sources; anything outbound stays human-approved.</p>
+
+    <h3>Honest limits</h3>
+    <p>Four settlements in this run remain unconfirmed because Razorpay rate-limited the
+    reconciliation sweep. The system records that as twelve failed checks rather than
+    assuming the payments landed. That is the correct behaviour and it is left visible in
+    the log &mdash; a reconciler that resolves uncertainty by guessing is worse than one
+    that reports it.</p>
+  </div>
+</section>
+
+<footer>
+  Built solo &middot; Razorpay Hackathon Track 01 &middot; every figure read from
+  runs/market.db
+</footer>
+
+</div>
