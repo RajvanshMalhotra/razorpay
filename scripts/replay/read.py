@@ -657,3 +657,17 @@ def _role_result(role, acted, thread, actor_id):
         lessons_kept = sum(1 for e in acted if e.type == "LESSON_CONSOLIDATED")
         return f"{lessons_kept} lessons kept"
     return ""
+
+
+def brief_for(events, actor_id: str):
+    """The standing brief this merchant gave its agent.
+
+    Read from the log where a run recorded it. Older logs predate the field,
+    so the caller gets None and the page says the agent ran on its defaults —
+    which is true, rather than reaching into the roster for a value that may
+    have been edited since the run.
+    """
+    reg = next((e for e in events
+                if e.type == "ACTOR_REGISTERED" and e.actor_id == actor_id),
+               None)
+    return (reg.payload.get("brief") or None) if reg else None

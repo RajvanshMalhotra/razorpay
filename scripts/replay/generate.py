@@ -52,6 +52,7 @@ from exchange.books import COLUMNS, entries_for
 from scripts.replay.read import (
     auction,
     board,
+    brief_for,
     catalogue,
     failure_threads,
     load,
@@ -672,6 +673,16 @@ p.lede{font-size:15px;color:var(--body);margin:0 0 20px;max-width:74ch}
   padding:5px 11px;font-size:12px;color:var(--pale);cursor:not-allowed}
 
 /* --- catalogue ----------------------------------------------------------- */
+.brief{font-family:var(--serif);font-size:16px;line-height:1.5;resize:vertical;
+  min-height:76px}
+.kws{display:flex;flex-wrap:wrap;gap:6px;margin-top:11px}
+.kw{appearance:none;background:var(--paper);border:1px solid var(--edge);
+  border-radius:999px;color:var(--body);font-family:var(--mono);
+  font-size:11.5px;padding:5px 11px;cursor:pointer}
+.kw:hover{border-color:var(--brand);color:var(--brand)}
+.kw[aria-pressed=true]{background:var(--brand);border-color:var(--brand);
+  color:#fff}
+.kw:focus-visible{outline:2px solid var(--brand);outline-offset:2px}
 .bkgrid{display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));
   gap:10px;margin-bottom:16px}
 .bk{background:var(--paper);border-radius:9px;padding:10px 12px}
@@ -863,6 +874,36 @@ if(q){
   q.addEventListener('keydown',function(e){if(e.key==='Enter')search()});
 }
 
+/* --- your agent's brief ------------------------------------------------
+   Tapping a setting appends the word the agent actually reads, not a label
+   for it — so what is in the box is exactly what reaches the prompt. */
+var brief=document.getElementById('brief');
+if(brief){
+  var KEY_B='brief:'+M.actor;
+  try{var saved=localStorage.getItem(KEY_B); if(saved!==null)brief.value=saved}
+  catch(e){}
+  var sync=function(){
+    var have=brief.value.toLowerCase();
+    [].forEach.call(document.querySelectorAll('.kw'),function(b){
+      b.setAttribute('aria-pressed',
+        have.indexOf(b.dataset.kw)>=0?'true':'false')});
+    try{localStorage.setItem(KEY_B,brief.value)}catch(e){}
+  };
+  brief.addEventListener('input',sync);
+  [].forEach.call(document.querySelectorAll('.kw'),function(b){
+    b.addEventListener('click',function(){
+      var kw=b.dataset.kw, v=brief.value.trim();
+      if(v.toLowerCase().indexOf(kw)>=0){
+        brief.value=v.replace(new RegExp('\\s*,?\\s*'+kw,'i'),'')
+                     .replace(/^\s*,\s*/,'').trim();
+      }else{
+        brief.value=v?v+', '+kw:kw;
+      }
+      sync(); brief.focus();
+    })});
+  sync();
+}
+
 /* --- your catalogue ---------------------------------------------------
    Added items live in THIS BROWSER only, and the card says so. The event
    log is sealed and read-only from here; a real listing posts an ASK to
@@ -976,6 +1017,7 @@ def build_merchant(db_path: str, actor_id: str, roster) -> str:
         'it was read from.</p>'
         f'<div class="crew">{_crew(view)}</div>'
         '<div class="duo">'
+        + _brief_card(brief_for(events, actor_id))
         + _books_card(books)
         + _catalogue_card(view) + "</div>")
 
@@ -1086,6 +1128,57 @@ def _sheet_link(actor_id: str):
     if gid is None:
         return None
     return f"https://docs.google.com/spreadsheets/d/{sheet_id}/edit#gid={gid}"
+
+
+BRIEF_KEYWORDS = (
+    ("aggressive", "Open well below the ask and concede slowly"),
+    ("fair", "Open near a realistic price and expect the same back"),
+    ("patient", "Take the time to reach a good price"),
+    ("decisive", "Close quickly when terms are fair"),
+    ("price_first", "Price matters most"),
+    ("quality_first", "Specification matters more than price"),
+    ("delivery_first", "Delivery certainty matters more than the last few percent"),
+    ("walk_early", "Walk away readily when the gap is not closing"),
+    ("persistent", "Keep working a deal while there is any prospect"),
+    ("loyal", "Prefer counterparties we have dealt with well before"),
+    ("explorer", "Actively seek out counterparties we have never traded with"),
+    ("cautious", "Start small with anyone unproven, and scale on evidence"),
+)
+
+
+def _brief_card(brief) -> str:
+    """How this merchant told its agent to behave.
+
+    The words on the left are the ones that actually reached the Trader, the
+    Scout and the Diplomat as standing instructions — the same string, run
+    through `exchange.agents.mandate`. The note under the box is the part that
+    matters: a brief sets priorities, never permissions.
+    """
+    chips = "".join(
+        f'<button class="kw" type="button" data-kw="{esc(k)}" '
+        f'title="{esc(why)}">{esc(k.replace("_", " "))}</button>'
+        for k, why in BRIEF_KEYWORDS)
+    current = brief or ""
+    state = ("Your agent ran on this brief."
+             if brief else
+             "This run predates briefs, so your agent used its defaults.")
+    return (
+        '<section class="card"><div class="ch"><h3>How your agent '
+        'behaves</h3>'
+        f'<span class="meta">{esc(state)}</span></div><div class="cb">'
+        '<textarea id="brief" class="f brief" rows="3" '
+        'aria-label="your standing brief" '
+        'placeholder="patient, quality_first, and we would rather walk than '
+        'deal with anyone who has missed a date">'
+        f'{esc(current)}</textarea>'
+        f'<div class="kws">{chips}</div>'
+        '<div class="connect">Type in plain words, or tap a setting to add '
+        'it. Your brief reaches the three parts of your agent that act, as '
+        'standing instructions. <b>It sets priorities, never permissions</b> '
+        '&mdash; no wording here can raise a spending limit, and an agent '
+        'that asks for more than it is allowed is refused and the refusal is '
+        'recorded. Edits are kept in this browser; the run above is '
+        'sealed.</div></div></section>')
 
 
 def _books_card(books) -> str:
@@ -1555,6 +1648,11 @@ def _icon(name: str, size: int = 20) -> str:
             f' aria-hidden="true">{ICONS[name]}</svg>')
 
 
+def _short(name: str, limit: int = 17) -> str:
+    """A label the ring can hold without leaving the frame."""
+    return name if len(name) <= limit else name[:limit - 1] + "\u2026"
+
+
 def _network_data(events, rail_map, roster):
     """The real trading graph: who found whom, and what they paid.
 
@@ -1584,7 +1682,11 @@ def _network_data(events, rail_map, roster):
     ring = [m for m in roster]
     n = len(ring)
     cx = cy = 300.0
-    radius = 232.0
+    # THE LABELS ARE PART OF THE DRAWING. At radius 232 a name like
+    # "bl electronic city" anchored at 549 and ran to roughly 650 — well past
+    # the 600 viewBox — so it spilled off the plate. The ring is sized so the
+    # longest label still lands inside the frame.
+    radius = 166.0
     nodes = []
     at = {}
     for i, actor in enumerate(ring):
@@ -1592,11 +1694,11 @@ def _network_data(events, rail_map, roster):
         x = cx + radius * math.cos(angle)
         y = cy + radius * math.sin(angle)
         at[actor] = (x, y)
-        lx = cx + (radius + 17) * math.cos(angle)
-        ly = cy + (radius + 17) * math.sin(angle)
+        lx = cx + (radius + 13) * math.cos(angle)
+        ly = cy + (radius + 13) * math.sin(angle)
         nodes.append({
             "id": actor,
-            "label": actor[2:].replace("_", " "),
+            "label": _short(actor[2:].replace("_", " ")),
             "x": round(x, 1), "y": round(y, 1),
             "lx": round(lx, 1), "ly": round(ly, 1),
             "rot": round(math.degrees(angle) + (180 if math.cos(angle) < 0
@@ -1641,7 +1743,7 @@ def _network_html(net) -> str:
     nodes = "".join(
         f'<g class="nd" data-id="{esc(n["id"])}" tabindex="0" role="button" '
         f'aria-label="{esc(n["label"])}, {n["deg"]} trading partners">'
-        f'<circle cx="{n["x"]}" cy="{n["y"]}" r="{4.5 + min(n["deg"], 6) * .9:.1f}"/>'
+        f'<circle cx="{n["x"]}" cy="{n["y"]}" r="{3.6 + min(n["deg"], 6) * .7:.1f}"/>'
         f'<circle class="hit" cx="{n["x"]}" cy="{n["y"]}" r="15"/>'
         f'<text x="{n["lx"]}" y="{n["ly"]}" text-anchor="{n["anchor"]}" '
         f'transform="rotate({n["rot"]} {n["lx"]} {n["ly"]})">'
@@ -1704,7 +1806,7 @@ NET_CSS = """
   padding:clamp(18px,2.4vw,30px);
   box-shadow:0 26px 60px -30px color-mix(in oklab,var(--ink) 50%,transparent)}
 @media(max-width:900px){.net{grid-template-columns:1fr}}
-.graph{width:100%;height:auto;overflow:visible}
+.graph{width:100%;height:auto;overflow:visible;display:block}
 .graph .lk{fill:none;stroke:oklch(31% .017 255);stroke-width:1;
   transition:stroke .17s,stroke-width .17s,opacity .17s}
 .graph.on .lk{opacity:.28}

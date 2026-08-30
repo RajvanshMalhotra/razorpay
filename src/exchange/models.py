@@ -67,6 +67,13 @@ class Actor:
     merchant_id: str | None = None
     plan_tier: str = "standard"
     status: ActorStatus = ActorStatus.ACTIVE
+    # The standing brief this merchant gave its agent, in the merchant's own
+    # words. Recorded at registration so a dashboard can show what actually
+    # drove a run rather than what the roster happens to say today — the two
+    # drift the moment anybody edits the roster. It is a PREFERENCE and never
+    # a permission: `exchange.agents.mandate` composes it into the sub-agent
+    # prompts, and the gate never reads it.
+    brief: str = ""
 
 
 @dataclass(frozen=True)

@@ -72,9 +72,10 @@ def seed(exchange, merchants) -> SeedReport:
         if merchant.actor_id in known_actors:
             skipped_actors += 1
         else:
-            exchange.register_actor(
-                Actor(actor_id=merchant.actor_id, kind=ActorKind.MERCHANT)
-            )
+            exchange.register_actor(Actor(
+                actor_id=merchant.actor_id, kind=ActorKind.MERCHANT,
+                brief=merchant.mandate_input(),
+            ))
             registered += 1
 
         for listing in merchant.sells:
