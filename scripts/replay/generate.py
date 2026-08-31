@@ -289,6 +289,22 @@ select.pick{max-width:330px}
   padding:2px 7px;text-decoration:none;max-width:230px;overflow:hidden;
   text-overflow:ellipsis;white-space:nowrap}
 .crow .src a:hover{color:var(--violet);border-color:var(--violet)}
+/* What operators said, kept visibly apart from what the press said. The rule
+   down the left is the whole device: it marks the sentence as a reading of
+   somebody else's words rather than the desk's own finding. */
+.crow .talk{grid-column:2/-1;margin-top:10px;padding-left:11px;
+  border-left:2px solid var(--rule);color:var(--dim);font-size:13.5px;
+  line-height:1.5}
+.crow .talk b{display:block;font-size:9.5px;letter-spacing:.14em;
+  text-transform:uppercase;color:var(--faint);margin-bottom:4px;
+  font-weight:600;font-family:var(--mono)}
+.crow .talk.blocked{color:var(--faint);font-style:italic}
+.crow .thr{grid-column:2/-1;margin-top:7px;display:flex;gap:5px;
+  flex-wrap:wrap;padding-left:13px}
+.crow .thr a{font-size:10px;color:var(--faint);border:1px solid var(--rule);
+  padding:2px 7px;text-decoration:none;max-width:250px;overflow:hidden;
+  text-overflow:ellipsis;white-space:nowrap}
+.crow .thr a:hover{color:var(--amber);border-color:var(--amber)}
 @media(max-width:1000px){
   .crow{grid-template-columns:24px 1fr 56px}
   .crow .mc,.crow .vl{display:none}}
@@ -1512,6 +1528,27 @@ def build_desk(db_path: str) -> str:
     )
 
 
+def _talk_html(row) -> str:
+    """The Reddit reading, or an honest note about why there isn't one.
+
+    A row with nothing here would read as "we looked and the category is
+    quiet", which is a claim. The desk only gets to make that claim when it
+    actually looked, so a blocked read says so in its own words.
+    """
+    note = (row.get("discussion") or "").strip()
+    if not note:
+        return ""
+    label = ("could not be read" if row.get("discussion_blocked")
+             else "what operators are saying")
+    cls = " blocked" if row.get("discussion_blocked") else ""
+    threads = "".join(
+        f'<a href="{esc(t["url"])}" target="_blank" rel="noopener">'
+        f'r/{esc(t["subreddit"])} &middot; {esc(t["title"][:52])}</a>'
+        for t in row.get("threads", []) if t.get("url"))
+    return (f'<div class="talk{cls}"><b>{label}</b>{esc(note)}</div>'
+            + (f'<div class="thr">{threads}</div>' if threads else ""))
+
+
 def _board_html(desk, sale, summary) -> str:
     """Razorpay's internal board, then the auction that sells a piece of it.
 
@@ -1535,7 +1572,8 @@ def _board_html(desk, sale, summary) -> str:
                 f'<span class="mc">{row["merchants"]} merchants</span>'
                 f'<span class="vl">{rupees(row["value_paise"])}</span>'
                 f'<div class="why">{esc(row.get("driver", ""))}</div>'
-                f'<div class="src">{sources}</div></div>')
+                f'<div class="src">{sources}</div>'
+                + _talk_html(row) + '</div>')
         refused = desk["refused"]
         refusal = (
             f'<div class="refused">{len(refused)} campaigns refused a place on '
