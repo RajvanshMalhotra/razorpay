@@ -118,7 +118,8 @@ cannot reach the model, the news, or Reddit.
 ### Running it
 
 ```bash
-python -m venv .venv && .venv/bin/pip install -r requirements.txt
+python -m venv .venv
+.venv/bin/pip install -e ".[dev]"
 cp .env.example .env          # add your Razorpay TEST-mode keys
 .venv/bin/python -m pytest -q
 
