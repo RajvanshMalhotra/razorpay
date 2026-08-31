@@ -11,18 +11,28 @@ merchant reaches this material only the way anything else is reached here:
 by winning the auction for a lot minted from it. That separation is the
 whole reason the intelligence has a price.
 
-TWO SOURCES, NEVER MIXED. The ranking is arithmetic over the event log —
+THREE SOURCES, NEVER MIXED. The ranking is arithmetic over the event log —
 settled value, distinct merchants, movement from the opening rounds to the
 closing ones — and every figure is recomputable by anyone who dumps the same
-events. The sentence beside each row is different in kind: it comes from the
-public press, and it carries the URL and date it came from. The desk is
-built so the second source can never move a number produced by the first;
-research runs after the ranking is fixed and only ever attaches text.
+events. Beside each row sit two things of a different kind. The press says
+what the category is doing, and carries the URL and date it came from. The
+discussion says what people running these businesses are saying about it,
+read from Reddit, and carries the threads it was read from. The desk is
+built so neither can move a number produced by the first; research runs
+after the ranking is fixed and only ever attaches text.
 
 That split matters more than it looks. An agent that reads the news and then
 reports a number has laundered a headline into a fact. Here the number's
-provenance is the log and the sentence's provenance is a link, and a reader
-can check each against its own source.
+provenance is the log, the sentence's provenance is a link, and a reader can
+check each against its own source.
+
+WHY REDDIT AND NOT ONLY THE PRESS. Trade press reports what companies
+announce. It is written from press releases, it lags, and it says nothing
+about whether the thing is working for the people who bought it. The
+operators talking to each other about margins, suppliers and what stopped
+selling are on Reddit, and they are the ones a merchant on this board is
+actually being compared against. Both are attached, separately labelled,
+and neither is allowed to become a figure.
 """
 from __future__ import annotations
 
@@ -44,6 +54,12 @@ from exchange.llm.base import LLMMessage
 # merchants is still that merchant's private trading made public, so there is
 # a floor here too, and a row below it is refused and the refusal logged.
 CAMPAIGN_FLOOR_K = int(os.environ.get("CAMPAIGN_FLOOR_K", "3"))
+
+# How many threads travel with a row. The discussion sentence is the point;
+# these are the receipts under it, so a reader can go and check that the
+# sentence is a fair reading of what was actually said. Four is enough to
+# show it was not one loud post, and few enough to sit on a card.
+THREADS_PER_ROW = 4
 
 NEWS_RSS = "https://news.google.com/rss/search"
 
@@ -108,6 +124,14 @@ class Campaign:
     late_paise: int = 0
     driver: str = ""
     sources: list[Source] = field(default_factory=list)
+    # What operators are saying, read separately from the press and kept
+    # separate from it. `discussion_blocked` is the field that stops a
+    # refusal reading as a silence: Reddit turning us away and nobody
+    # discussing the category both arrive as an empty list, and only one of
+    # them is a finding about the category.
+    discussion: str = ""
+    threads: list[dict] = field(default_factory=list)
+    discussion_blocked: bool = False
 
     @property
     def k(self) -> int:
@@ -297,10 +321,50 @@ def fetch_news(query: str, limit: int = 6, opener=urllib.request.urlopen):
     return out
 
 
-def research(campaign: Campaign, provider, fetcher=fetch_news) -> Campaign:
-    """Attach the press to a row whose numbers are already fixed.
+def _read_discussion(campaign: Campaign, social) -> None:
+    """Attach what operators are saying. Never raises, never returns a number.
+
+    A research desk that falls over because one source is down is worse than
+    one that reports the source is down: the ranking beside it is still true
+    and still publishable. So every failure here degrades to a sentence.
+    """
+    try:
+        found = social(campaign.name)
+    except Exception as exc:                        # noqa: BLE001
+        # Deliberately broad. `social` reaches the network through whichever
+        # of two very different clients is configured, and the failure modes
+        # are not a set we can enumerate — but none of them are a reason to
+        # drop a row whose figures came from the log.
+        campaign.discussion = (
+            f"could not be read ({type(exc).__name__}), which is not the "
+            f"same as nobody discussing it")
+        campaign.discussion_blocked = True
+        return
+
+    campaign.discussion = found.get("discussion", "") or ""
+    campaign.discussion_blocked = bool(found.get("blocked"))
+    campaign.threads = [
+        {"title": p.get("title", ""), "subreddit": p.get("subreddit", ""),
+         "url": p.get("url", ""), "when": p.get("when", ""),
+         "score": p.get("score"), "comments": p.get("comments")}
+        for p in found.get("posts", [])[:THREADS_PER_ROW]
+    ]
+    if not campaign.threads and not campaign.discussion:
+        campaign.discussion = (
+            "Reddit refused the request, so this category was not read"
+            if campaign.discussion_blocked
+            else "nothing substantive being discussed in the relevant "
+                 "communities")
+
+
+def research(campaign: Campaign, provider, fetcher=fetch_news,
+             social=None) -> Campaign:
+    """Attach the press, and what operators are saying, to a fixed row.
 
     Deliberately last, and deliberately incapable of changing the ranking.
+    `social` is optional: with no Reddit configured the board still ships,
+    carrying the press alone rather than an empty section that implies
+    silence.
     """
     # THE QUERY DECIDES THE ANSWER. "brand marketing campaign" returned
     # corporate restructuring and funding rounds, and the model correctly
@@ -308,19 +372,27 @@ def research(campaign: Campaign, provider, fetcher=fetch_news) -> Campaign:
     # launches returns pages that are actually about the category moving.
     sources = fetcher(f"{campaign.name} India demand launch trend brands")
     campaign.sources = list(sources)
-    if not sources:
-        campaign.driver = "no public coverage found for this category"
-        return campaign
 
-    headlines = "\n".join(f"- {s.title} ({s.publisher}, {s.published})"
-                          for s in sources)
-    reply = provider.complete(
-        [LLMMessage("user", f"Category: {campaign.name}\n\n{headlines}")],
-        system=DRIVER_PROMPT,
-        max_tokens=900,
-        reasoning_effort="low",
-    )
-    campaign.driver = reply.text.strip()
+    if sources:
+        headlines = "\n".join(f"- {s.title} ({s.publisher}, {s.published})"
+                              for s in sources)
+        reply = provider.complete(
+            [LLMMessage("user", f"Category: {campaign.name}\n\n{headlines}")],
+            system=DRIVER_PROMPT,
+            max_tokens=900,
+            reasoning_effort="low",
+        )
+        campaign.driver = reply.text.strip()
+    else:
+        campaign.driver = "no public coverage found for this category"
+
+    # Not an `else` of the above. The two sources fail independently, and a
+    # category the press has not covered is exactly the kind operators are
+    # most likely to be the only ones talking about — losing the discussion
+    # because the news was quiet would drop the rows that need it most.
+    if social is not None:
+        _read_discussion(campaign, social)
+
     return campaign
 
 
@@ -353,4 +425,7 @@ def publish(log, campaigns, refusals, correlation_id: str) -> None:
             "sources": [{"title": s.title, "url": s.url,
                          "published": s.published, "publisher": s.publisher}
                         for s in campaign.sources],
+            "discussion": campaign.discussion,
+            "discussion_blocked": campaign.discussion_blocked,
+            "threads": campaign.threads,
         }, correlation_id=correlation_id)

@@ -7,8 +7,12 @@ correlation id, so the board can be pulled back out as a unit — including
 the campaigns that were refused a place on it.
 
 Ordered deliberately: group, rank, then research. The ranking is settled
-before anything reads a headline, which is the property the board's whole
-credibility rests on.
+before anything reads a headline or a thread, which is the property the
+board's whole credibility rests on.
+
+Two outside sources, attached separately. `--no-reddit` skips the second
+when you want a board fast, or when Reddit is throttling and you would
+rather ship the press alone than a page of refusal notes.
 """
 from __future__ import annotations
 
@@ -28,6 +32,8 @@ def main(argv=None) -> int:
                         help="how many rows get press research attached")
     parser.add_argument("--floor", type=int, default=None,
                         help="override the board's minimum merchant count")
+    parser.add_argument("--no-reddit", action="store_true",
+                        help="attach the press only, and skip the discussion")
     args = parser.parse_args(argv)
 
     from dotenv import load_dotenv
@@ -36,6 +42,19 @@ def main(argv=None) -> int:
 
     load_dotenv()
     _, fast = providers_from_env()
+
+    social = None
+    if not args.no_reddit:
+        from exchange.house import social as social_mod
+
+        # The official API when there are credentials for it, the public RSS
+        # when there are not. The RSS path needs nothing and throttles hard,
+        # so a board built on it will carry some refusal notes — which is the
+        # honest outcome, and why the field saying so exists.
+        api = social_mod.RedditAPI.from_env()
+        print(f"  reddit: {'official API' if api else 'public RSS (throttled)'}")
+        social = lambda topic: social_mod.research_topic(  # noqa: E731
+            topic, provider=fast, api=api)
 
     log = EventLog(args.db)
     try:
@@ -67,8 +86,12 @@ def main(argv=None) -> int:
         print(f"  {len(ranked)} ranked, {len(refused)} below the floor")
 
         for campaign in ranked[:args.top]:
-            research(campaign, fast)
-            print(f"    {campaign.name}: {len(campaign.sources)} sources")
+            research(campaign, fast, social=social)
+            note = f"{len(campaign.sources)} sources"
+            if social is not None:
+                note += (", reddit refused" if campaign.discussion_blocked
+                         else f", {len(campaign.threads)} threads")
+            print(f"    {campaign.name}: {note}")
 
         correlation_id = new_id("research")
         publish(log, ranked, refused, correlation_id)

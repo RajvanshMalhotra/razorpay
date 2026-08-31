@@ -84,6 +84,11 @@ class Post:
     url: str
     when: str
     rank: int          # position in Reddit's own ordering, 1 is best
+    # "category" = the community for this product. "trade" = a community of
+    # people running businesses. Kept on the post rather than inferred later,
+    # because the same subreddit can be reached by both searches and only the
+    # search that found it says what kind of reading it is.
+    kind: str = "category"
 
 
 @dataclass
@@ -221,15 +226,54 @@ def find_communities(topic: str, limit: int = 6, opener=urllib.request.urlopen):
     return Fetch(items=out, blocked=blocked)
 
 
+# WHERE THE OPERATORS ARE, as opposed to where the customers are.
+#
+# Community discovery is genuinely good at finding the category's own
+# subreddit, and that is the problem. Searching "Cold Brew Concentrate"
+# finds r/coldbrew, and r/coldbrew is people making cold brew at home:
+# "Why does my cold brew look like this at the bottom?" is a real result
+# and it is worth nothing to a merchant deciding what to stock.
+#
+# The people running these businesses are in a different, small set of
+# communities, and they are there for the business rather than the product.
+# Searching "packaging supplier" across these returned "My supplier is also
+# my biggest competitor, how do you get a rate out of them" — which is the
+# kind of sentence this desk exists to find.
+#
+# The list is short on purpose, and every general-interest community was
+# taken back out after testing: r/india answered "electronics assembly"
+# with three political posts, and r/Coffee answered "cold brew" with home
+# brewing. A community has to be about running a business to earn a place.
+TRADE_COMMUNITIES = (
+    "smallbusiness",
+    "Entrepreneur",
+    "EntrepreneurRideAlong",
+    "StartUpIndia",
+)
+
+
 def search_posts(query: str, communities, limit: int = 8,
-                 opener=urllib.request.urlopen):
+                 opener=urllib.request.urlopen, kind: str = "category"):
     """The most-discussed posts about this, inside those communities."""
     if not communities:
         return Fetch(items=[], blocked=False)
     subs = "+".join(c.name for c in communities[:8])
+    # THREE PARAMETERS THAT ALL HAVE TO BE RIGHT, and two of them were not.
+    #
+    # `restrict_sr=on` is what Reddit's own web UI puts in the URL, and on
+    # the RSS endpoint it silently DISABLES the search: the query is dropped
+    # and the subreddit's top posts come back instead. Measured on one
+    # subreddit, searching "packaging" in r/smallbusiness: 0 of 16 titles
+    # contained the word. With `restrict_sr=1`, 13 of 16 did. Nothing errors
+    # and nothing is empty, which is why this survived — the results look
+    # plausible, and for a community named after the topic they even look
+    # right, because top-of-r/coldbrew is about cold brew either way.
+    #
+    # `sort=top` compounds it by ranking on engagement rather than match.
+    # `sort=relevance` with no `t` returns zero entries, so the window stays.
     url = (f"https://www.reddit.com/r/{subs}/search.rss?"
-           f"q={urllib.parse.quote(query)}&restrict_sr=on&sort=top&t=year"
-           f"&limit={limit * 2}")
+           f"q={urllib.parse.quote(query)}&restrict_sr=1&sort=relevance"
+           f"&t=year&limit={limit * 2}")
 
     body, blocked = _get(url, opener)
     out = []
@@ -247,8 +291,28 @@ def search_posts(query: str, communities, limit: int = 8,
             url=(link.get("href") if link is not None else ""),
             when=(entry.findtext("a:updated", "", ATOM) or "")[:10],
             rank=n,
+            kind=kind,
         ))
     return Fetch(items=out, blocked=blocked)
+
+
+def _dedupe(posts):
+    """One post per story, keeping the first — which is the operator copy.
+
+    Crossposts are the common case: the same write-up appears in
+    r/smallbusiness and r/EntrepreneurRideAlong on the same day, and two
+    copies of one opinion in a four-thread summary reads as two businesses
+    agreeing. Matched on title rather than URL, because a crosspost gets a
+    URL of its own.
+    """
+    seen, out = set(), []
+    for post in posts:
+        key = " ".join(post.title.lower().split())
+        if key in seen:
+            continue
+        seen.add(key)
+        out.append(post)
+    return out
 
 
 def relevant(posts, query: str, need: int = 1):
@@ -303,8 +367,13 @@ def discussion(topic: str, posts, provider) -> str:
 
 
 def research_topic(topic: str, provider=None, opener=urllib.request.urlopen,
-                   api=None):
+                   api=None, trade: bool = True):
     """Discover, read, filter, and optionally interpret. One topic.
+
+    Reads two kinds of community: the ones about the product, found by asking
+    Reddit, and a fixed short list of communities where people run businesses.
+    `trade=False` skips the second, which halves the requests when Reddit is
+    throttling.
 
     Uses the official API when `api` is supplied — it does not throttle at
     this volume and it can rank by what people actually upvoted. Otherwise it
@@ -316,14 +385,35 @@ def research_topic(topic: str, provider=None, opener=urllib.request.urlopen,
         blocked, source = False, "api"
     else:
         got_subs = find_communities(topic, opener=opener)
-        got_posts = search_posts(topic, got_subs.items, opener=opener)
-        communities = [{"name": c.name, "title": c.title, "subscribers": None}
-                       for c in got_subs.items]
+        got_posts = search_posts(topic, got_subs.items, opener=opener,
+                                 kind="category")
+
+        # The second read, and the one that earns this module its place. See
+        # TRADE_COMMUNITIES: the category's own subreddit is full of the
+        # people who buy the product, and the desk wants the people who sell
+        # it. Both are searched, both are kept, and each post says which.
+        anchors = [Community(name, name) for name in TRADE_COMMUNITIES]
+        got_trade = (Fetch(items=[], blocked=False) if not trade
+                     else search_posts(topic, anchors, opener=opener,
+                                       kind="trade"))
+
+        communities = (
+            [{"name": c.name, "title": c.title, "subscribers": None,
+              "kind": "category"} for c in got_subs.items]
+            + [{"name": c.name, "title": c.title, "subscribers": None,
+                "kind": "trade"} for c in (anchors if trade else [])])
+
+        # Operator posts lead. A merchant reading this board wants what another
+        # merchant said before it wants what a hobbyist said, and the ordering
+        # is the only place that preference can be expressed once both are in.
+        kept = _dedupe(relevant(got_trade.items, topic)
+                       + relevant(got_posts.items, topic))
         posts = [{"title": p.title, "subreddit": p.subreddit,
                   "author": p.author, "url": p.url, "when": p.when,
-                  "rank": p.rank, "score": None, "comments": None}
-                 for p in relevant(got_posts.items, topic)]
-        blocked = got_subs.blocked or got_posts.blocked
+                  "rank": p.rank, "kind": p.kind,
+                  "score": None, "comments": None}
+                 for p in kept]
+        blocked = got_subs.blocked or got_posts.blocked or got_trade.blocked
         source = "rss"
 
     if blocked and not posts:

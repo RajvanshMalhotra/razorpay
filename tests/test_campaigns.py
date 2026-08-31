@@ -10,6 +10,7 @@ import pytest
 from exchange import events as ev
 from exchange.eventlog import EventLog
 from exchange.house.campaigns import (
+    THREADS_PER_ROW,
     Campaign,
     Source,
     fetch_news,
@@ -141,6 +142,10 @@ def test_ranking_reads_no_press_and_calls_no_model():
 
     assert "provider" not in source
     assert "fetch" not in source and "news" not in source.lower()
+    # Reddit is a third source and gets the same bar. An upvote count is not
+    # allowed to become a ranking figure any more than a headline is.
+    assert "social" not in source and "reddit" not in source.lower()
+    assert "discussion" not in source
 
 
 # --- the floor ---------------------------------------------------------------
@@ -323,3 +328,134 @@ def test_the_whole_board_reads_on_one_thread(log):
             [Refusal("B", 1, "below")], correlation_id="research_1")
 
     assert len(log.read_by_correlation("research_1")) == 2
+
+
+# --- what operators are saying -----------------------------------------------
+
+def _reddit(discussion="Operators say margins are thin.", posts=None,
+            blocked=False):
+    """Stand-in for `social.research_topic`, which is the shape research
+    consumes. Returning the dict rather than the module keeps these tests off
+    the network entirely."""
+    def call(topic):
+        return {"topic": topic, "source": "rss", "blocked": blocked,
+                "communities": [], "discussion": discussion,
+                "posts": posts if posts is not None else [
+                    {"title": "Anyone else seeing cold brew slow down?",
+                     "subreddit": "r/indiacoffee", "url": "https://r/1",
+                     "when": "2026-08-02", "score": 41, "comments": 12},
+                ]}
+    return call
+
+
+def test_the_discussion_rides_beside_the_press_not_instead_of_it():
+    campaign = research(
+        Campaign(name="Cold Brew", merchants=("m_a", "m_b", "m_c")),
+        Says("Brands are leaning on summer bundles."),
+        fetcher=lambda q: [Source("H", "u", "d", "p")],
+        social=_reddit(),
+    )
+
+    assert campaign.driver == "Brands are leaning on summer bundles."
+    assert campaign.discussion == "Operators say margins are thin."
+    assert campaign.sources and campaign.threads
+    assert campaign.threads[0]["subreddit"] == "r/indiacoffee"
+
+
+def test_a_quiet_press_does_not_lose_the_discussion():
+    """The categories nobody has written about are exactly the ones only
+    operators are talking about. An `else` here would drop them."""
+    campaign = research(
+        Campaign(name="Cold Brew", merchants=("m_a", "m_b", "m_c")),
+        Says("should never be called"),
+        fetcher=lambda q: [],
+        social=_reddit(),
+    )
+
+    assert "no public coverage" in campaign.driver
+    assert campaign.discussion == "Operators say margins are thin."
+
+
+def test_a_refusal_is_not_reported_as_a_silence():
+    campaign = research(
+        Campaign(name="Cold Brew", merchants=("m_a", "m_b", "m_c")),
+        Says("x"),
+        fetcher=lambda q: [Source("H", "u", "d", "p")],
+        social=_reddit(discussion="", posts=[], blocked=True),
+    )
+
+    assert campaign.discussion_blocked is True
+    assert "refused" in campaign.discussion
+    assert "nothing substantive" not in campaign.discussion
+
+
+def test_a_genuinely_quiet_category_says_so_without_claiming_a_refusal():
+    campaign = research(
+        Campaign(name="Cold Brew", merchants=("m_a", "m_b", "m_c")),
+        Says("x"),
+        fetcher=lambda q: [Source("H", "u", "d", "p")],
+        social=_reddit(discussion="", posts=[], blocked=False),
+    )
+
+    assert campaign.discussion_blocked is False
+    assert "nothing substantive" in campaign.discussion
+
+
+def test_reddit_falling_over_leaves_the_row_standing():
+    def dead(topic):
+        raise OSError("no network")
+
+    campaign = research(
+        Campaign(name="Cold Brew", merchants=("m_a", "m_b", "m_c"),
+                 value_paise=900_000),
+        Says("Brands are leaning on summer bundles."),
+        fetcher=lambda q: [Source("H", "u", "d", "p")],
+        social=dead,
+    )
+
+    assert campaign.value_paise == 900_000
+    assert campaign.driver == "Brands are leaning on summer bundles."
+    assert campaign.discussion_blocked is True
+    assert "OSError" in campaign.discussion
+
+
+def test_the_discussion_never_changes_a_number():
+    before = Campaign(name="Cold Brew", merchants=("m_a", "m_b", "m_c"),
+                      value_paise=900_000, early_paise=100_000,
+                      late_paise=800_000, settled=3, attempts=4)
+
+    after = research(before, Says("d"),
+                     fetcher=lambda q: [Source("H", "u", "d", "p")],
+                     social=_reddit(discussion="Everyone says it is booming."))
+
+    assert after.value_paise == 900_000
+    assert after.movement == 8.0
+    assert after.settled == 3
+
+
+def test_only_a_handful_of_threads_travel_with_a_row():
+    many = [{"title": f"t{i}", "subreddit": "r/x", "url": f"u{i}",
+             "when": "d", "score": i, "comments": i} for i in range(20)]
+
+    campaign = research(
+        Campaign(name="Cold Brew", merchants=("m_a", "m_b", "m_c")),
+        Says("d"),
+        fetcher=lambda q: [Source("H", "u", "d", "p")],
+        social=_reddit(posts=many),
+    )
+
+    assert len(campaign.threads) == THREADS_PER_ROW
+
+
+def test_no_reddit_configured_still_publishes_the_board():
+    """`social=None` is the default and must not fabricate an empty section
+    that reads as 'we looked and nobody was talking'."""
+    campaign = research(
+        Campaign(name="Cold Brew", merchants=("m_a", "m_b", "m_c")),
+        Says("d"),
+        fetcher=lambda q: [Source("H", "u", "d", "p")],
+    )
+
+    assert campaign.discussion == ""
+    assert campaign.threads == []
+    assert campaign.discussion_blocked is False

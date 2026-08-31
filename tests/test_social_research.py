@@ -12,6 +12,7 @@ import pytest
 from exchange.house import social
 from exchange.house.social import (
     Community,
+    _dedupe,
     Fetch,
     Post,
     find_communities,
@@ -203,3 +204,66 @@ def test_a_run_together_community_name_still_matches():
     dropped it from a search for coffee — the exact community worth having."""
     assert social._names_topic("coffeeindia", "", {"coffee"})
     assert not social._names_topic("kpop", "Reddit K-Pop", {"packaging"})
+
+
+# --- the search that was not searching ---------------------------------------
+
+def test_the_search_url_actually_restricts_and_ranks_by_match():
+    """`restrict_sr=on` is what Reddit's own web UI emits, and on the RSS
+    endpoint it silently drops the query and returns the subreddit's top
+    posts. Nothing errors and nothing is empty, so the only thing that
+    catches it is asserting the parameter."""
+    seen = {}
+
+    class Response:
+        def read(self):
+            return b"<feed xmlns='http://www.w3.org/2005/Atom'></feed>"
+
+    def capture(request, timeout=None):
+        seen["url"] = request.full_url
+        return Response()
+
+    search_posts("packaging", [Community("smallbusiness", "s")],
+                 opener=capture)
+
+    assert "restrict_sr=1" in seen["url"]
+    assert "restrict_sr=on" not in seen["url"]
+    # Ranking by engagement returns the year's most popular posts regardless
+    # of what was asked for, which is how the above went unnoticed.
+    assert "sort=relevance" in seen["url"]
+    assert "sort=top" not in seen["url"]
+
+
+def test_a_crossposted_story_counts_once():
+    """The same write-up in r/smallbusiness and r/EntrepreneurRideAlong is one
+    business's opinion. Two copies in a four-thread summary reads as two."""
+    same = "After 22 years chasing clients, I am rebuilding"
+    posts = [
+        Post(same, "smallbusiness", "a", "https://x/1", "2026-08-01", 1, "trade"),
+        Post(same, "EntrepreneurRideAlong", "a", "https://x/2", "2026-08-01", 2,
+             "trade"),
+        Post("A different thread", "smallbusiness", "b", "https://x/3",
+             "2026-08-02", 3, "trade"),
+    ]
+
+    kept = _dedupe(posts)
+
+    assert [p.title for p in kept] == [same, "A different thread"]
+    # The operator copy is kept, not the last one seen.
+    assert kept[0].subreddit == "smallbusiness"
+
+
+def test_a_post_says_which_search_found_it():
+    """Operator talk and customer talk are both worth reading and must never
+    be presented as the same thing."""
+    class Response:
+        def read(self):
+            return b"<feed xmlns='http://www.w3.org/2005/Atom'></feed>"
+
+    got = search_posts("packaging", [Community("smallbusiness", "s")],
+                       opener=lambda r, timeout=None: Response(), kind="trade")
+
+    assert got.items == []
+    # And the default stays "category", so the discovered-community path is
+    # unchanged by the addition of the trade one.
+    assert Post("t", "s", "a", "u", "w", 1).kind == "category"
