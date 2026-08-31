@@ -31,3 +31,11 @@ build/
 .DS_Store
 .vscode/
 .idea/
+
+# Third-party Claude Code skill plugin cache. 94 MB of someone else's
+# files; nothing here is part of the exchange.
+.agents/
+
+# Design detector's local hook cache. The ignore decisions in
+# .impeccable/config.json are kept; the cache is per-machine.
+.impeccable/hook.cache.json
