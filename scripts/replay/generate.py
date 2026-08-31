@@ -1583,8 +1583,13 @@ def _board_html(desk, sale, summary) -> str:
         board_html = (
             '<div class="internal"><div class="hdr">'
             "<b>Trending client campaigns</b>"
+            # Three provenances, named, because the whole claim of this board
+            # is that you can tell which figure came from where. Saying only
+            # "the public press" stopped being true once the discussion was
+            # attached, and an unnamed source is the one a reader assumes was
+            # invented.
             '<span>ranking computed from the log &middot; '
-            'explanations sourced from the public press</span></div>'
+            'press and merchant discussion sourced separately</span></div>'
             f"{rows}{refusal}</div>")
     else:
         board_html = ('<div class="empty">No campaign board published. Run '
