@@ -65,6 +65,22 @@ from scripts.replay.read import (
 )
 
 
+def who(actor_id) -> str:
+    """A merchant's name as a person would write it.
+
+    Actor ids are `m_bl_thirdwave` — a prefix so the log can tell a merchant
+    from the house, the gate and the accountant at a glance. That prefix is
+    plumbing. On screen it reads as a variable name and makes a page of real
+    businesses look like a database dump, so it comes off everywhere a reader
+    looks. The raw id still travels in the data attributes and the JSON, which
+    is where anything checking the log against the page needs it.
+    """
+    name = str(actor_id or "")
+    if name.startswith("m_"):
+        name = name[2:]
+    return name.replace("_", " ")
+
+
 def esc(text) -> str:
     return html.escape(str(text if text is not None else ""))
 
@@ -1015,7 +1031,7 @@ def build_merchant(db_path: str, actor_id: str, roster) -> str:
     options = "".join(
         f'<option value="{esc(_page_name(a))}"'
         f'{" selected" if a == actor_id else ""}>'
-        f'{esc(a[2:].replace("_", " ").title())}</option>'
+        f'{esc(who(a).title())}</option>'
         for a in roster)
 
     # TWO TRADES FOR THE SAME THING NEED TELLING APART. Three buttons all
@@ -1097,7 +1113,7 @@ def build_merchant(db_path: str, actor_id: str, roster) -> str:
         f'<a class="avatar" href="index.html" '
         f'aria-label="back to the front">{esc(initial)}</a>'
         f'<div class="whoami"><h1>{esc(view["name"])}</h1>'
-        f'<p>{esc(actor_id)} &middot; {esc(view["plan"])} plan &middot; '
+        f'<p>{esc(who(actor_id))} &middot; {esc(view["plan"])} plan &middot; '
         f'represented by four agents</p></div>'
         '<div class="switch">'
         f'<select class="sw" id="sw" aria-label="view another merchant">'
@@ -1242,7 +1258,10 @@ def _books_card(books) -> str:
                        f"</th>" for c in COLUMNS[:8])
         rows = "".join(
             "<tr>" + "".join(
-                f'<td class="{"a" if n in (0, 7) else ""}">{esc(cell)}</td>'
+                # Column 2 is the counterparty, which is an actor id in the
+                # ledger and a business name on screen.
+                f'<td class="{"a" if n in (0, 7) else ""}">'
+                f'{esc(who(cell) if n == 2 else cell)}</td>'
                 for n, cell in enumerate(entry.row()[:8]))
             + "</tr>"
             for entry in books.entries)
@@ -1462,7 +1481,7 @@ def build_desk(db_path: str) -> str:
     payload = json.dumps({"rows": rows, "rails": rail_map},
                          separators=(",", ":"))
 
-    mgrid = "".join(f'<div class="m" data-m="{esc(m)}"><i></i><b>{esc(m[2:])}</b></div>'
+    mgrid = "".join(f'<div class="m" data-m="{esc(m)}"><i></i><b>{esc(who(m))}</b></div>'
                     for m in merchants)
     live = (
         '<div class="trans">'
@@ -1673,7 +1692,7 @@ def _board_html(desk, sale, summary, scan=None, perf=None) -> str:
 
     if sale:
         bids = "".join(
-            f'<tr><td class="a">{esc(e.actor_id)}</td>'
+            f'<tr><td class="a">{esc(who(e.actor_id))}</td>'
             f'<td>{esc(e.payload.get("amount"))}</td>'
             f'<td class="q">{esc(str(e.payload.get("reason", ""))[:130])}</td>'
             f"</tr>"
@@ -1687,7 +1706,7 @@ def _board_html(desk, sale, summary, scan=None, perf=None) -> str:
             f'<table><tr><th>bidder</th><th>points</th>'
             f'<th>why they valued it there</th></tr>{bids}</table>'
             f'<p class="note" style="margin-bottom:0">'
-            f'<b>{esc(sale["winner"])}</b> won and paid '
+            f'<b>{esc(who(sale["winner"]))}</b> won and paid '
             f'<b>{esc(sale["price"])}</b> points — the runner-up&rsquo;s bid, '
             f'not its own. {len(sale["royalties"])} contributing merchants each '
             f'earned <b>{esc(paid)}</b> points from a win they did not know was '
@@ -1817,7 +1836,7 @@ def _network_data(events, rail_map, roster):
         ly = cy + (radius + 13) * math.sin(angle)
         nodes.append({
             "id": actor,
-            "label": _short(actor[2:].replace("_", " ")),
+            "label": _short(who(actor)),
             "x": round(x, 1), "y": round(y, 1),
             "lx": round(lx, 1), "ly": round(ly, 1),
             "rot": round(math.degrees(angle) + (180 if math.cos(angle) < 0
@@ -1843,7 +1862,7 @@ def _network_data(events, rail_map, roster):
         if not rows:
             continue
         trades[actor] = [{
-            "with": e.counterparty,
+            "with": who(e.counterparty),
             "dir": e.direction,
             "item": _clip_words(e.item, 40),
             "amt": f"₹{e.amount_inr:,.0f}",
@@ -1894,9 +1913,9 @@ def _auction_html(sale) -> str:
         return ""
     envelopes = "".join(
         f'<li class="env" data-amt="{e.payload.get("amount")}" '
-        f'data-who="{esc(e.actor_id[2:].replace("_", " "))}">'
+        f'data-who="{esc(who(e.actor_id))}">'
         f'<span class="seal"></span>'
-        f'<span class="bw">{esc(e.actor_id[2:].replace("_", " "))}</span>'
+        f'<span class="bw">{esc(who(e.actor_id))}</span>'
         f'<span class="ba">{esc(e.payload.get("amount"))}</span></li>'
         for e in sale["bids"])
     return (
@@ -3003,7 +3022,7 @@ def _books_proof(events, roster) -> str:
         for e in best.entries[:5])
     return (
         '<div class="proof"><div class="ph">'
-        f'{esc(best.actor_id[2:].replace("_", " "))} &middot; books</div>'
+        f'{esc(who(best.actor_id))} &middot; books</div>'
         f'<div class="pb">{rows}'
         f'<div class="pr"><span class="nm">confirmed by Razorpay</span>'
         f'<span class="v">₹{best.settled_inr:,.0f}</span></div></div></div>')

@@ -637,7 +637,8 @@ def merchant_view(events, actor_id: str, rail_map=None):
 
     return {
         "actor_id": actor_id,
-        "name": actor_id[2:].replace("_", " "),
+        # The prefix is plumbing, not a name. See generate.who().
+        "name": actor_id[2:].replace("_", " ") if actor_id.startswith("m_") else actor_id,
         "plan": (registered.payload.get("plan_tier") if registered
                  else "standard"),
         "spent_paise": spent,
