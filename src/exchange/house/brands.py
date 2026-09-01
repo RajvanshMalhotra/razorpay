@@ -31,11 +31,20 @@ same reason the privacy floor is logged — a floor nobody can see is
 indistinguishable from no floor.
 
 TWO SOURCES, ONE OPTIONAL. Reddit needs no credentials on the RSS path and
-free credentials on the API path. X (Twitter) has no free read path at all:
-nitter instances are dead and the official API requires a paid bearer token.
-So X is behind an interface that stays absent unless X_BEARER_TOKEN is set,
-and every result records which sources were actually read. A ranking built
-from Reddit alone must say so rather than implying it read the whole internet.
+free credentials on the API path.
+
+X (Twitter) is behind a bearer token. An earlier version of this comment said
+there was no free path at all, which is wrong and worth correcting rather than
+quietly deleting: there IS a free tier, and firecrawl/gemini-trendfinder
+states its shape plainly — "the X API free plan is rate limited to only
+monitor 1 X account every 15 min". At the fan-out this radar wants that is
+roughly six hours for one sweep of the seed list, so the free tier exists and
+is unusable here, which is a different claim and the true one. The scraping
+mirrors that used to avoid the API are gone.
+
+So X stays absent unless X_BEARER_TOKEN is set, and every result records which
+sources were actually read. A ranking built from Reddit alone must say so
+rather than implying it read the whole internet.
 """
 from __future__ import annotations
 
