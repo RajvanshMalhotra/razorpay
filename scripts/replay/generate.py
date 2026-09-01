@@ -334,7 +334,7 @@ select.pick{max-width:330px}
    band above it so nobody mistakes a count of strangers for a rupee. */
 .scanband{grid-column:1/-1;margin:26px 0 10px;padding:7px 11px;
   font-family:var(--mono);font-size:10px;letter-spacing:.12em;
-  text-transform:uppercase;color:var(--void);background:var(--amber);
+  text-transform:uppercase;color:#111;background:var(--amber);
   display:flex;justify-content:space-between;gap:16px;flex-wrap:wrap}
 .scanband i{font-style:normal;opacity:.72}
 .crow.scan .mv{color:var(--white)}
@@ -1659,13 +1659,16 @@ def _board_html(desk, sale, summary, scan=None, perf=None) -> str:
                 f'{esc(s["publisher"] or s["title"][:40])}</a>'
                 for s in row.get("sources", [])[:6])
             rows += (
-                f'<div class="crow">{_perf_html((perf or {}).get(row["campaign"]))}'
+                f'<div class="crow">'
                 f'<span class="rk">{row["rank"]}</span>'
                 f'<span class="nm">{esc(row["campaign"])}</span>'
                 f'<span class="mv">{movement}</span>'
                 f'<span class="mc">{row["merchants"]} merchants</span>'
                 f'<span class="vl">{rupees(row["value_paise"])}</span>'
-                f'<div class="why">{esc(row.get("driver", ""))}</div>'
+                # Directly under the name. Above it, the strip read as a
+                # banner floating between two rows and belonging to neither.
+                + _perf_html((perf or {}).get(row["campaign"]))
+                + f'<div class="why">{esc(row.get("driver", ""))}</div>'
                 f'<div class="src">{sources}</div>'
                 + _talk_html(row) + '</div>')
         rows += _radar_html(scan)
