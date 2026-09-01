@@ -19,6 +19,19 @@ Write ONE sentence. Name the category and the direction. Never name a merchant,
 never quote a single transaction, and never include a figure that could identify
 one business."""
 
+# THE HEADLINE IS THE FREE HALF AND THE PLAYBOOK IS THE PAID HALF, so the
+# headline has to be worth reading and still worth paying past. A teaser that
+# gives the answer away leaves nothing to auction; one that says nothing at
+# all is not a signal, it is an advert.
+BOARD_HEADLINE_PROMPT = """You are Razorpay's market research agent, writing the
+free headline above a paid lot. You can see which categories are climbing across
+the whole client base and what businesses in them are saying to each other.
+
+Write ONE sentence that is genuinely useful on its own and still leaves a reason
+to buy the detail. Say that something is moving and roughly how much. Do NOT name
+the leading category, do not list the categories, do not name a merchant, and do
+not quote a single transaction."""
+
 
 class HouseAgent:
     def __init__(self, log: EventLog, provider: LLMProvider) -> None:
@@ -53,11 +66,26 @@ class HouseAgent:
             })
         return out
 
-    def mint_from(self, observations: list[dict], correlation_id: str):
+    def mint_from(self, observations: list[dict], correlation_id: str,
+                  board=None):
         """Turn observations into a lot, or refuse and say why.
 
         The refusal is logged as loudly as the success — a floor nobody can
         see is indistinguishable from no floor.
+
+        WHAT THE WINNER ACTUALLY GETS. Without `board` the playbook was two
+        integers — a trade count and a total — which is not something a
+        business would pay points for, and made the auction a ritual rather
+        than a market. Given the campaign board, the playbook becomes the
+        board: which categories are climbing, by how much, what those
+        businesses are trying to buy, and what operators in them are saying.
+        That is the thing the free headline is a teaser for.
+
+        THE FLOOR STILL BINDS, and it binds on the same contributors as
+        before: the merchants whose settled trades produced the observations.
+        The board is a description of their activity, so publishing it in a
+        lot is publishing their activity, and it may not clear a lower bar
+        than the activity itself would.
         """
         contributors = [o["actor_id"] for o in observations]
         verdict = check_privacy(contributors)
@@ -71,13 +99,18 @@ class HouseAgent:
             return None
 
         total = sum(o["amount"] for o in observations)
+        if board:
+            # Movements only. Naming the categories here would put the paid
+            # half into the free half.
+            moves = ", ".join(f"{row['movement']:.1f}x" for row in board)
+            ask = (f"{len(board)} categories ranked across {verdict.k} "
+                   f"merchants, moving {moves}. Write the headline.")
+        else:
+            ask = (f"{len(observations)} settled trades across {verdict.k} "
+                   f"merchants, totalling {total} paise. Write the headline.")
         response = self._provider.complete(
-            [LLMMessage(
-                "user",
-                f"{len(observations)} settled trades across {verdict.k} merchants, "
-                f"totalling {total} paise. Write the headline.",
-            )],
-            system=HEADLINE_PROMPT,
+            [LLMMessage("user", ask)],
+            system=BOARD_HEADLINE_PROMPT if board else HEADLINE_PROMPT,
             # 120 was not a tight budget, it was an empty one: this model
             # spent all of it reasoning and returned "". The headline is what
             # appears on screen, so it gets room to think (~529 tokens) and
@@ -87,11 +120,23 @@ class HouseAgent:
         )
         headline = response.text.strip()
 
+        playbook = {"observed_trades": len(observations), "total_paise": total}
+        if board:
+            playbook["board"] = [
+                {"rank": row["rank"], "campaign": row["campaign"],
+                 "movement": row["movement"], "merchants": row["merchants"],
+                 "value_paise": row["value_paise"],
+                 "needs": list(row.get("needs", [])),
+                 "driver": row.get("driver", ""),
+                 "discussion": row.get("discussion", ""),
+                 "threads": row.get("threads", [])}
+                for row in board
+            ]
         lot = mint_lot(
             headline=headline,
-            playbook={"observed_trades": len(observations), "total_paise": total},
+            playbook=playbook,
             contributor_ids=contributors,
-            category="market",
+            category="campaign_board" if board else "market",
         )
         self._lots.append(lot)
         self._log.append(

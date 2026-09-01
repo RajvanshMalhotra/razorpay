@@ -129,3 +129,65 @@ def test_the_house_never_bids():
 
     sources = "".join(inspect.getsource(getattr(HouseAgent, n)) for n in public)
     assert Bid.__name__ not in sources
+
+
+# --- the lot is the board's detail, not a trade count ------------------------
+
+def test_a_lot_minted_from_the_board_carries_it_as_the_playbook():
+    """The auction sells the detail behind the leaderboard. If the playbook is
+    a trade count and a total, there is nothing a business would pay for and
+    the auction is theatre."""
+    log = EventLog(":memory:")
+    house = HouseAgent(log, ScriptedProvider(["Several categories are climbing this week."]))
+    board = [{"rank": 1, "campaign": "Cold Brew", "movement": 1.5,
+              "merchants": 9, "value_paise": 620_000,
+              "needs": ["cold brew concentrate"], "driver": "demand is up",
+              "discussion": "Operators say margins are thin.",
+              "threads": [{"title": "t", "subreddit": "r/x", "url": "u"}]}]
+
+    lot = house.mint_from(
+        [{"actor_id": f"m_{i}", "amount": 1000} for i in range(30)],
+        correlation_id="c", board=board)
+
+    assert lot is not None
+    assert lot.spec["playbook"]["board"][0]["campaign"] == "Cold Brew"
+    assert lot.spec["playbook"]["board"][0]["discussion"]
+    assert lot.spec["playbook"]["board"][0]["threads"]
+    assert lot.spec["category"] == "campaign_board"
+
+
+def test_the_free_headline_does_not_give_away_the_paid_board():
+    """The headline is published free. Naming the categories in it would move
+    the paid half into the free half and leave nothing to auction."""
+    seen = {}
+
+    class Capture:
+        def complete(self, messages, **kw):
+            seen["asked"] = messages[0].content
+            seen["system"] = kw.get("system", "")
+            return type("R", (), {"text": "Something is moving."})()
+
+    log = EventLog(":memory:")
+    house = HouseAgent(log, Capture())
+    house.mint_from([{"actor_id": f"m_{i}", "amount": 1} for i in range(30)],
+                    correlation_id="c",
+                    board=[{"rank": 1, "campaign": "Cold Brew", "movement": 1.5,
+                            "merchants": 9, "value_paise": 1}])
+
+    assert "Cold Brew" not in seen["asked"]
+    assert "1.5x" in seen["asked"]
+    assert "do not name" in seen["system"].lower()
+
+
+def test_no_board_still_mints_the_old_way():
+    """A run that has not published a board must still produce a lot."""
+    log = EventLog(":memory:")
+    house = HouseAgent(log, ScriptedProvider(["Micro-payments are spreading."]))
+
+    lot = house.mint_from(
+        [{"actor_id": f"m_{i}", "amount": 1000} for i in range(30)],
+        correlation_id="c")
+
+    assert lot is not None
+    assert "board" not in lot.spec["playbook"]
+    assert lot.spec["category"] == "market"

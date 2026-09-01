@@ -15,6 +15,7 @@ is a good thing to have on camera.
 The order matters and is the whole shape of the product:
 
     observe  -> what actually settled, per merchant
+    read     -> the campaign board, which is what the lot is made of
     mint     -> a headline, if the floor allows it
     value    -> each broker prices the lot in its own words
     auction  -> sealed bids, second price
@@ -25,6 +26,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
+from exchange import events as ev
 from exchange.house.auction import pay_royalties, run_auction, settle_purchase
 from exchange.house.insights import HOUSE_ACTOR_ID
 
@@ -34,6 +36,7 @@ class CycleReport:
     observations: int = 0
     contributors: int = 0
     minted: bool = False
+    board_rows: int = 0
     refused_reason: str | None = None
     headline: str | None = None
     bids: tuple = ()
@@ -69,7 +72,16 @@ def run_house_cycle(
     report.observations = len(observations)
     report.contributors = len({o["actor_id"] for o in observations})
 
-    lot = house.mint_from(observations, correlation_id=correlation_id)
+    # The board, if one has been published. This is what makes the auction a
+    # market rather than a ritual: without it the winner buys a trade count
+    # and a total, and no business would part with points for that.
+    board = [e.payload for e in exchange.log.read_all()
+             if e.type == ev.CAMPAIGN_RANKED]
+    board.sort(key=lambda row: row["rank"])
+    report.board_rows = len(board)
+
+    lot = house.mint_from(observations, correlation_id=correlation_id,
+                          board=board or None)
     if lot is None:
         # `mint_from` already logged PRIVACY_REFUSED with the reason and k.
         report.refused_reason = (

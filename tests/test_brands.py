@@ -1,0 +1,235 @@
+"""The brand campaign radar: what companies are running, ranked from talk."""
+import inspect
+
+from exchange.eventlog import EventLog
+from exchange.house.brands import (
+    MIN_THREADS,
+    Mention,
+    XAPI,
+    discover,
+    label,
+    publish,
+    rank,
+)
+from exchange.house.social import Post
+
+
+class Says:
+    """A provider that returns exactly what it was handed."""
+
+    def __init__(self, text: str) -> None:
+        self.text = text
+        self.calls = 0
+
+    def complete(self, messages, **kwargs):
+        self.calls += 1
+        return type("R", (), {"text": self.text})()
+
+
+def _m(brand, title, community, source="reddit", score=None, comments=None):
+    return Mention(brand=brand, title=title, url=f"u/{title}",
+                   community=community, source=source, when="2026-08-30",
+                   score=score, comments=comments)
+
+
+# --- the load-bearing separation ---------------------------------------------
+
+def test_ranking_calls_no_model_and_reads_no_network():
+    """If `rank` could reach either, a loud opinion could become a position,
+    and nothing on the radar would be checkable."""
+    source = inspect.getsource(rank)
+    # The docstring explains what rank must not touch, using the very words
+    # being searched for. Scan the code, or the test passes on its own prose.
+    # (getdoc re-indents, so it never matches the raw source — cut the span.)
+    start = source.index('"""')
+    body = source[:start] + source[source.index('"""', start + 3) + 3:]
+
+    assert "provider" not in body
+    assert "complete(" not in body
+    assert "search" not in body.lower()
+    assert "urllib" not in body and "http" not in body.lower()
+
+
+def test_spread_beats_volume():
+    """Forty posts in one subreddit is a community with a hobby. Eight across
+    five is a campaign the market noticed."""
+    loud = [_m("Zomato", f"Zomato monsoon ad {i}", "marketing") for i in range(8)]
+    broad = [_m("CRED", f"CRED rebrand {i}", c) for i, c in
+             enumerate(("marketing", "advertising", "PPC", "ecommerce"))]
+    mentions = loud + broad
+    labels = ({i: "Zomato monsoon" for i in range(1, 9)}
+              | {i: "CRED rebrand" for i in range(9, 13)})
+
+    ranked, _ = rank(mentions, labels)
+
+    # 8 threads x 1 community = 8; 4 threads x 4 communities = 16.
+    assert [r.name for r in ranked] == ["CRED rebrand", "Zomato monsoon"]
+
+
+def test_a_campaign_in_one_thread_is_refused_and_the_refusal_is_logged():
+    mentions = [_m("Nykaa", "Nykaa festive ad", "marketing"),
+                _m("boAt", "boAt launch a", "marketing"),
+                _m("boAt", "boAt launch b", "PPC")]
+    labels = {1: "Nykaa festive", 2: "boAt launch", 3: "boAt launch"}
+
+    ranked, refused = rank(mentions, labels)
+
+    assert [r.name for r in ranked] == ["boAt launch"]
+    assert [r.name for r in refused] == ["Nykaa festive"]
+    assert str(MIN_THREADS) in refused[0].reason
+
+
+def test_the_order_is_total_so_a_rerun_cannot_shuffle():
+    """Two campaigns with identical heat must still have a fixed order."""
+    mentions = [_m("A", "A one", "marketing"), _m("A", "A two", "PPC"),
+                _m("B", "B one", "marketing"), _m("B", "B two", "PPC")]
+    labels = {1: "A camp", 2: "A camp", 3: "B camp", 4: "B camp"}
+
+    first, _ = rank(mentions, labels)
+    second, _ = rank(list(reversed(mentions)),
+                     {1: "B camp", 2: "B camp", 3: "A camp", 4: "A camp"})
+
+    assert [r.name for r in first] == [r.name for r in second]
+
+
+def test_engagement_breaks_a_tie_but_never_makes_the_ranking():
+    """A run with no credentials reports 0 engagement everywhere, and must
+    still produce a real order rather than a flat one."""
+    mentions = [_m("A", "A one", "marketing", score=500, comments=100),
+                _m("A", "A two", "PPC", score=500, comments=100),
+                _m("B", "B one", "marketing"), _m("B", "B two", "PPC")]
+    labels = {1: "A camp", 2: "A camp", 3: "B camp", 4: "B camp"}
+
+    ranked, _ = rank(mentions, labels)
+
+    assert [r.name for r in ranked] == ["A camp", "B camp"]
+    assert ranked[0].heat == ranked[1].heat  # the heat did not decide it
+    assert ranked[1].engagement == 0
+
+
+# --- grouping ----------------------------------------------------------------
+
+def test_unlabelled_posts_are_counted_not_silently_invented():
+    """A model that returns nothing would otherwise produce one campaign per
+    post — which reads as a finding rather than as a broken call."""
+    mentions = [_m("Apple", "Apple ad", "marketing")] * 3
+
+    mapping, fallbacks = label(mentions, Says(""))
+
+    assert mapping == {}
+    assert fallbacks == 3
+
+
+def test_a_post_about_no_particular_campaign_is_dropped():
+    mentions = [_m("Meta", "Meta ad manager down again", "PPC"),
+                _m("Meta", "Meta new brand campaign is everywhere", "marketing")]
+
+    mapping, fallbacks = label(mentions, Says("1: none\n2: Meta brand refresh"))
+
+    assert mapping == {2: "Meta brand refresh"}
+    assert fallbacks == 1
+
+
+def test_no_mentions_never_calls_the_model():
+    provider = Says("")
+    assert label([], provider) == ({}, 0)
+    assert provider.calls == 0
+
+
+# --- collecting --------------------------------------------------------------
+
+def test_a_post_that_does_not_name_the_brand_is_not_evidence_for_it():
+    """Reddit's search is fuzzy enough to answer "Apple campaign" with posts
+    about neither. A mention nobody can verify is worse than a missing one."""
+    def searcher(query, anchors):
+        return [Post("Our Q3 campaign flopped", "marketing", "a", "u1", "d", 1),
+                Post("Apple new campaign is clever", "marketing", "b", "u2", "d", 2)]
+
+    found = discover(brands=("Apple",), searcher=searcher)
+
+    assert [m.title for m in found] == ["Apple new campaign is clever"]
+
+
+def test_the_same_post_found_by_two_angles_counts_once():
+    """"Apple campaign" and "Apple ad" return overlapping results, and one
+    post counted twice would inflate both threads and heat."""
+    def searcher(query, anchors):
+        return [Post("Apple campaign is clever", "marketing", "a", "u1", "d", 1)]
+
+    found = discover(brands=("Apple",), searcher=searcher)
+
+    assert len(found) == 1
+
+
+def test_x_is_absent_rather_than_empty_when_nobody_has_paid_for_it():
+    """X has no free read path. An absent source must never be reported as a
+    source that was read and found nothing."""
+    import os
+
+    saved = os.environ.pop("X_BEARER_TOKEN", None)
+    try:
+        assert XAPI.from_env() is None
+    finally:
+        if saved is not None:
+            os.environ["X_BEARER_TOKEN"] = saved
+
+
+def test_x_failing_does_not_take_the_radar_down():
+    def dead(request, timeout=None):
+        raise OSError("no network")
+
+    assert XAPI("token", opener=dead).mentions("Zomato") == []
+
+
+def test_every_row_records_which_sources_it_was_built_from():
+    """A ranking built from Reddit alone must say so rather than implying it
+    read the whole internet."""
+    mentions = [_m("A", "A one", "marketing"),
+                _m("A", "A two", "x", source="x", score=5, comments=1)]
+    labels = {1: "A camp", 2: "A camp"}
+
+    ranked, _ = rank(mentions, labels)
+
+    assert ranked[0].sources == ("reddit", "x")
+
+
+# --- publishing --------------------------------------------------------------
+
+def test_the_radar_writes_its_evidence_and_its_refusals():
+    log = EventLog(":memory:")
+    mentions = [_m("CRED", "CRED rebrand a", "marketing"),
+                _m("CRED", "CRED rebrand b", "PPC"),
+                _m("Nykaa", "Nykaa ad", "marketing")]
+    ranked, refused = rank(mentions, {1: "CRED rebrand", 2: "CRED rebrand",
+                                      3: "Nykaa festive"})
+
+    publish(log, ranked, refused, "corr")
+
+    events = log.read_all()
+    ranked_rows = [e for e in events if e.type == "CAMPAIGN_RANKED"]
+    refusals = [e for e in events if e.type == "PRIVACY_REFUSED"]
+
+    assert len(ranked_rows) == 1 and len(refusals) == 1
+    row = ranked_rows[0].payload
+    assert row["scope"] == "brand_radar"
+    assert row["campaign"] == "CRED rebrand"
+    assert row["heat"] == 4 and row["threads"] == 2 and row["spread"] == 2
+    assert len(row["evidence"]) == 2
+    assert row["evidence"][0]["url"]
+    assert refusals[0].payload["scope"] == "brand_radar"
+
+
+def test_the_radar_never_writes_into_the_procurement_board():
+    """Two boards, one log. A reader must be able to tell which is which, or
+    an outside mention has been laundered into a settled figure."""
+    log = EventLog(":memory:")
+    ranked, refused = rank(
+        [_m("A", "A one", "marketing"), _m("A", "A two", "PPC")],
+        {1: "A camp", 2: "A camp"})
+
+    publish(log, ranked, refused, "corr")
+
+    for event in log.read_all():
+        assert event.payload.get("scope") == "brand_radar"
+        assert "value_paise" not in event.payload
+        assert "merchants" not in event.payload

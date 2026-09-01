@@ -64,7 +64,10 @@ USER_AGENT = "agent-exchange-research/0.1 (Razorpay hackathon; read-only)"
 MIN_INTERVAL = 2.5
 BACKOFF = (15, 35)
 CACHE_DIR = pathlib.Path("runs/cache/reddit")
-CACHE_TTL = 60 * 60 * 12
+# Two hours. Long enough that one research pass does not hammer
+# Reddit, short enough that a board rebuilt the next morning is
+# reading this morning's conversation.
+CACHE_TTL = 60 * 60 * 2
 
 # Words too common to prove a post is about anything.
 STOPWORDS = frozenset("""
@@ -226,34 +229,43 @@ def find_communities(topic: str, limit: int = 6, opener=urllib.request.urlopen):
     return Fetch(items=out, blocked=blocked)
 
 
-# WHERE THE OPERATORS ARE, as opposed to where the customers are.
+# WHERE THE MARKETING IS DISCUSSED, which is not where the product is.
 #
-# Community discovery is genuinely good at finding the category's own
-# subreddit, and that is the problem. Searching "Cold Brew Concentrate"
-# finds r/coldbrew, and r/coldbrew is people making cold brew at home:
-# "Why does my cold brew look like this at the bottom?" is a real result
-# and it is worth nothing to a merchant deciding what to stock.
+# This list has been wrong twice, in opposite directions, and both failures
+# are worth keeping written down.
 #
-# The people running these businesses are in a different, small set of
-# communities, and they are there for the business rather than the product.
-# Searching "packaging supplier" across these returned "My supplier is also
-# my biggest competitor, how do you get a rate out of them" — which is the
-# kind of sentence this desk exists to find.
+# First it asked Reddit which communities exist for the category. That finds
+# r/coldbrew, and r/coldbrew is people making cold brew at home: "Best Ratio
+# for Cold Brew?" is a real result it returned, and there is nothing a
+# merchant can do with it. The community named after a product belongs to the
+# people who consume it.
 #
-# The list is short on purpose, and every general-interest community was
-# taken back out after testing: r/india answered "electronics assembly"
-# with three political posts, and r/Coffee answered "cold brew" with home
-# brewing. A community has to be about running a business to earn a place.
-TRADE_COMMUNITIES = (
-    "smallbusiness",
-    "Entrepreneur",
-    "EntrepreneurRideAlong",
-    "StartUpIndia",
+# Then it searched general business communities, which was better but still
+# answered "what is it like to run a business" rather than "what marketing is
+# working right now".
+#
+# These are the communities where campaigns are actually discussed, and the
+# difference in what comes back is not subtle. Searching "coffee campaign"
+# here returned "Is a $100 CPA normal for a $38 coffee product during the
+# first week of Meta [ads]" — a number a merchant can hold its own campaign
+# against. That is the kind of thing this board exists to sell.
+MARKETING_COMMUNITIES = (
+    "marketing",
+    "DigitalMarketing",
+    "advertising",
+    "PPC",
+    "ecommerce",
+    "shopify",
 )
 
+# The category alone finds the product. The category plus a marketing word
+# finds the campaign. THE QUERY DECIDES THE ANSWER, the same lesson the news
+# fetcher learned one module over.
+MARKETING_ANGLES = ("campaign", "ads")
 
 def search_posts(query: str, communities, limit: int = 8,
-                 opener=urllib.request.urlopen, kind: str = "category"):
+                 opener=urllib.request.urlopen, kind: str = "category",
+                 window: str = "month"):
     """The most-discussed posts about this, inside those communities."""
     if not communities:
         return Fetch(items=[], blocked=False)
@@ -270,10 +282,16 @@ def search_posts(query: str, communities, limit: int = 8,
     # right, because top-of-r/coldbrew is about cold brew either way.
     #
     # `sort=top` compounds it by ranking on engagement rather than match.
-    # `sort=relevance` with no `t` returns zero entries, so the window stays.
+    # `sort=relevance` with no `t` returns zero entries, so a window stays.
+    #
+    # A MONTH, NOT A YEAR. What worked in a campaign eleven months ago is not
+    # what is working now, and a board that sells "current" intelligence
+    # cannot be reading last winter. The narrower window returns fewer posts;
+    # that is the correct trade for this, and an empty month is reported as
+    # an empty month rather than padded from last year.
     url = (f"https://www.reddit.com/r/{subs}/search.rss?"
            f"q={urllib.parse.quote(query)}&restrict_sr=1&sort=relevance"
-           f"&t=year&limit={limit * 2}")
+           f"&t={window}&limit={limit * 2}")
 
     body, blocked = _get(url, opener)
     out = []
@@ -307,12 +325,27 @@ def _dedupe(posts):
     """
     seen, out = set(), []
     for post in posts:
-        key = " ".join(post.title.lower().split())
+        key = _shingle(post.title)
         if key in seen:
             continue
         seen.add(key)
         out.append(post)
     return out
+
+
+def _shingle(title: str) -> str:
+    """A key that survives the edits people make when they crosspost.
+
+    Exact-title matching missed the case it was written for. The same story
+    went into r/EntrepreneurRideAlong as "...from custom electronics to indie
+    developer" and into r/smallbusiness as "...from custom electronics, to
+    desserts, to indie developer" — one clause added, so two different
+    strings, so two copies of one person's story in a four-thread summary.
+    The first eight significant words are the same in both, and are enough to
+    identify a story without collapsing genuinely different ones.
+    """
+    words = re.findall(r"[a-z0-9]+", title.lower())
+    return " ".join(w for w in words if w not in STOPWORDS)[:80]
 
 
 def relevant(posts, query: str, need: int = 1):
@@ -335,19 +368,18 @@ def relevant(posts, query: str, need: int = 1):
 
 
 DISCUSSION_PROMPT = """You are Razorpay's market research agent, reading what
-people who actually run these businesses are saying to each other on Reddit.
+marketers and store owners are saying about campaigns in this category right now.
+What you write is sold to merchants, so it has to be worth paying for.
 
-You will be given real post titles from real communities, with the subreddit
-and the date.
+Report only what a merchant could ACT ON this week:
+- which channels or formats people say are working, and which have stopped
+- real numbers people quote: CPA, ROAS, conversion rates, budgets
+- offers, creative and positioning that are being praised or complained about
 
-Write TWO sentences, under 45 words in total:
-1. What the people in this category are actually talking about — the problem,
-   the shift, or the demand behind the posts.
-2. What that implies for a business buying or selling in this category.
-
-Ground both in the titles you were given. If the titles do not support a
-clear read, say "the discussion is too scattered to call" and stop. Never
-invent a statistic. Never name a Razorpay merchant."""
+Write two or three sentences. Be specific and concrete. If the threads contain
+no usable marketing signal, say exactly that instead of summarising the chatter
+- a vague summary of people talking is worth nothing and pretending otherwise is
+worse than reporting nothing. Never name a merchant."""
 
 
 def discussion(topic: str, posts, provider) -> str:
@@ -384,36 +416,25 @@ def research_topic(topic: str, provider=None, opener=urllib.request.urlopen,
         communities, posts = found["communities"], found["posts"]
         blocked, source = False, "api"
     else:
-        got_subs = find_communities(topic, opener=opener)
-        got_posts = search_posts(topic, got_subs.items, opener=opener,
-                                 kind="category")
+        # The category's own community is NOT read. It answers "how do I make
+        # this at home", and a merchant cannot act on that. Marketing
+        # communities are searched instead, once per angle.
+        anchors = [Community(n, n) for n in MARKETING_COMMUNITIES]
+        got, blocked_any = [], False
+        for angle in MARKETING_ANGLES:
+            fetched = search_posts(f"{topic} {angle}", anchors, opener=opener,
+                                   kind="marketing")
+            got.extend(relevant(fetched.items, topic, need=1))
+            blocked_any = blocked_any or fetched.blocked
 
-        # The second read, and the one that earns this module its place. See
-        # TRADE_COMMUNITIES: the category's own subreddit is full of the
-        # people who buy the product, and the desk wants the people who sell
-        # it. Both are searched, both are kept, and each post says which.
-        anchors = [Community(name, name) for name in TRADE_COMMUNITIES]
-        got_trade = (Fetch(items=[], blocked=False) if not trade
-                     else search_posts(topic, anchors, opener=opener,
-                                       kind="trade"))
-
-        communities = (
-            [{"name": c.name, "title": c.title, "subscribers": None,
-              "kind": "category"} for c in got_subs.items]
-            + [{"name": c.name, "title": c.title, "subscribers": None,
-                "kind": "trade"} for c in (anchors if trade else [])])
-
-        # Operator posts lead. A merchant reading this board wants what another
-        # merchant said before it wants what a hobbyist said, and the ordering
-        # is the only place that preference can be expressed once both are in.
-        kept = _dedupe(relevant(got_trade.items, topic)
-                       + relevant(got_posts.items, topic))
+        communities = [{"name": c.name, "title": c.title, "subscribers": None,
+                        "kind": "marketing"} for c in anchors]
         posts = [{"title": p.title, "subreddit": p.subreddit,
                   "author": p.author, "url": p.url, "when": p.when,
                   "rank": p.rank, "kind": p.kind,
                   "score": None, "comments": None}
-                 for p in kept]
-        blocked = got_subs.blocked or got_posts.blocked or got_trade.blocked
+                 for p in _dedupe(got)]
+        blocked = blocked_any
         source = "rss"
 
     if blocked and not posts:
