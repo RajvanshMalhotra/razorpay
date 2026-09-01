@@ -1,0 +1,340 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>How to read the desk</title><style>
+:root{
+  --bg:#000; --panel:#0A0A0A; --lift:#161616; --rule:#282828; --edge:#3A3A3A;
+  --amber:#FFA028; --white:#EDEDED; --dim:#8E8E8E; --faint:#5C5C5C;
+  --blue:#4D9EFF; --green:#26D07C; --red:#FF4B3E;
+  --violet:oklch(80% .145 80);
+  --mono:ui-monospace,SFMono-Regular,"SF Mono",Menlo,Consolas,monospace;
+  --serif:"Iowan Old Style","Palatino Linotype",Palatino,Georgia,serif;
+}
+*{box-sizing:border-box}
+/* The other half of the landing page's door: arriving here cross-fades in
+   rather than cutting, so entering the desk reads as continuous. */
+@view-transition{navigation:auto}
+::view-transition-old(root),::view-transition-new(root){
+  animation-duration:.34s;animation-timing-function:cubic-bezier(.16,1,.3,1)}
+html,body{margin:0;height:100%}
+body{background:var(--bg);color:var(--white);font-family:var(--mono);
+  font-size:13px;line-height:1.45;-webkit-font-smoothing:antialiased;
+  display:flex;flex-direction:column;overflow:hidden}
+@media(max-width:1000px){body{overflow:auto;height:auto}}
+
+/* --- the head ------------------------------------------------------------ */
+.bar{display:flex;align-items:center;flex:none;background:var(--panel);
+  border-bottom:1px solid var(--rule);flex-wrap:wrap}
+.mark{background:var(--amber);color:#000;font-weight:700;letter-spacing:.16em;
+  font-size:11px;padding:7px 13px;white-space:nowrap}
+.stat{padding:7px 14px;border-right:1px solid var(--rule);white-space:nowrap;
+  font-size:10.5px;color:var(--faint);letter-spacing:.1em;
+  text-transform:uppercase}
+.stat b{font-size:14px;font-weight:600;color:var(--white);letter-spacing:0;
+  margin-right:6px}
+.stat b.amber{color:var(--amber)}
+.stat b.green{color:var(--green)}
+.stat b.red{color:var(--red)}
+.navs{margin-left:auto;display:flex}
+.nav{appearance:none;background:none;border:0;border-left:1px solid var(--rule);
+  color:var(--dim);font-family:var(--mono);font-size:11px;letter-spacing:.13em;
+  text-transform:uppercase;padding:8px 16px;cursor:pointer}
+.nav:hover{color:var(--white);background:var(--lift)}
+.nav[aria-selected=true]{background:var(--amber);color:#000;font-weight:700}
+.nav.house[aria-selected=true]{background:var(--violet)}
+.nav:focus-visible{outline:2px solid var(--blue);outline-offset:-2px}
+a.nav{text-decoration:none;display:inline-block}
+
+/* Blue panel heads, the way a terminal labels a window. */
+.head{background:var(--lift);border-bottom:1px solid var(--rule);
+  padding:5px 12px;font-size:10px;letter-spacing:.17em;text-transform:uppercase;
+  color:var(--blue);display:flex;justify-content:space-between;gap:12px;
+  align-items:center;flex:none}
+.head em{font-style:normal;color:var(--faint);letter-spacing:.1em}
+
+/* --- shell --------------------------------------------------------------- */
+main{flex:1;min-height:0;position:relative}
+.vw{position:absolute;inset:0;display:none;flex-direction:column;overflow:auto;
+  padding:14px 16px}
+.vw[data-on]{display:flex}
+@media(max-width:1000px){main{position:static}.vw{position:static}}
+
+.panel{border:1px solid var(--rule);background:var(--panel);display:flex;
+  flex-direction:column;min-height:0;overflow:hidden}
+.panel .body{overflow:auto;padding:10px 12px;flex:1;min-height:0}
+.panel .body.flush{padding:0}
+@media(max-width:1000px){.panel .body{max-height:42vh}}
+
+/* --- the picker ---------------------------------------------------------- */
+.picker{display:flex;align-items:center;gap:7px;flex-wrap:wrap;
+  padding:0 0 13px;border-bottom:1px solid var(--rule);margin-bottom:14px}
+.picker .lab{font-size:10px;letter-spacing:.17em;text-transform:uppercase;
+  color:var(--faint);margin-right:3px}
+.pick,select.pick{appearance:none;background:var(--lift);color:var(--dim);
+  border:1px solid var(--rule);font-family:var(--mono);font-size:11.5px;
+  padding:6px 12px;cursor:pointer;letter-spacing:.05em}
+.pick:hover{color:var(--white);border-color:var(--edge)}
+.pick[aria-pressed=true]{background:var(--amber);color:#000;
+  border-color:var(--amber);font-weight:700}
+.pick:focus-visible{outline:2px solid var(--blue);outline-offset:1px}
+select.pick{max-width:330px}
+
+/* --- THE RAIL: the signature -------------------------------------------
+   Every trade travels the same stations in the same order, and the order is
+   the argument: the gate rules before money moves, and a lesson is filed
+   after it. Each card's top edge takes the colour of what happened there, so
+   the shape of a trade reads before a single word does. */
+.who{display:flex;align-items:baseline;gap:10px;flex-wrap:wrap;
+  padding-bottom:11px}
+.who .agent{color:var(--amber);font-size:14px}
+.who .verb{color:var(--faint);font-size:11px;letter-spacing:.13em;
+  text-transform:uppercase}
+.who .need{font-family:var(--serif);font-size:23px;color:var(--white);
+  line-height:1.2}
+.who .cid{color:var(--faint);font-size:10.5px;letter-spacing:.04em}
+.human-tag{background:var(--amber);color:#000;font-size:9.5px;font-weight:700;
+  letter-spacing:.12em;text-transform:uppercase;padding:2px 7px}
+
+.rail{display:flex;gap:1px;flex-wrap:wrap;background:var(--rule);
+  border:1px solid var(--rule)}
+.stn{flex:1 1 148px;min-width:148px;max-width:260px;background:var(--panel);
+  border-top:3px solid var(--edge);padding:9px 12px 13px;position:relative}
+.stn[data-tone=allow]{border-top-color:var(--green)}
+.stn[data-tone=deny]{border-top-color:var(--red)}
+.stn[data-tone=mixed]{border-top-color:var(--amber)}
+.stn .gl{position:absolute;top:8px;right:11px;font-size:15px;color:var(--faint)}
+.stn[data-tone=allow] .gl{color:var(--green)}
+.stn[data-tone=deny] .gl{color:var(--red)}
+.stn[data-tone=mixed] .gl{color:var(--amber)}
+.stn .cap{font-size:10px;letter-spacing:.16em;text-transform:uppercase;
+  color:var(--blue)}
+.stn .cap b{background:var(--blue);color:#000;font-weight:700;padding:0 4px;
+  margin-right:6px}
+/* The stamp: the event this station is accountable to. */
+.stn .seq{font-size:10.5px;color:var(--amber);margin-top:3px;
+  letter-spacing:.05em}
+.stn .hd{font-size:16px;margin-top:8px;line-height:1.25;color:var(--white)}
+.stn[data-tone=allow] .hd{color:var(--green)}
+.stn[data-tone=deny] .hd{color:var(--red)}
+.stn[data-tone=mixed] .hd{color:var(--amber)}
+.stn .ln{font-family:var(--serif);font-size:13.5px;color:var(--dim);
+  margin-top:6px;line-height:1.4;overflow-wrap:anywhere}
+.stn .ln.mono{font-family:var(--mono);font-size:10.5px;color:var(--faint)}
+
+/* --- what they said ------------------------------------------------------ */
+.said{display:grid;grid-template-columns:158px 66px 1fr;gap:12px;
+  padding:5px 0;align-items:baseline;border-bottom:1px solid var(--rule)}
+.said .w{font-size:11px;color:var(--faint)}
+.said .p{font-size:13px;color:var(--amber);text-align:right}
+.said .m{font-family:var(--serif);font-size:14.5px;color:var(--white)}
+@media(max-width:1000px){.said{grid-template-columns:1fr;gap:1px}}
+
+/* --- the floor (internal) ------------------------------------------------ */
+.floor{display:grid;grid-template-columns:minmax(215px,1fr) minmax(0,2.1fr);
+  gap:12px;flex:1;min-height:0}
+@media(max-width:1000px){.floor{grid-template-columns:1fr}}
+.mgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(116px,1fr));
+  gap:1px}
+.m{font-size:10.5px;color:var(--faint);padding:3px 5px;display:flex;gap:6px;
+  align-items:center;overflow:hidden;white-space:nowrap}
+.m b{font-weight:inherit;min-width:0;overflow:hidden;text-overflow:ellipsis}
+.m i{width:5px;height:5px;background:var(--rule);flex:none}
+.m.act{color:var(--white);background:var(--lift)}
+.m.act i{background:var(--green)}
+.m.buy{color:var(--amber);background:var(--lift)}
+.m.buy i{background:var(--amber)}
+.m.frz{color:var(--red)}
+.m.frz i{background:var(--red)}
+
+.lrow{display:grid;grid-template-columns:46px 138px 1fr;gap:10px;
+  padding:2px 11px;border-left:2px solid transparent;align-items:baseline;
+  font-size:12px}
+.lrow .s{color:var(--faint);font-size:10.5px}
+.lrow .a{color:var(--dim);overflow:hidden;text-overflow:ellipsis;
+  white-space:nowrap}
+.lrow .d{color:var(--faint);overflow:hidden;text-overflow:ellipsis;
+  white-space:nowrap}
+.lrow .d b{color:var(--white);font-weight:400}
+.lrow.allow{border-left-color:var(--green)}
+.lrow.deny{border-left-color:var(--red)}
+.lrow.amber{border-left-color:var(--amber)}
+.lrow.new{background:var(--lift)}
+@media(prefers-reduced-motion:no-preference){
+  .lrow.new{transition:background .6s}}
+
+.trans{display:flex;align-items:center;gap:6px;padding:0 0 11px;
+  flex-wrap:wrap}
+.progress{height:2px;background:var(--rule);position:relative;
+  margin-bottom:12px}
+.progress i{position:absolute;inset:0 auto 0 0;width:0;background:var(--amber);
+  display:block;transition:width .18s linear}
+.clock{margin-left:auto;font-size:11px;color:var(--faint);letter-spacing:.09em;
+  text-transform:uppercase}
+.clock b{color:var(--amber);font-weight:600}
+
+/* --- the board ----------------------------------------------------------- */
+.internal{border:1px solid var(--violet);margin-bottom:16px}
+.internal>.hdr{background:color-mix(in oklab,var(--violet) 15%,transparent);padding:7px 13px;font-size:10px;
+  letter-spacing:.16em;text-transform:uppercase;color:var(--violet);
+  display:flex;gap:12px;justify-content:space-between;flex-wrap:wrap}
+.internal>.hdr b{font-weight:700}
+.internal>.hdr span{color:var(--faint);letter-spacing:.09em}
+.crow{display:grid;grid-template-columns:30px 1fr 66px 92px 100px;gap:12px;
+  padding:11px 13px;border-top:1px solid var(--rule);align-items:baseline}
+.crow .rk{font-size:17px;color:var(--violet)}
+.crow .nm{font-size:16px;color:var(--white)}
+.crow .mv,.crow .mc,.crow .vl{font-size:13px;text-align:right}
+.crow .mv{color:var(--amber)}
+.crow .mc,.crow .vl{color:var(--dim)}
+.crow .perf{grid-column:1/-1;margin:0 0 9px;padding:6px 10px;
+  background:rgba(255,255,255,.045);border-left:2px solid var(--green);
+  font-family:var(--mono);font-size:11.5px;color:var(--dim);
+  letter-spacing:.01em}
+.crow .perf b{color:var(--green);font-size:13px}
+.crow .perf i{display:block;margin-top:3px;font-style:normal;
+  font-size:10px;color:var(--faint);letter-spacing:.02em}
+.crow .deriv{grid-column:2/-1;margin-top:5px;font-family:var(--mono);
+  font-size:11px;color:var(--faint);letter-spacing:.01em}
+.crow .deriv .evn{color:var(--amber)}
+.won{margin:0 0 14px;padding:11px 14px;border-left:3px solid var(--green);
+  background:rgba(38,208,124,.08);font-size:15px;color:var(--white)}
+.won b{color:var(--green)}
+.won i{display:block;margin-top:4px;font-style:normal;font-size:12px;
+  color:var(--dim);font-family:var(--mono)}
+.crow .why{grid-column:2/-1;color:var(--white);font-size:14.5px;margin-top:6px;
+  line-height:1.45;font-family:var(--serif)}
+.crow .src{grid-column:2/-1;margin-top:8px;display:flex;gap:5px;flex-wrap:wrap}
+.crow .src a{font-size:10px;color:var(--faint);border:1px solid var(--rule);
+  padding:2px 7px;text-decoration:none;max-width:230px;overflow:hidden;
+  text-overflow:ellipsis;white-space:nowrap}
+.crow .src a:hover{color:var(--violet);border-color:var(--violet)}
+/* What operators said, kept visibly apart from what the press said. The rule
+   down the left is the whole device: it marks the sentence as a reading of
+   somebody else's words rather than the desk's own finding. */
+.crow .talk{grid-column:2/-1;margin-top:10px;padding-left:11px;
+  border-left:2px solid var(--rule);color:var(--dim);font-size:13.5px;
+  line-height:1.5}
+.crow .talk b{display:block;font-size:9.5px;letter-spacing:.14em;
+  text-transform:uppercase;color:var(--faint);margin-bottom:4px;
+  font-weight:600;font-family:var(--mono)}
+.crow .talk.blocked{color:var(--faint);font-style:italic}
+.crow .thr{grid-column:2/-1;margin-top:7px;display:flex;gap:5px;
+  flex-wrap:wrap;padding-left:13px}
+.crow .thr a{font-size:10px;color:var(--faint);border:1px solid var(--rule);
+  padding:2px 7px;text-decoration:none;max-width:250px;overflow:hidden;
+  text-overflow:ellipsis;white-space:nowrap}
+.crow .thr a:hover{color:var(--amber);border-color:var(--amber)}
+/* The radar. Same row shape so the eye reads it as a ranking, one clear
+   band above it so nobody mistakes a count of strangers for a rupee. */
+.scanband{grid-column:1/-1;margin:26px 0 10px;padding:7px 11px;
+  font-family:var(--mono);font-size:10px;letter-spacing:.12em;
+  text-transform:uppercase;color:#111;background:var(--amber);
+  display:flex;justify-content:space-between;gap:16px;flex-wrap:wrap}
+.scanband i{font-style:normal;opacity:.72}
+.crow.scan .mv{color:var(--white)}
+.crow.scan .vl{font-family:var(--mono);font-size:10px;color:var(--faint)}
+@media(max-width:1000px){
+  .crow{grid-template-columns:24px 1fr 56px}
+  .crow .mc,.crow .vl{display:none}}
+.refused{padding:9px 13px;border-top:1px solid var(--rule);color:var(--red);
+  font-size:12.5px}
+
+/* --- the gate screen ----------------------------------------------------- */
+.lock{position:fixed;inset:0;background:var(--bg);z-index:50;display:flex;
+  align-items:center;justify-content:center;padding:24px;overflow:auto}
+.lock[data-open]{display:none}
+.lock .card{max-width:470px;width:100%;border:1px solid var(--rule);
+  background:var(--panel)}
+.lock .top{background:var(--violet);color:#000;padding:8px 14px;font-size:11px;
+  letter-spacing:.16em;text-transform:uppercase;font-weight:700}
+.lock .in{padding:24px}
+.lock h1{font-family:var(--serif);font-size:26px;font-weight:400;margin:0 0 8px;
+  color:var(--white)}
+.lock p{color:var(--dim);font-size:13px;margin:0 0 18px;line-height:1.6}
+.lock .row{display:flex;gap:8px}
+.lock input{flex:1;background:var(--bg);border:1px solid var(--edge);
+  color:var(--white);font-family:var(--mono);font-size:15px;padding:10px 12px;
+  letter-spacing:.14em}
+.lock input:focus{outline:none;border-color:var(--violet)}
+.lock button{background:var(--violet);border:0;color:#000;
+  font-family:var(--mono);font-size:11px;font-weight:700;letter-spacing:.14em;
+  text-transform:uppercase;padding:0 20px;cursor:pointer}
+.lock .warn{margin:18px 0 0;padding-top:14px;border-top:1px solid var(--rule);
+  color:var(--faint);font-size:12px;line-height:1.6}
+.lock .warn b{color:var(--amber);font-weight:600}
+.lock .bad{color:var(--red);font-size:12px;margin-top:10px;min-height:16px}
+
+/* --- try it -------------------------------------------------------------- */
+.ask{display:flex;gap:8px;margin-bottom:14px;max-width:640px}
+.ask input{flex:1;background:var(--panel);border:1px solid var(--rule);
+  color:var(--white);font-family:var(--serif);font-size:16px;padding:10px 13px}
+.ask input:focus{outline:none;border-color:var(--amber)}
+.ask button{background:var(--amber);border:0;color:#000;font-family:var(--mono);
+  font-size:11px;font-weight:700;letter-spacing:.13em;text-transform:uppercase;
+  padding:0 20px;cursor:pointer}
+#hits{min-height:132px}
+.hit{display:grid;grid-template-columns:1fr auto auto;gap:14px;padding:7px 0;
+  border-bottom:1px solid var(--rule);align-items:baseline}
+.hit .tt{font-family:var(--serif);font-size:15px}
+.hit .sl{font-size:11px;color:var(--dim)}
+.hit .pr{color:var(--amber)}
+
+/* --- shared -------------------------------------------------------------- */
+h3.lede{font-family:var(--serif);font-size:23px;font-weight:400;margin:0 0 6px;
+  line-height:1.3;max-width:60ch;color:var(--white)}
+p.sub{margin:0 0 16px;color:var(--dim);font-size:13.5px;max-width:78ch;
+  line-height:1.6}
+table{width:100%;border-collapse:collapse;font-size:12.5px}
+th{text-align:left;font-size:10px;letter-spacing:.14em;text-transform:uppercase;
+  color:var(--blue);font-weight:500;padding:6px 10px 6px 0;
+  border-bottom:1px solid var(--rule)}
+td{padding:5px 10px 5px 0;border-bottom:1px solid var(--rule);
+  vertical-align:top}
+td.a{color:var(--dim);font-size:11.5px;white-space:nowrap}
+td.q{font-family:var(--serif);font-size:14px}
+.empty{color:var(--faint);font-size:13.5px;padding:12px 0;
+  font-family:var(--serif);font-style:italic}
+.note{color:var(--dim);font-size:14px;border-left:2px solid var(--rule);
+  padding-left:12px;margin:14px 0;font-family:var(--serif);line-height:1.55}
+.note b{color:var(--white);font-weight:600}
+footer{padding:10px 16px;border-top:1px solid var(--rule);color:var(--faint);
+  font-size:10.5px;line-height:1.7;flex:none;background:var(--panel)}
+a{color:var(--dim)}
+@media(prefers-reduced-motion:reduce){*{animation:none!important;
+  transition:none!important}}
+
+/* The guide. Reads as a document rather than an instrument, so it gets a
+   measure and room to breathe while keeping the desk's palette — a reader
+   arrives here from the desk and should not feel they have left it. */
+.doc{max-width:820px;margin:0 auto;padding:38px 22px 90px}
+.doc h1{font-family:var(--serif);font-size:clamp(28px,4vw,40px);
+  font-weight:400;color:var(--white);margin:0 0 14px;letter-spacing:-.01em}
+.doc h2{font-family:var(--serif);font-size:21px;font-weight:400;
+  color:var(--white);margin:44px 0 12px}
+.doc h3{font-size:12px;font-family:var(--mono);letter-spacing:.1em;
+  text-transform:uppercase;color:var(--amber);margin:0 0 7px}
+.doc p{color:var(--dim);line-height:1.62;margin:0 0 12px;font-size:14.5px}
+.doc p b{color:var(--white)}
+.doc .stand{font-size:16.5px;color:var(--white);max-width:62ch}
+.doc code{font-family:var(--mono);font-size:12px;background:var(--lift);
+  border:1px solid var(--rule);padding:1px 5px;color:var(--amber)}
+.doc em{color:var(--white);font-style:italic}
+
+.layout{border:1px solid var(--rule);margin:16px 0 0;background:var(--panel)}
+.lay{display:grid;grid-template-columns:190px minmax(0,1fr) 96px;gap:14px;
+  padding:11px 14px;border-bottom:1px solid var(--rule);align-items:baseline}
+.lay:last-child{border-bottom:0}
+.lay .lb{font-family:var(--mono);font-size:11px;color:var(--faint);
+  letter-spacing:.04em}
+.lay .bd{color:var(--white);font-size:13.5px;line-height:1.5}
+.lay .bd b{color:var(--amber)}
+.lay .bd .evn{color:var(--amber);font-family:var(--mono);font-size:12px}
+.lay .sr{font-family:var(--mono);font-size:10px;letter-spacing:.08em;
+  text-transform:uppercase;color:var(--green);text-align:right}
+@media(max-width:720px){
+  .lay{grid-template-columns:1fr;gap:4px}
+  .lay .sr{text-align:left}}
+
+.cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));
+  gap:11px;margin-top:16px}
+.cd{border:1px solid var(--rule);background:var(--panel);padding:13px 15px}
+.cd p{margin:0;font-size:13px}
+</style></head><body><div class="bar"><span class="mark">RAZORPAY DESK</span><span class="navs"><a class="nav" href="desk.html">&larr; the desk</a><a class="nav" href="index.html">the exchange</a></span></div><main class="doc"><h1>How to read this desk.</h1><p class="stand">Four different kinds of thing sit on one row, and they are not equally trustworthy. Two are computed from money that moved. Two are quotations from outside. The page never mixes them, and this is how to tell which is which.</p><h2>A campaign row, line by line</h2><p>Using the row at the top of the board right now.</p><div class="layout"><div class="lay"><span class="lb">the heading</span><span class="bd"><b>Electronics Assembly</b> &middot; 2.0&times; &middot; 4 merchants &middot; ₹14,970</span><span class="sr">the log</span></div><div class="lay"><span class="lb">the arithmetic under it</span><span class="bd">₹4,995 in the opening rounds grew to ₹9,975 in the closing ones &middot; 3 of 8 attempts settled &middot; <span class="evn">event 964</span></span><span class="sr">the log</span></div><div class="lay"><span class="lb">the green strip</span><span class="bd">₹4,988 settled across 1 paid link &middot; ₹4,988 average order</span><span class="sr">Razorpay</span></div><div class="lay"><span class="lb">the sentence</span><span class="bd">India&#x27;s shift to premium devices and higher-value production beyond basic assembly is driving electronics assembly demand.</span><span class="sr">the press</span></div><div class="lay"><span class="lb">the grey chips</span><span class="bd">each one is the outlet that sentence was read from, and a link to the article</span><span class="sr">the press</span></div><div class="lay"><span class="lb">what operators are saying</span><span class="bd">Launching an electronics brand, student troubleshooting, and veteran burnout shifting from custom work to passive app income dominate the chat. For…</span><span class="sr">Reddit</span></div><div class="lay"><span class="lb">the r/ chips</span><span class="bd">the threads that sentence was read from, each a link</span><span class="sr">Reddit</span></div></div><h2>The four sources, and what each is worth</h2><div class="cards"><div class="cd"><h3>The log</h3><p>Every rupee and every count. Recomputable by anyone holding the same events, which is why each row prints the event number it was published as. Look one up: <code>select payload from events where seq=964</code></p></div><div class="cd"><h3>Razorpay</h3><p>The green strip. Real payment links and real captures on real payment ids. Not a projection of anything &mdash; the money either arrived or it did not.</p></div><div class="cd"><h3>The press</h3><p>One sentence explaining why a category is moving, with the outlets it was read from. It explains a row. It can never move one.</p></div><div class="cd"><h3>Reddit and X</h3><p>What people running these businesses say. Same rule: attached after the ranking is fixed, and carrying the threads so you can check the reading.</p></div></div><h2>The rule that makes the ranking checkable</h2><p>The ranking function cannot reach the model, the news, or Reddit. That is enforced by a test rather than by discipline, because an agent that reads a headline and then reports a number has laundered an opinion into a fact. Press and discussion are attached <em>after</em> the order is fixed and can only ever add text.</p><h2>The amber band, and why it is separated</h2><p>Everything above it is arithmetic over money that moved between merchants on this exchange. Everything below it is a count of strangers talking about companies that are not on it. Both are useful and they are not the same kind of fact, so they never share a heading.</p><div class="layout"><div class="lay"><span class="lb">the heading</span><span class="bd"><b>Calvin Klein Feel the Fit campaign</b> &middot; heat 42 &middot; 7 threads in 6 communities</span><span class="sr">Reddit / X</span></div><div class="lay"><span class="lb">what heat is</span><span class="bd">threads multiplied by communities. Forty posts inside one subreddit is a community with a hobby; eight across five is a campaign the market noticed</span><span class="sr">arithmetic</span></div><div class="lay"><span class="lb">the chips</span><span class="bd">every post the row was counted from, with its upvotes. Click one and you are reading the same thread the desk read</span><span class="sr">Reddit / X</span></div></div><h2>What the numbers do not say</h2><p><b>The settled share is not a conversion rate.</b> This run pays one payment link per merchant, because Razorpay test mode allows thirty links per account and the privacy floor counts distinct merchants. Unpaid links are the run declining to spend, not buyers declining to pay.</p><p><b>Razorpay sees the payment, not the ad click.</b> So this measures campaign to cash, not ad to sale. Tagging a payment link with its campaign closes that gap, and the tag travels in the order&rsquo;s notes.</p><p><b>Refused rows are not failures.</b> Campaigns below the privacy floor are kept off the board and the refusal is logged. A floor nobody can see is indistinguishable from no floor.</p></main><footer>Gate 49 allowed / 25 refused &middot; 34 payments completed against Razorpay &middot; 991 events on the audit trail.<br>Every row and every station carries the event number it came from.</footer></body></html>

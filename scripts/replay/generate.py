@@ -310,6 +310,11 @@ select.pick{max-width:330px}
 .crow .deriv{grid-column:2/-1;margin-top:5px;font-family:var(--mono);
   font-size:11px;color:var(--faint);letter-spacing:.01em}
 .crow .deriv .evn{color:var(--amber)}
+.won{margin:0 0 14px;padding:11px 14px;border-left:3px solid var(--green);
+  background:rgba(38,208,124,.08);font-size:15px;color:var(--white)}
+.won b{color:var(--green)}
+.won i{display:block;margin-top:4px;font-style:normal;font-size:12px;
+  color:var(--dim);font-family:var(--mono)}
 .crow .why{grid-column:2/-1;color:var(--white);font-size:14.5px;margin-top:6px;
   line-height:1.45;font-family:var(--serif)}
 .crow .src{grid-column:2/-1;margin-top:8px;display:flex;gap:5px;flex-wrap:wrap}
@@ -1557,6 +1562,7 @@ def build_desk(db_path: str) -> str:
           'live floor</button>'
           '<button class="nav house" data-view="board" aria-selected="false">'
           'the board</button>'
+          '<a class="nav" href="how-to.html">how to read this</a>'
           '<a class="nav" href="replay.html">&larr; exchange</a>'
           "</span></div>"
 
@@ -1698,13 +1704,18 @@ def _board_html(desk, sale, summary, scan=None, perf=None) -> str:
                 + f'<div class="why">{esc(row.get("driver", ""))}</div>'
                 f'<div class="src">{sources}</div>'
                 + _talk_html(row) + '</div>')
-        rows += _radar_html(scan)
+        # The refusal note belongs to the board it refused FROM. Appended
+        # after the radar it read as though two of the radar's campaigns had
+        # been kept off, which is a different claim about a different set of
+        # facts.
         refused = desk["refused"]
-        refusal = (
+        rows += (
             f'<div class="refused">{len(refused)} campaigns refused a place on '
             f'this board — fewer distinct merchants than the floor of '
             f'{refused[0].get("floor")} allows. A floor nobody can see is '
             f'indistinguishable from no floor.</div>') if refused else ""
+        rows += _radar_html(scan)
+        refusal = ""
         board_html = (
             '<div class="internal"><div class="hdr">'
             "<b>Trending client campaigns</b>"
@@ -1731,16 +1742,19 @@ def _board_html(desk, sale, summary, scan=None, perf=None) -> str:
                 if sale["royalties"] else 0)
         return board_html + _panel(
             "the lot that went to auction",
+            # THE RESULT LEADS. Under eight rows of bids a reader had to
+            # read the whole table to learn who won, which is the one thing
+            # they came to the block for.
+            f'<div class="won"><b>{esc(who(sale["winner"]))}</b> won it for '
+            f'<b>{esc(sale["price"])} points</b>'
+            f'<i>the runner-up&rsquo;s bid, not its own &mdash; and '
+            f'{len(sale["royalties"])} contributing merchants each earned '
+            f'{esc(paid)} points from a win they never knew was being '
+            f'sold</i></div>'
             f'<p style="margin:0 0 13px;font-family:var(--serif);'
             f'font-size:17px">&ldquo;{esc(sale["headline"])}&rdquo;</p>'
             f'<table><tr><th>bidder</th><th>points</th>'
-            f'<th>why they valued it there</th></tr>{bids}</table>'
-            f'<p class="note" style="margin-bottom:0">'
-            f'<b>{esc(who(sale["winner"]))}</b> won and paid '
-            f'<b>{esc(sale["price"])}</b> points — the runner-up&rsquo;s bid, '
-            f'not its own. {len(sale["royalties"])} contributing merchants each '
-            f'earned <b>{esc(paid)}</b> points from a win they did not know was '
-            f'being sold.</p>',
+            f'<th>why they valued it there</th></tr>{bids}</table>',
             note="sealed bids, second price")
 
     return board_html + (
@@ -2599,6 +2613,197 @@ if(!('IntersectionObserver' in window)){
 </script>"""
 
 
+HOWTO_CSS = """
+/* The guide. Reads as a document rather than an instrument, so it gets a
+   measure and room to breathe while keeping the desk's palette — a reader
+   arrives here from the desk and should not feel they have left it. */
+.doc{max-width:820px;margin:0 auto;padding:38px 22px 90px}
+.doc h1{font-family:var(--serif);font-size:clamp(28px,4vw,40px);
+  font-weight:400;color:var(--white);margin:0 0 14px;letter-spacing:-.01em}
+.doc h2{font-family:var(--serif);font-size:21px;font-weight:400;
+  color:var(--white);margin:44px 0 12px}
+.doc h3{font-size:12px;font-family:var(--mono);letter-spacing:.1em;
+  text-transform:uppercase;color:var(--amber);margin:0 0 7px}
+.doc p{color:var(--dim);line-height:1.62;margin:0 0 12px;font-size:14.5px}
+.doc p b{color:var(--white)}
+.doc .stand{font-size:16.5px;color:var(--white);max-width:62ch}
+.doc code{font-family:var(--mono);font-size:12px;background:var(--lift);
+  border:1px solid var(--rule);padding:1px 5px;color:var(--amber)}
+.doc em{color:var(--white);font-style:italic}
+
+.layout{border:1px solid var(--rule);margin:16px 0 0;background:var(--panel)}
+.lay{display:grid;grid-template-columns:190px minmax(0,1fr) 96px;gap:14px;
+  padding:11px 14px;border-bottom:1px solid var(--rule);align-items:baseline}
+.lay:last-child{border-bottom:0}
+.lay .lb{font-family:var(--mono);font-size:11px;color:var(--faint);
+  letter-spacing:.04em}
+.lay .bd{color:var(--white);font-size:13.5px;line-height:1.5}
+.lay .bd b{color:var(--amber)}
+.lay .bd .evn{color:var(--amber);font-family:var(--mono);font-size:12px}
+.lay .sr{font-family:var(--mono);font-size:10px;letter-spacing:.08em;
+  text-transform:uppercase;color:var(--green);text-align:right}
+@media(max-width:720px){
+  .lay{grid-template-columns:1fr;gap:4px}
+  .lay .sr{text-align:left}}
+
+.cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));
+  gap:11px;margin-top:16px}
+.cd{border:1px solid var(--rule);background:var(--panel);padding:13px 15px}
+.cd p{margin:0;font-size:13px}
+"""
+
+
+def build_howto(db_path: str) -> str:
+    """How to read the desk, written against the desk's own current numbers.
+
+    Generated rather than hand-written, and every example is pulled from the
+    published board. A guide with numbers typed into it goes stale the first
+    time the market is re-run, and a stale guide teaching someone to read a
+    live page is worse than no guide.
+    """
+    summary, _trades, events = load(db_path)
+    desk = board(events)
+    perf = performance(events)
+    scan = radar(events)
+
+    row = (desk["rows"][0] if desk and desk["rows"] else {})
+    cash = perf.get(row.get("campaign", ""), {}) if perf else {}
+    hot = (scan["rows"][0] if scan and scan["rows"] else {})
+
+    def line(label, body, source):
+        return (f'<div class="lay"><span class="lb">{label}</span>'
+                f'<span class="bd">{body}</span>'
+                f'<span class="sr">{source}</span></div>')
+
+    early = rupees(row.get("early_paise", 0))
+    late = rupees(row.get("late_paise", 0))
+    anatomy = (
+        line("the heading",
+             f'<b>{esc(row.get("campaign", ""))}</b> &middot; '
+             f'{row.get("movement", 0):.1f}&times; &middot; '
+             f'{row.get("merchants", 0)} merchants &middot; '
+             f'{rupees(row.get("value_paise", 0))}',
+             "the log")
+        + line("the arithmetic under it",
+               f'{early} in the opening rounds grew to {late} in the closing '
+               f'ones &middot; {row.get("settled", 0)} of '
+               f'{row.get("attempts", 0)} attempts settled &middot; '
+               f'<span class="evn">event {row.get("seq", "?")}</span>',
+               "the log")
+        + line("the green strip",
+               (f'{rupees(cash.get("revenue_paise", 0))} settled across '
+                f'{cash.get("paid", 0)} paid '
+                f'link{"" if cash.get("paid") == 1 else "s"} &middot; '
+                f'{rupees(cash.get("aov_paise", 0))} average order'
+                if cash else "no settlements against this campaign yet"),
+               "Razorpay")
+        + line("the sentence",
+               esc(_clip_words(row.get("driver", ""), 150)),
+               "the press")
+        + line("the grey chips",
+               "each one is the outlet that sentence was read from, and a "
+               "link to the article",
+               "the press")
+        + line("what operators are saying",
+               esc(_clip_words(row.get("discussion", "") or
+                               "not read for this row", 150)),
+               "Reddit")
+        + line("the r/ chips",
+               "the threads that sentence was read from, each a link",
+               "Reddit"))
+
+    scanning = (
+        line("the heading",
+             f'<b>{esc(hot.get("campaign", ""))}</b> &middot; heat '
+             f'{hot.get("heat", 0)} &middot; {hot.get("threads", 0)} threads '
+             f'in {hot.get("spread", 0)} communities',
+             "Reddit / X")
+        + line("what heat is",
+               "threads multiplied by communities. Forty posts inside one "
+               "subreddit is a community with a hobby; eight across five is "
+               "a campaign the market noticed",
+               "arithmetic")
+        + line("the chips",
+               "every post the row was counted from, with its upvotes. Click "
+               "one and you are reading the same thread the desk read",
+               "Reddit / X"))
+
+    return (
+        '<!doctype html>\n<html lang="en"><head><meta charset="utf-8">'
+        '<meta name="viewport" content="width=device-width,initial-scale=1">'
+        '<title>How to read the desk</title>'
+        f"<style>{CSS}{HOWTO_CSS}</style></head><body>"
+
+        + '<div class="bar"><span class="mark">RAZORPAY DESK</span>'
+          '<span class="navs">'
+          '<a class="nav" href="desk.html">&larr; the desk</a>'
+          '<a class="nav" href="index.html">the exchange</a>'
+          "</span></div>"
+
+        + '<main class="doc">'
+
+        + '<h1>How to read this desk.</h1>'
+          '<p class="stand">Four different kinds of thing sit on one row, and '
+          'they are not equally trustworthy. Two are computed from money that '
+          'moved. Two are quotations from outside. The page never mixes them, '
+          'and this is how to tell which is which.</p>'
+
+        + '<h2>A campaign row, line by line</h2>'
+          '<p>Using the row at the top of the board right now.</p>'
+          f'<div class="layout">{anatomy}</div>'
+
+        + '<h2>The four sources, and what each is worth</h2>'
+          '<div class="cards">'
+          '<div class="cd"><h3>The log</h3><p>Every rupee and every count. '
+          'Recomputable by anyone holding the same events, which is why each '
+          'row prints the event number it was published as. Look one up: '
+          '<code>select payload from events where seq=964</code></p></div>'
+          '<div class="cd"><h3>Razorpay</h3><p>The green strip. Real payment '
+          'links and real captures on real payment ids. Not a projection of '
+          'anything &mdash; the money either arrived or it did not.</p></div>'
+          '<div class="cd"><h3>The press</h3><p>One sentence explaining why a '
+          'category is moving, with the outlets it was read from. It explains '
+          'a row. It can never move one.</p></div>'
+          '<div class="cd"><h3>Reddit and X</h3><p>What people running these '
+          'businesses say. Same rule: attached after the ranking is fixed, '
+          'and carrying the threads so you can check the reading.</p></div>'
+          "</div>"
+
+        + '<h2>The rule that makes the ranking checkable</h2>'
+          '<p>The ranking function cannot reach the model, the news, or '
+          'Reddit. That is enforced by a test rather than by discipline, '
+          'because an agent that reads a headline and then reports a number '
+          'has laundered an opinion into a fact. Press and discussion are '
+          'attached <em>after</em> the order is fixed and can only ever add '
+          'text.</p>'
+
+        + '<h2>The amber band, and why it is separated</h2>'
+          '<p>Everything above it is arithmetic over money that moved between '
+          'merchants on this exchange. Everything below it is a count of '
+          'strangers talking about companies that are not on it. Both are '
+          'useful and they are not the same kind of fact, so they never share '
+          'a heading.</p>'
+          f'<div class="layout">{scanning}</div>'
+
+        + '<h2>What the numbers do not say</h2>'
+          '<p><b>The settled share is not a conversion rate.</b> This run pays '
+          'one payment link per merchant, because Razorpay test mode allows '
+          'thirty links per account and the privacy floor counts distinct '
+          'merchants. Unpaid links are the run declining to spend, not buyers '
+          'declining to pay.</p>'
+          '<p><b>Razorpay sees the payment, not the ad click.</b> So this '
+          'measures campaign to cash, not ad to sale. Tagging a payment link '
+          'with its campaign closes that gap, and the tag travels in the '
+          'order&rsquo;s notes.</p>'
+          '<p><b>Refused rows are not failures.</b> Campaigns below the '
+          'privacy floor are kept off the board and the refusal is logged. A '
+          'floor nobody can see is indistinguishable from no floor.</p>'
+
+        + "</main>"
+        + _footer(db_path, summary)
+        + "</body></html>")
+
+
 def build_landing(db_path: str, roster) -> str:
     """The front door, following the product narrative end to end.
 
@@ -3094,6 +3299,7 @@ def main(argv=None) -> int:
     (out / "replay.html").write_text(first, encoding="utf-8")
 
     (out / "desk.html").write_text(build_desk(db), encoding="utf-8")
+    (out / "how-to.html").write_text(build_howto(db), encoding="utf-8")
     (out / "index.html").write_text(build_landing(db, roster), encoding="utf-8")
 
     print(f"wrote index.html + desk.html + {written} merchant pages "
