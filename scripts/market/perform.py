@@ -37,7 +37,7 @@ def main(argv=None) -> int:
 
     print(f"  {len(attempts)} turns followed through to settlement, "
           f"{unmatched} on no published row\n")
-    print(f"  {'campaign':<24}{'asked':>6}{'paid':>6}{'conv':>7}"
+    print(f"  {'campaign':<24}{'asked':>6}{'paid':>6}{'settled':>9}"
           f"{'revenue':>12}{'AOV':>9}{'to pay':>8}{'stopped':>9}")
     for row in rows:
         pay = f"{row.median_seconds // 60}m" if row.median_seconds else "-"

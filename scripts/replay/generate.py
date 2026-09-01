@@ -289,6 +289,8 @@ select.pick{max-width:330px}
   font-family:var(--mono);font-size:11.5px;color:var(--dim);
   letter-spacing:.01em}
 .crow .perf b{color:var(--green);font-size:13px}
+.crow .perf i{display:block;margin-top:3px;font-style:normal;
+  font-size:10px;color:var(--faint);letter-spacing:.02em}
 .crow .why{grid-column:2/-1;color:var(--white);font-size:14.5px;margin-top:6px;
   line-height:1.45;font-family:var(--serif)}
 .crow .src{grid-column:2/-1;margin-top:8px;display:flex;gap:5px;flex-wrap:wrap}
@@ -1555,16 +1557,15 @@ def _perf_html(row) -> str:
     """
     if not row:
         return ""
-    pay = (f'{row["median_seconds_to_pay"] // 60}m'
-           if row.get("median_seconds_to_pay") else "&mdash;")
-    stopped = (f' &middot; {row["stopped"]} stopped by the gate'
+    stopped = (f' &middot; {row["stopped"]} refused by the gate'
                if row.get("stopped") else "")
     return (
         f'<div class="perf">'
-        f'<b>{row["conversion"] * 100:.0f}%</b> of {row["links"]} payment links '
-        f'were paid &middot; {rupees(row["revenue_paise"])} settled '
-        f'&middot; {rupees(row["aov_paise"])} average order '
-        f'&middot; {pay} to pay{stopped}'
+        f'<b>{rupees(row["revenue_paise"])}</b> settled across {row["paid"]} '
+        f'paid link{"" if row["paid"] == 1 else "s"} '
+        f'&middot; {rupees(row["aov_paise"])} average order{stopped}'
+        f'<i>{row["links"]} links were issued; the run pays one per merchant, '
+        f'so the rest are unspent rather than declined</i>'
         f'</div>')
 
 

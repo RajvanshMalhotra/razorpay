@@ -1,4 +1,4 @@
-"""Did the campaign actually convert? The one question only the processor can answer.
+"""What each campaign actually earned, read from settlements.
 
 WHY THIS IS THE CHEAPEST BOARD AND THE MOST DEFENSIBLE ONE.
 
@@ -16,24 +16,46 @@ that has already been written.
 
     links      payment links issued for this campaign
     paid       links that reached a captured payment
-    conversion paid / links
     revenue    what actually settled, in paise
     aov        revenue / paid
-    time       median seconds from link issued to money captured
     stopped    gate refusals on this campaign's trades
+
+`settled_share` is paid over links. Read the note below before putting it on
+a page: it is a fact about this run, not a demand signal.
 
 EVERY FIGURE IS ARITHMETIC OVER THE LOG. No model is called and no page is
 fetched — a test asserts it. The join from a payment back to a campaign is the
 board's own published `needs` list, so this reads what was already decided
 rather than deciding it again with a second model call that might disagree.
 
-WHAT IT CANNOT SEE, STATED PLAINLY. Razorpay watches the payment, not the ad
-click. It knows a link was issued and paid; it does not know the person came
-from an Instagram ad rather than a shop window. True ad-to-sale attribution
-needs the campaign tag to travel with the link — Razorpay's `notes` field on
-an order carries exactly that, and a merchant that tags its links gets real
-attribution. Until then this measures campaign-to-cash, which is a smaller
-claim and an honest one.
+WHAT "PAID" MEANS HERE, AND WHY IT IS NOT A CONVERSION RATE.
+
+A payment link in this run was settled by `scripts/market/pay.py`, which drives
+Razorpay's test-mode checkout and clicks Success on the mock bank. It pays ONE
+LINK PER MERCHANT by default, because test mode allows thirty links per account
+and the privacy floor counts distinct merchants — a second payment for a
+merchant that already has one spends a capped resource another merchant needs.
+
+Measured: 23 links issued, 17 settled, and those 17 belong to 17 distinct
+merchants. Every unpaid link is the script declining to spend, not a buyer
+declining to pay. So the settled-over-issued ratio measures the harness, and
+calling it a conversion rate would put a number on the page that a reader
+would take as demand and that means nothing of the kind.
+
+The ratio is still reported, because it is a true fact about the run and
+hiding it would be worse. It is labelled as what it is, and the page says
+which links were left deliberately unpaid.
+
+WHAT IS REAL HERE. The revenue is real money moved on real Razorpay test-mode
+payment ids. The average order value is real. The gate refusals are real
+rulings the gate actually made. Those three are the board.
+
+WHAT NOBODY CAN SEE YET. Razorpay watches the payment, not the ad click. It
+knows a link was issued and paid; it does not know the buyer came from an
+Instagram ad rather than a shop window. Real ad-to-sale attribution needs the
+campaign tag to travel with the link — Razorpay's `notes` field on an order
+carries exactly that — and until a merchant tags its links this measures
+campaign-to-cash, which is a smaller claim and an honest one.
 """
 from __future__ import annotations
 
@@ -79,11 +101,15 @@ class Row:
         return sum(1 for a in self.attempts if a.refused)
 
     @property
-    def conversion(self) -> float:
-        """Paid over asked. Zero links is 0.0, never a division by zero and
-        never 100% — a campaign nobody was asked to pay for converted
-        nothing, and reporting it as perfect would be the most flattering
-        possible lie."""
+    def settled_share(self) -> float:
+        """Settled over issued. NOT a conversion rate — see the module note:
+        the unpaid links are the payment script declining to spend, not
+        buyers declining to pay.
+
+        Zero links is 0.0, never a division by zero and never 100%: a campaign
+        nobody was asked to pay for settled nothing, and reporting that as
+        perfect would be the most flattering possible lie.
+        """
         return (self.paid / self.links) if self.links else 0.0
 
     @property
@@ -185,7 +211,7 @@ def observe(events):
 def rank(attempts):
     """Order campaigns by what they actually earned. Pure arithmetic.
 
-    Revenue first and conversion second, because a campaign that converts
+    Revenue first and settled share second, because a campaign that converts
     perfectly on two small orders has not outperformed one that converts
     two-thirds of forty large ones — and a board sold to merchants that says
     otherwise is selling them a mistake.
@@ -196,7 +222,7 @@ def rank(attempts):
         grouped[attempt.campaign].attempts.append(attempt)
 
     rows = list(grouped.values())
-    rows.sort(key=lambda r: (-r.revenue_paise, -r.conversion, r.campaign))
+    rows.sort(key=lambda r: (-r.revenue_paise, -r.settled_share, r.campaign))
     return rows
 
 
@@ -211,7 +237,8 @@ def publish(log, rows, unmatched: int, correlation_id: str) -> None:
             "links": row.links,
             "paid": row.paid,
             "stopped": row.stopped,
-            "conversion": round(row.conversion, 4),
+            # Named for what it measures. "conversion" would be read as demand.
+            "settled_share": round(row.settled_share, 4),
             "revenue_paise": row.revenue_paise,
             "aov_paise": row.aov_paise,
             "median_seconds_to_pay": row.median_seconds,

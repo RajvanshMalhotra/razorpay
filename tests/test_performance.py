@@ -45,21 +45,21 @@ def test_nothing_here_calls_a_model_or_fetches_a_page():
 
 # --- conversion --------------------------------------------------------------
 
-def test_conversion_is_paid_over_asked():
+def test_settled_share_is_paid_over_issued():
     rows = rank([_a("A"), _a("A", captured=False), _a("A"), _a("A")])
 
     assert rows[0].links == 4 and rows[0].paid == 3
-    assert rows[0].conversion == 0.75
+    assert rows[0].settled_share == 0.75
 
 
-def test_a_campaign_nobody_was_asked_to_pay_for_converted_nothing():
+def test_a_campaign_nobody_was_asked_to_pay_for_settled_nothing():
     """Zero links must not be a division by zero, and must never be 100% —
     that would be the most flattering possible lie."""
     rows = rank([_a("A", link=False, captured=False),
                  _a("A", link=False, captured=False)])
 
     assert rows[0].links == 0
-    assert rows[0].conversion == 0.0
+    assert rows[0].settled_share == 0.0
 
 
 def test_revenue_counts_only_what_was_captured():
@@ -72,8 +72,8 @@ def test_revenue_counts_only_what_was_captured():
 
 
 def test_ranking_puts_earnings_above_a_flattering_rate():
-    """A campaign converting perfectly on two small orders has not beaten one
-    converting two thirds of forty large ones."""
+    """A campaign settling every one of two small orders has not beaten one
+    settling two thirds of forty large ones."""
     small = [_a("Small", amount=1000) for _ in range(2)]
     big = ([_a("Big", amount=50_000) for _ in range(4)]
            + [_a("Big", amount=50_000, captured=False) for _ in range(2)])
@@ -81,7 +81,7 @@ def test_ranking_puts_earnings_above_a_flattering_rate():
     rows = rank(small + big)
 
     assert [r.campaign for r in rows] == ["Big", "Small"]
-    assert rows[1].conversion == 1.0        # and it still lost
+    assert rows[1].settled_share == 1.0        # and it still lost
 
 
 def test_the_median_ignores_the_ones_that_never_paid():
@@ -183,8 +183,21 @@ def test_every_row_says_how_much_trading_it_speaks_for():
 
     row = log.read_all()[0].payload
     assert row["campaign"] == "A"
-    assert row["conversion"] == 1.0
+    assert row["settled_share"] == 1.0
     assert row["revenue_paise"] == 5000
     assert row["median_seconds_to_pay"] == 120
     assert row["unmatched_turns"] == 7
     assert row["scope"] == "performance"
+
+
+def test_the_share_is_never_called_a_conversion_rate():
+    """Measured: the run pays one link per merchant, so 17 of 23 links settled
+    across 17 distinct merchants and every unpaid one is the script declining
+    to spend rather than a buyer declining to pay. A field named `conversion`
+    would be read as demand and would mean nothing of the kind."""
+    log = EventLog(":memory:")
+    publish(log, rank([_a("A", amount=5000)]), 0, "corr")
+
+    payload = log.read_all()[0].payload
+    assert "conversion" not in payload
+    assert payload["settled_share"] == 1.0
