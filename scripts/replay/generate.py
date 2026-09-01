@@ -57,6 +57,7 @@ from scripts.replay.read import (
     failure_threads,
     load,
     merchant_view,
+    performance,
     radar,
     rails,
     storefront,
@@ -283,6 +284,11 @@ select.pick{max-width:330px}
 .crow .mv,.crow .mc,.crow .vl{font-size:13px;text-align:right}
 .crow .mv{color:var(--amber)}
 .crow .mc,.crow .vl{color:var(--dim)}
+.crow .perf{grid-column:1/-1;margin:0 0 9px;padding:6px 10px;
+  background:rgba(255,255,255,.045);border-left:2px solid var(--green);
+  font-family:var(--mono);font-size:11.5px;color:var(--dim);
+  letter-spacing:.01em}
+.crow .perf b{color:var(--green);font-size:13px}
 .crow .why{grid-column:2/-1;color:var(--white);font-size:14.5px;margin-top:6px;
   line-height:1.45;font-family:var(--serif)}
 .crow .src{grid-column:2/-1;margin-top:8px;display:flex;gap:5px;flex-wrap:wrap}
@@ -1481,7 +1487,7 @@ def build_desk(db_path: str) -> str:
         'sentence under each row comes from the press and carries its '
         'source.</p>'
         + _board_html(board(events), auction(events), summary,
-                      radar(events)))
+                      radar(events), performance(events)))
 
     lock = (
         '<div class="lock" id="lock"><div class="card">'
@@ -1539,6 +1545,29 @@ def build_desk(db_path: str) -> str:
     )
 
 
+def _perf_html(row) -> str:
+    """What the campaign actually earned, on the row that ranked it.
+
+    Deliberately part of the row and not a section of its own. Movement says a
+    category is climbing; this says whether anyone paid, and a reader who has
+    to scroll to a second table to find that out has been shown the
+    flattering half first.
+    """
+    if not row:
+        return ""
+    pay = (f'{row["median_seconds_to_pay"] // 60}m'
+           if row.get("median_seconds_to_pay") else "&mdash;")
+    stopped = (f' &middot; {row["stopped"]} stopped by the gate'
+               if row.get("stopped") else "")
+    return (
+        f'<div class="perf">'
+        f'<b>{row["conversion"] * 100:.0f}%</b> of {row["links"]} payment links '
+        f'were paid &middot; {rupees(row["revenue_paise"])} settled '
+        f'&middot; {rupees(row["aov_paise"])} average order '
+        f'&middot; {pay} to pay{stopped}'
+        f'</div>')
+
+
 def _radar_html(scan) -> str:
     """Campaigns the outside world is reacting to, kept visibly apart.
 
@@ -1593,7 +1622,7 @@ def _talk_html(row) -> str:
             + (f'<div class="thr">{threads}</div>' if threads else ""))
 
 
-def _board_html(desk, sale, summary, scan=None) -> str:
+def _board_html(desk, sale, summary, scan=None, perf=None) -> str:
     """Razorpay's internal board, then the auction that sells a piece of it.
 
     Violet appears on no other surface, and the header says who may read
@@ -1610,7 +1639,8 @@ def _board_html(desk, sale, summary, scan=None) -> str:
                 f'{esc(s["publisher"] or s["title"][:40])}</a>'
                 for s in row.get("sources", [])[:6])
             rows += (
-                f'<div class="crow"><span class="rk">{row["rank"]}</span>'
+                f'<div class="crow">{_perf_html((perf or {}).get(row["campaign"]))}'
+                f'<span class="rk">{row["rank"]}</span>'
                 f'<span class="nm">{esc(row["campaign"])}</span>'
                 f'<span class="mv">{movement}</span>'
                 f'<span class="mc">{row["merchants"]} merchants</span>'

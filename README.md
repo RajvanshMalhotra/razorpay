@@ -49,7 +49,7 @@ dumps the same events.
 
 | | |
 |---|---|
-| Recorded events | **986** |
+| Recorded events | **991** |
 | Merchant brokers | **32** |
 | Negotiations / rounds | **67** / 180 (2.7 avg) |
 | Committed on Razorpay orders | **₹1,39,884** |
@@ -59,7 +59,7 @@ dumps the same events.
 | Drifts detected / repaired | **21 / 17** |
 | Freezes / resumes | **1 / 1** |
 | Humans involved | **0** |
-| Tests | **676** |
+| Tests | **689** |
 
 ### One trade, end to end
 
@@ -100,7 +100,7 @@ failed checks** rather than guessing. An unconfirmed settlement stays unconfirme
 
 ## How it is built
 
-Python, ~15,000 lines, 676 tests. Three properties do the load-bearing work:
+Python, ~15,000 lines, 689 tests. Three properties do the load-bearing work:
 
 **One append-only event log**, enforced by a database trigger. Order books, point
 balances, the relationship graph and every page in the replay are *projections* of it,

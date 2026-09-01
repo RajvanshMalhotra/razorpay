@@ -510,6 +510,13 @@ def board(events):
     }
 
 
+def performance(events):
+    """Conversion per campaign, keyed by campaign name so the board above can
+    carry it inline rather than repeating the list underneath."""
+    return {e.payload["campaign"]: e.payload for e in events
+            if e.type == "CAMPAIGN_PERFORMANCE"}
+
+
 def radar(events):
     """The brand radar: campaigns the outside world is reacting to.
 

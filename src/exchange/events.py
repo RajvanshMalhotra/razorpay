@@ -55,6 +55,8 @@ PRIVACY_REFUSED = "PRIVACY_REFUSED"
 # house's view across every client, and a merchant reaches it only by
 # winning the auction for a lot minted from it.
 CAMPAIGN_RANKED = "CAMPAIGN_RANKED"
+# Did the campaign convert? Computed from settlements, never scraped.
+CAMPAIGN_PERFORMANCE = "CAMPAIGN_PERFORMANCE"
 AUCTION_OPENED = "AUCTION_OPENED"
 BID_PLACED = "BID_PLACED"
 AUCTION_CLEARED = "AUCTION_CLEARED"

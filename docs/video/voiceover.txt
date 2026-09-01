@@ -29,7 +29,7 @@ on before it moves, and written to a log you can read back.
 VO 2b  (over the first screen recording)
 
 This is a real run. Thirty-two businesses. Nine hundred and
-eighty-six recorded events. Not one figure on screen was typed by
+ninety-one recorded events. Not one figure on screen was typed by
 hand.
 
 ------------------------------------------------------------------
@@ -146,4 +146,4 @@ of it.
 
 CLOSING CARD  (black type on white, held three seconds)
 
-986 events . 74 rulings recorded . 17 repairs . 0 humans
+991 events . 74 rulings recorded . 17 repairs . 0 humans
