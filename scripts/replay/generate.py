@@ -1562,6 +1562,7 @@ def build_desk(db_path: str) -> str:
           'live floor</button>'
           '<button class="nav house" data-view="board" aria-selected="false">'
           'the board</button>'
+          '<a class="nav" href="auction.html">the auction</a>'
           '<a class="nav" href="how-to.html">how to read this</a>'
           '<a class="nav" href="replay.html">&larr; exchange</a>'
           "</span></div>"
@@ -1732,30 +1733,14 @@ def _board_html(desk, sale, summary, scan=None, perf=None) -> str:
                       'scripts.market.research over this log.</div>')
 
     if sale:
-        bids = "".join(
-            f'<tr><td class="a">{esc(who(e.actor_id))}</td>'
-            f'<td>{esc(e.payload.get("amount"))}</td>'
-            f'<td class="q">{esc(str(e.payload.get("reason", ""))[:130])}</td>'
-            f"</tr>"
-            for e in sale["bids"])
-        paid = (sale["royalties"][0].payload.get("amount")
-                if sale["royalties"] else 0)
-        return board_html + _panel(
-            "the lot that went to auction",
-            # THE RESULT LEADS. Under eight rows of bids a reader had to
-            # read the whole table to learn who won, which is the one thing
-            # they came to the block for.
-            f'<div class="won"><b>{esc(who(sale["winner"]))}</b> won it for '
-            f'<b>{esc(sale["price"])} points</b>'
-            f'<i>the runner-up&rsquo;s bid, not its own &mdash; and '
-            f'{len(sale["royalties"])} contributing merchants each earned '
-            f'{esc(paid)} points from a win they never knew was being '
-            f'sold</i></div>'
-            f'<p style="margin:0 0 13px;font-family:var(--serif);'
-            f'font-size:17px">&ldquo;{esc(sale["headline"])}&rdquo;</p>'
-            f'<table><tr><th>bidder</th><th>points</th>'
-            f'<th>why they valued it there</th></tr>{bids}</table>',
-            note="sealed bids, second price")
+        # The auction has its own page. Sitting under the board it was one
+        # more block on an already long instrument, and the thing it proves —
+        # that intelligence is priced, sold and paid back for — is a separate
+        # argument from what is trending.
+        return board_html + (
+            f'<div class="note">The lot mined from this board sold for '
+            f'<b>{esc(sale["price"])}</b> points. '
+            f'<a href="auction.html">See the auction &rarr;</a></div>')
 
     return board_html + (
         f'<div class="note">The privacy floor refused: only '
@@ -2614,6 +2599,14 @@ if(!('IntersectionObserver' in window)){
 
 
 HOWTO_CSS = """
+/* THE DESK IS A FIXED-HEIGHT INSTRUMENT: body is a 100vh flex column with a
+   scrolling main and a footer pinned as a flex child. A long document in
+   that shell scrolls its content UNDERNEATH the footer, which is what put
+   the gate totals on top of the table. These pages are documents, so they
+   opt out of the shell and scroll normally. */
+html,body{height:auto;overflow:visible}
+body{display:block}
+footer{flex:initial}
 /* The guide. Reads as a document rather than an instrument, so it gets a
    measure and room to breathe while keeping the desk's palette — a reader
    arrives here from the desk and should not feel they have left it. */
@@ -2650,7 +2643,118 @@ HOWTO_CSS = """
   gap:11px;margin-top:16px}
 .cd{border:1px solid var(--rule);background:var(--panel);padding:13px 15px}
 .cd p{margin:0;font-size:13px}
+
+.won{margin:22px 0 0;padding:14px 17px;border-left:3px solid var(--green);
+  background:rgba(38,208,124,.08);font-size:17px;color:var(--white)}
+.won b{color:var(--green)}
+.won i{display:block;margin-top:5px;font-style:normal;font-size:12px;
+  color:var(--dim);font-family:var(--mono)}
+.doc .lot{font-family:var(--serif);font-size:19px;color:var(--white);
+  line-height:1.45;border-left:2px solid var(--amber);padding-left:14px;
+  margin:0 0 14px}
+table.bids{width:100%;border-collapse:collapse;margin-top:14px;
+  border:1px solid var(--rule)}
+table.bids th{font-family:var(--mono);font-size:10px;letter-spacing:.09em;
+  text-transform:uppercase;color:var(--faint);text-align:left;
+  padding:8px 12px;border-bottom:1px solid var(--rule);background:var(--lift)}
+table.bids td{padding:9px 12px;border-bottom:1px solid var(--rule);
+  color:var(--dim);font-size:13px;vertical-align:top}
+table.bids tr:last-child td{border-bottom:0}
+table.bids td.a{color:var(--white);white-space:nowrap}
+table.bids td.pt{font-family:var(--mono);color:var(--white);text-align:right;
+  white-space:nowrap}
+table.bids td.mk{font-family:var(--mono);font-size:10px;color:var(--green);
+  text-transform:uppercase;letter-spacing:.07em;white-space:nowrap}
+table.bids tr.top td{background:rgba(255,255,255,.035)}
+table.bids td.q{font-size:12.5px;line-height:1.5}
 """
+
+
+def build_auction(db_path: str) -> str:
+    """The sealed auction, on a page of its own.
+
+    Under the board it was one more block on an already long instrument, and
+    a reader had to scroll past six radar rows to reach it. What it proves is
+    also a separate argument: not what is trending, but that the intelligence
+    has a price, that the price is set by a rule rather than by the seller,
+    and that the merchants whose trading produced it are paid.
+    """
+    summary, _trades, events = load(db_path)
+    sale = auction(events)
+
+    if not sale:
+        body = ('<div class="empty">No auction on this log. Run '
+                'scripts.market.house_cycle over it.</div>')
+    else:
+        ordered = sorted(sale["bids"],
+                         key=lambda e: -int(e.payload.get("amount") or 0))
+        rows = ""
+        for n, e in enumerate(ordered):
+            mark = ("won" if n == 0 else "set the price" if n == 1 else "")
+            rows += (
+                f'<tr class="{"top" if n < 2 else ""}">'
+                f'<td class="a">{esc(who(e.actor_id))}</td>'
+                f'<td class="pt">{esc(e.payload.get("amount"))}</td>'
+                f'<td class="mk">{mark}</td>'
+                f'<td class="q">{esc(str(e.payload.get("reason", ""))[:190])}</td>'
+                f"</tr>")
+        paid = (sale["royalties"][0].payload.get("amount")
+                if sale["royalties"] else 0)
+        body = (
+            f'<div class="won"><b>{esc(who(sale["winner"]))}</b> won it for '
+            f'<b>{esc(sale["price"])} points</b>'
+            f'<i>the runner-up&rsquo;s bid, not its own</i></div>'
+
+            '<h2>What was sold</h2>'
+            f'<p class="lot">&ldquo;{esc(sale["headline"])}&rdquo;</p>'
+            '<p>The headline above is free and published to everyone. What '
+            'the winner actually bought is the detail underneath it &mdash; '
+            'the ranked campaigns, how far each has spread, and the threads '
+            'each was counted from.</p>'
+
+            '<h2>The bids, sealed</h2>'
+            '<p>Every agent priced the lot without seeing any other bid. '
+            'Under a second-price rule the honest number is also the best '
+            'one to write down, which is why the reasoning below is about '
+            'what the lot is worth to that business rather than about '
+            'outbidding anyone.</p>'
+            f'<table class="bids"><tr><th>bidder</th><th>points</th>'
+            f'<th></th><th>why they valued it there</th></tr>{rows}</table>'
+
+            '<h2>Why the winner paid less than it bid</h2>'
+            f'<p>The top bid wins and pays the <em>second</em> price. '
+            f'Bidding your true value can then never cost you more than the '
+            f'thing is worth to you, so nobody has to guess at rivals &mdash; '
+            f'and the reasoning in that table stays legible instead of '
+            f'becoming a bluff.</p>'
+
+            '<h2>Who got paid</h2>'
+            f'<p><b>{len(sale["royalties"])} merchants</b> each earned '
+            f'<b>{esc(paid)} points</b> from this sale. Their trading '
+            f'produced the insight; none of them was named in it, and none '
+            f'knew it was being sold. That is the whole shape of the '
+            f'product: the platform sees what no single client can, sells '
+            f'it once, and pays the clients whose activity made it.</p>')
+
+    return (
+        '<!doctype html>\n<html lang="en"><head><meta charset="utf-8">'
+        '<meta name="viewport" content="width=device-width,initial-scale=1">'
+        '<title>The auction</title>'
+        f"<style>{CSS}{HOWTO_CSS}</style></head><body>"
+        + '<div class="bar"><span class="mark">RAZORPAY DESK</span>'
+          '<span class="navs">'
+          '<a class="nav" href="desk.html">&larr; the desk</a>'
+          '<a class="nav" href="how-to.html">how to read this</a>'
+          "</span></div>"
+        + '<main class="doc"><h1>One insight, sold once.</h1>'
+          '<p class="stand">Razorpay mints a lot from what it can see across '
+          'every client, sells it by sealed bid, and pays a royalty to the '
+          'merchants whose trading produced it &mdash; without naming any of '
+          'them.</p>'
+        + body
+        + "</main>"
+        + _footer(db_path, summary)
+        + "</body></html>")
 
 
 def build_howto(db_path: str) -> str:
@@ -3300,6 +3404,7 @@ def main(argv=None) -> int:
 
     (out / "desk.html").write_text(build_desk(db), encoding="utf-8")
     (out / "how-to.html").write_text(build_howto(db), encoding="utf-8")
+    (out / "auction.html").write_text(build_auction(db), encoding="utf-8")
     (out / "index.html").write_text(build_landing(db, roster), encoding="utf-8")
 
     print(f"wrote index.html + desk.html + {written} merchant pages "
