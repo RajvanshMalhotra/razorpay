@@ -1577,8 +1577,16 @@ def build_desk(db_path: str) -> str:
     )
 
 
-def _derivation(row) -> str:
+def _derivation(row, perf=None) -> str:
     """The arithmetic behind the multiple, and the event it was published as.
+
+    It also carries what the campaign actually collected, which used to be a
+    two-line green strip of its own. That strip spent most of its space on a
+    caveat about the payment harness — "the run pays one per merchant" — which
+    is a fact about how the demo was run and not about the market, and it
+    printed an average order that simply repeated the total whenever there
+    was one payment. One number survived that block and it now sits on this
+    line.
 
     Every other figure on this desk carries the event number it came from.
     These rows did not, which left the most load-bearing numbers on the page
@@ -1588,38 +1596,21 @@ def _derivation(row) -> str:
     """
     early, late = row.get("early_paise", 0), row.get("late_paise", 0)
     if early > 0:
-        sum_ = (f'{rupees(early)} in the opening rounds grew to '
-                f'{rupees(late)} in the closing ones')
+        sum_ = f'grew from {rupees(early)} to {rupees(late)}'
+
     else:
-        sum_ = ('nothing in the opening rounds, so there is no multiple '
-                'to report')
+        sum_ = 'started at nothing, so there is no multiple to report'
+
+    cash = perf or {}
+    money = (f' &middot; {rupees(cash["revenue_paise"])} collected'
+             if cash.get("revenue_paise") else "")
+    stopped = (f' &middot; {cash["stopped"]} stopped by the gate'
+               if cash.get("stopped") else "")
     return (
         f'<div class="deriv">{sum_} &middot; '
         f'{row.get("settled", 0)} of {row.get("attempts", 0)} attempts '
-        f'settled &middot; '
+        f'settled{money}{stopped} &middot; '
         f'<span class="evn">event {row.get("seq", "?")}</span></div>')
-
-
-def _perf_html(row) -> str:
-    """What the campaign actually earned, on the row that ranked it.
-
-    Deliberately part of the row and not a section of its own. Movement says a
-    category is climbing; this says whether anyone paid, and a reader who has
-    to scroll to a second table to find that out has been shown the
-    flattering half first.
-    """
-    if not row:
-        return ""
-    stopped = (f' &middot; {row["stopped"]} refused by the gate'
-               if row.get("stopped") else "")
-    return (
-        f'<div class="perf">'
-        f'<b>{rupees(row["revenue_paise"])}</b> settled across {row["paid"]} '
-        f'paid link{"" if row["paid"] == 1 else "s"} '
-        f'&middot; {rupees(row["aov_paise"])} average order{stopped}'
-        f'<i>{row["links"]} links were issued; the run pays one per merchant, '
-        f'so the rest are unspent rather than declined</i>'
-        f'</div>')
 
 
 def _radar_html(scan) -> str:
@@ -1699,10 +1690,7 @@ def _board_html(desk, sale, summary, scan=None, perf=None) -> str:
                 f'<span class="mv">{movement}</span>'
                 f'<span class="mc">{row["merchants"]} merchants</span>'
                 f'<span class="vl">{rupees(row["value_paise"])}</span>'
-                + _derivation(row)
-                # Directly under the name. Above it, the strip read as a
-                # banner floating between two rows and belonging to neither.
-                + _perf_html((perf or {}).get(row["campaign"]))
+                + _derivation(row, (perf or {}).get(row['campaign']))
                 + f'<div class="why">{esc(row.get("driver", ""))}</div>'
                 f'<div class="src">{sources}</div>'
                 + _talk_html(row) + '</div>')
@@ -2690,13 +2678,7 @@ def build_howto(db_path: str) -> str:
                f'{row.get("attempts", 0)} attempts settled &middot; '
                f'<span class="evn">event {row.get("seq", "?")}</span>',
                "the log")
-        + line("the green strip",
-               (f'{rupees(cash.get("revenue_paise", 0))} settled across '
-                f'{cash.get("paid", 0)} paid '
-                f'link{"" if cash.get("paid") == 1 else "s"} &middot; '
-                f'{rupees(cash.get("aov_paise", 0))} average order'
-                if cash else "no settlements against this campaign yet"),
-               "Razorpay")
+
         + line("the sentence",
                esc(_clip_words(row.get("driver", ""), 150)),
                "the press")
