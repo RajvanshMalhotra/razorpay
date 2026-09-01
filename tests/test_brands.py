@@ -308,17 +308,21 @@ def test_socialcrawl_asks_x_once_not_once_per_brand():
 
         def x_search(self, query):
             calls.append(query)
-            return type("R", (), {"error": "", "items": [
-                {"text": "Everyone is talking about the Instagram rebrand",
-                 "url": "https://x.com/1", "when": "2026-08-30",
-                 "score": 900, "comments": 40}]})()
+            # The Analytics archetype: prose with citations, never a list.
+            return type("R", (), {
+                "error": "", "items": [],
+                "answer": "**Instagram** (wordmark rebrand)."
+                          "[[1]](https://x.com/a/status/1)"})()
 
     found = discover(brands=("Apple", "Meta", "Nike", "CRED"),
                      searcher=lambda q, a: [], crawl=Crawl())
 
     assert len(calls) == 1
     assert len(found) == 1 and found[0].source == "x"
-    assert found[0].score == 900
+    assert found[0].brand == "Instagram"
+    # X reports no engagement, and inventing one would put a fabricated
+    # number into a ranking tiebreak.
+    assert found[0].score is None
 
 
 def test_socialcrawl_failing_leaves_the_reddit_side_standing():
@@ -327,7 +331,8 @@ def test_socialcrawl_failing_leaves_the_reddit_side_standing():
             return type("R", (), {"error": "insufficient credits", "items": []})()
 
         def x_search(self, query):
-            return type("R", (), {"error": "insufficient credits", "items": []})()
+            return type("R", (), {"error": "insufficient credits",
+                                  "items": [], "answer": ""})()
 
     found = discover(brands=("Apple",),
                      searcher=lambda q, a: [
@@ -336,3 +341,49 @@ def test_socialcrawl_failing_leaves_the_reddit_side_standing():
                      crawl=Broken())
 
     assert [m.source for m in found] == ["reddit"]
+
+
+def test_a_campaign_x_names_is_then_measured_on_reddit():
+    """On its own an X citation is one thread in one community and the floor
+    refuses it — correctly, one tweet is not a campaign. Its worth is naming
+    campaigns nothing in the seed list would: Cracker Barrel and Kuda came
+    from X and appear in no marketing subreddit we search."""
+    searched = []
+
+    class Crawl:
+        credits_remaining = 50
+
+        def reddit_search(self, query):
+            searched.append(query)
+            return type("R", (), {"error": "", "items": []})()
+
+        def x_search(self, query):
+            return type("R", (), {
+                "error": "", "items": [],
+                "answer": "**Cracker Barrel** (rebrand backlash)."
+                          "[[1]](https://x.com/a/status/1)"})()
+
+    discover(brands=("Instagram",), searcher=lambda q, a: [], crawl=Crawl())
+
+    assert any("Instagram" in q for q in searched)
+    assert any("Cracker Barrel" in q for q in searched)
+
+
+def test_a_brand_already_on_the_list_is_not_searched_twice():
+    """Each search costs a credit and a free balance is 100."""
+    searched = []
+
+    class Crawl:
+        def reddit_search(self, query):
+            searched.append(query)
+            return type("R", (), {"error": "", "items": []})()
+
+        def x_search(self, query):
+            return type("R", (), {
+                "error": "", "items": [],
+                "answer": "**Instagram** (wordmark rebrand)."
+                          "[[1]](https://x.com/a/status/1)"})()
+
+    discover(brands=("Instagram",), searcher=lambda q, a: [], crawl=Crawl())
+
+    assert len(searched) == 1

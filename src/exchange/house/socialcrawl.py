@@ -68,6 +68,9 @@ FIELDS = {
 class Reply:
     """What came back, plus what it cost and what it lost."""
     items: list
+    # Set only by the Analytics archetype, which answers in prose rather than
+    # returning rows. Empty for every list endpoint.
+    answer: str = ""
     credits_used: int = 0
     credits_remaining: int | None = None
     cached: bool = False
@@ -155,6 +158,7 @@ class SocialCrawl:
         self.credits_remaining = body.get("credits_remaining")
         return Reply(
             items=read,
+            answer=(data.get("answer") or "") if isinstance(data, dict) else "",
             credits_used=body.get("credits_used", 0),
             credits_remaining=body.get("credits_remaining"),
             cached=bool(body.get("cached")),
@@ -186,11 +190,46 @@ class SocialCrawl:
                         query=query, sort=sort, timeframe=timeframe)
 
     def x_search(self, query: str) -> Reply:
-        """5 credits. Natural-language search over X with source citations.
+        """5 credits. A synthesised answer over X, with source citations.
 
-        There is no plain keyword search over tweets on this API — the listed
-        X endpoints are profile, user timeline, single tweet, community
-        timeline and this. So the radar asks a question rather than matching a
-        term, which is why the query reads like a sentence.
+        THIS IS NOT A LIST ENDPOINT and reading it as one is how X appeared to
+        be silently broken: there are no X endpoints on this API that keyword
+        search tweets, so `ai-search` is the only way in, and it returns the
+        Analytics archetype — `{answer, sources}` — with no `data.items` at
+        all. The first version read `items`, found none, and reported that
+        nobody on X was discussing anything, having spent five credits to
+        say so.
+
+        The answer names companies in bold with numbered citations, so it is
+        parsed back into one row per company with the URL it cited.
         """
-        return self.get("twitter/ai-search", query=query)
+        reply = self.get("twitter/ai-search", query=query)
+        if reply.error:
+            return reply
+        return reply
+
+
+def parse_answer(answer: str) -> list[dict]:
+    """Turn a cited prose answer into one row per company.
+
+    The shape is stable and simple: `**Company** (what happened).[[1]](url)`.
+    Anything that does not name a company in bold is dropped rather than
+    guessed at, because a row whose company was inferred cannot be checked.
+    """
+    import re as _re
+
+    rows = []
+    for block in answer.split("\n\n"):
+        name = _re.search(r"\*\*([^*]+)\*\*", block)
+        if not name:
+            continue
+        urls = _re.findall(r"\((https?://[^)]+)\)", block)
+        if not urls:
+            continue
+        # The prose minus the markdown, which is what a reader would see.
+        said = _re.sub(r"\[\[\d+\]\]\([^)]+\)", "", block)
+        said = _re.sub(r"\*\*", "", said).strip()
+        for url in urls:
+            rows.append({"company": name.group(1).strip(),
+                         "text": said[:250], "url": url})
+    return rows

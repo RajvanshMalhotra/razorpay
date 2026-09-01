@@ -163,3 +163,47 @@ def test_a_search_result_is_wrapped_in_post_not_bare():
     assert got.unmapped == 0
     assert got.items[0]["community"] == "popculturechat"
     assert got.items[0]["author"] == "mlg1981"
+
+
+# --- the archetype that is not a list ----------------------------------------
+
+def test_ai_search_answers_in_prose_and_has_no_items():
+    """There are no X endpoints that keyword search tweets, so ai-search is
+    the only way in — and it returns {answer, sources}, not data.items.
+    Reading it as a list found nothing and reported that nobody on X was
+    discussing anything, having spent five credits to say so."""
+    body = {"success": True, "platform": "twitter",
+            "endpoint": "/v1/twitter/ai-search",
+            "data": {"answer": "**Cracker Barrel** (rebrand backlash)."
+                               "[[1]](https://x.com/a/status/1)",
+                     "sources": [{"url": "https://x.com/a/status/1"}]},
+            "credits_used": 5, "credits_remaining": 63}
+
+    got = SocialCrawl("k", opener=_opener(body)).x_search("what is hot")
+
+    assert got.items == []          # correctly, there is no list here
+    assert got.answer.startswith("**Cracker Barrel**")
+    assert got.credits_used == 5
+
+
+def test_a_cited_answer_becomes_one_row_per_company():
+    from exchange.house.socialcrawl import parse_answer
+
+    rows = parse_answer(
+        "**Kuda** (brand redesign).[[1]](https://x.com/a/status/1)\n\n"
+        "**Cracker Barrel** (rebrand backlash).[[2]](https://x.com/b/status/2)"
+        "[[3]](https://x.com/c/status/3)\n\n"
+        "These are the primary ones drawing engagement.")
+
+    assert [r["company"] for r in rows] == [
+        "Kuda", "Cracker Barrel", "Cracker Barrel"]
+    assert rows[0]["url"] == "https://x.com/a/status/1"
+    # The closing sentence names no company and cites nothing, so it is not a
+    # row — a row whose company was inferred cannot be checked.
+    assert len(rows) == 3
+
+
+def test_an_uncited_claim_is_not_a_row():
+    from exchange.house.socialcrawl import parse_answer
+
+    assert parse_answer("**SomeBrand** did something, allegedly.") == []

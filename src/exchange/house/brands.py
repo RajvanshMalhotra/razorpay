@@ -60,6 +60,7 @@ from exchange.house.social import (
     _dedupe,
     search_posts,
 )
+from exchange.house.socialcrawl import parse_answer
 from exchange.llm.base import LLMMessage
 
 # A campaign discussed in a single thread is one person's opinion. Two
@@ -184,7 +185,20 @@ def discover(brands=SEED_BRANDS, searcher=None, x=None,
     if crawl is not None:
         found.extend(_from_crawl(crawl, brands))
         if x is None:          # not both; the direct token wins if present
-            found.extend(_x_from_crawl(crawl))
+            from_x = _x_from_crawl(crawl)
+            found.extend(from_x)
+
+            # X FINDS THEM, REDDIT MEASURES THEM. On its own X contributes one
+            # citation per company, which is one thread in one community and
+            # is refused by the floor — correctly, because one tweet is not a
+            # campaign. Its worth is that it names campaigns nothing in our
+            # seed list would have: Cracker Barrel and Kuda came back from X
+            # and appear in no marketing subreddit we search. So whatever X
+            # names is then searched on Reddit, where the threads and the
+            # engagement figures are, and only then can it earn a place.
+            discovered = {m.brand for m in from_x if m.brand} - set(brands)
+            if discovered:
+                found.extend(_from_crawl(crawl, sorted(discovered)))
     return _unique(found)
 
 
@@ -219,20 +233,27 @@ def _from_crawl(crawl, brands) -> list[Mention]:
 def _x_from_crawl(crawl) -> list[Mention]:
     """One natural-language question over X for the whole field.
 
-    `twitter/ai-search` costs five credits and answers a question rather than
-    matching a term, so asking once about everything is both cheaper and
-    closer to what it is good at.
+    `twitter/ai-search` is the only way into X on this API — there is no
+    keyword search over tweets — and it answers in prose with citations
+    rather than returning rows. So the answer is parsed back into one mention
+    per company, each carrying the tweet it cited.
+
+    WHAT X IS FOR HERE, AND WHAT IT IS NOT. It reports no upvote or reply
+    count, so these mentions carry no engagement and every one of them sits in
+    the single community "x". They widen the field — X surfaced Cracker Barrel
+    and Kuda, which no marketing subreddit had mentioned — and they let a
+    campaign be seen at all. Depth still has to come from Reddit, where the
+    threads and the numbers are.
     """
     reply = crawl.x_search(
         "Which brand marketing campaigns, ads or rebrands are people "
         "reacting to on X right now? Name the company for each.")
-    if reply.error:
+    if reply.error or not reply.answer:
         return []
-    return [Mention(brand="", title=item.get("text", "")[:250],
-                    url=item.get("url", ""), community="x", source="x",
-                    when=(item.get("when") or "")[:10],
-                    score=item.get("score"), comments=item.get("comments"))
-            for item in reply.items]
+    return [Mention(brand=row["company"], title=row["text"], url=row["url"],
+                    community="x", source="x", when="",
+                    score=None, comments=None)
+            for row in parse_answer(reply.answer)]
 
 
 def _reddit_search(query, anchors):
