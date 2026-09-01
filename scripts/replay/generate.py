@@ -1517,8 +1517,9 @@ def build_desk(db_path: str) -> str:
         'any one client could. The ranking is arithmetic over this log; the '
         'sentence under each row comes from the press and carries its '
         'source.</p>'
-        + _board_html(board(events), auction(events), summary,
-                      radar(events), performance(events)))
+        + _board_html(board(events), summary, radar(events),
+                      performance(events),
+                      {b["category"]: b for b in (benchmarks(events) or [])}))
 
     lock = (
         '<div class="lock" id="lock"><div class="card">'
@@ -1577,6 +1578,29 @@ def build_desk(db_path: str) -> str:
     )
 
 
+def _price_html(row, bench) -> str:
+    """What the category costs, where the trend claim used to be.
+
+    The row led with a bare movement multiple. On this data that is a trend
+    claim a sample of three cannot support, and it crowded out the thing a
+    merchant can act on: what the category clears at, and whether pushing
+    back has ever worked in it.
+
+    Falls back to the old figures for a campaign with no benchmark yet. A row
+    with nothing where its numbers should be is worse than one with weaker
+    numbers.
+    """
+    if not bench:
+        return (f'<span class="mv">{row.get("movement", 0):.1f}&times;</span>'
+                f'<span class="mc">{row["merchants"]} merchants</span>'
+                f'<span class="vl">{rupees(row["value_paise"])}</span>')
+    share = bench["below_ask_share"]
+    move = f'{share * 100:.0f}% move' if share else "never move"
+    return (f'<span class="mv">{rupees(bench["clears_paise"])}</span>'
+            f'<span class="mc">{move}</span>'
+            f'<span class="vl">{rupees(row["value_paise"])}</span>')
+
+
 def _derivation(row, perf=None) -> str:
     """The arithmetic behind the multiple, and the event it was published as.
 
@@ -1596,7 +1620,13 @@ def _derivation(row, perf=None) -> str:
     """
     early, late = row.get("early_paise", 0), row.get("late_paise", 0)
     if early > 0:
-        sum_ = f'grew from {rupees(early)} to {rupees(late)}'
+        # THE MOVEMENT LIVES HERE NOW, BESIDE THE SAMPLE IT CAME FROM.
+        # It used to head the row as a bare "2.0x", which is a trend claim.
+        # Electronics Assembly's 2.0x is 4,995 growing to 9,975 across three
+        # settled trades - roughly one extra trade landing. Alone it is
+        # over-read; printed next to "3 of 8 attempts" it is honest.
+        sum_ = (f'{row.get("movement", 0):.1f}&times; over the run, '
+                f'{rupees(early)} to {rupees(late)}')
 
     else:
         sum_ = 'started at nothing, so there is no multiple to report'
@@ -1667,7 +1697,7 @@ def _talk_html(row) -> str:
             + (f'<div class="thr">{threads}</div>' if threads else ""))
 
 
-def _board_html(desk, sale, summary, scan=None, perf=None) -> str:
+def _board_html(desk, summary, scan=None, perf=None, bench=None) -> str:
     """Razorpay's internal board, then the auction that sells a piece of it.
 
     Violet appears on no other surface, and the header says who may read
@@ -1687,9 +1717,7 @@ def _board_html(desk, sale, summary, scan=None, perf=None) -> str:
                 f'<div class="crow">'
                 f'<span class="rk">{row["rank"]}</span>'
                 f'<span class="nm">{esc(row["campaign"])}</span>'
-                f'<span class="mv">{movement}</span>'
-                f'<span class="mc">{row["merchants"]} merchants</span>'
-                f'<span class="vl">{rupees(row["value_paise"])}</span>'
+                + _price_html(row, (bench or {}).get(row["campaign"]))
                 + _derivation(row, (perf or {}).get(row['campaign']))
                 + f'<div class="why">{esc(row.get("driver", ""))}</div>'
                 f'<div class="src">{sources}</div>'
@@ -1708,14 +1736,16 @@ def _board_html(desk, sale, summary, scan=None, perf=None) -> str:
         refusal = ""
         board_html = (
             '<div class="internal"><div class="hdr">'
-            "<b>Trending client campaigns</b>"
+            "<b>What merchants are buying, and what it costs</b>"
             # Three provenances, named, because the whole claim of this board
             # is that you can tell which figure came from where. Saying only
             # "the public press" stopped being true once the discussion was
             # attached, and an unnamed source is the one a reader assumes was
             # invented.
-            '<span>ranking computed from the log &middot; '
-            'press and merchant discussion sourced separately</span></div>'
+            # The columns are named, because "18" beside a category name is
+            # a riddle. The radar band above earned this the same way.
+            '<span>clears at &middot; how often sellers move &middot; '
+            'settled value</span></div>'
             f"{rows}{refusal}</div>")
     else:
         board_html = ('<div class="empty">No campaign board published. Run '
@@ -2666,17 +2696,24 @@ def build_howto(db_path: str) -> str:
     late = rupees(row.get("late_paise", 0))
     anatomy = (
         line("the heading",
-             f'<b>{esc(row.get("campaign", ""))}</b> &middot; '
-             f'{row.get("movement", 0):.1f}&times; &middot; '
-             f'{row.get("merchants", 0)} merchants &middot; '
-             f'{rupees(row.get("value_paise", 0))}',
+             f'<b>{esc(row.get("campaign", ""))}</b> &middot; what it clears '
+             f'at &middot; how often sellers go below their own ask &middot; '
+             f'what settled in total',
              "the log")
-        + line("the arithmetic under it",
-               f'{early} in the opening rounds grew to {late} in the closing '
-               f'ones &middot; {row.get("settled", 0)} of '
+        + line("the line under it",
+               f'{row.get("movement", 0):.1f}&times; over the run, {early} to '
+               f'{late} &middot; {row.get("settled", 0)} of '
                f'{row.get("attempts", 0)} attempts settled &middot; '
+               f'{rupees(cash.get("revenue_paise", 0))} collected &middot; '
                f'<span class="evn">event {row.get("seq", "?")}</span>',
-               "the log")
+               "the log + Razorpay")
+
+        + line("why the movement is not the headline",
+               "It is a trend claim, and the sample under it is small: this "
+               "one is a few thousand rupees growing to a few thousand more "
+               "across three settled trades. It sits beside that sample so "
+               "it cannot be read as more than it is.",
+               "")
 
         + line("the sentence",
                esc(_clip_words(row.get("driver", ""), 150)),
