@@ -510,6 +510,29 @@ def board(events):
     }
 
 
+def radar(events):
+    """The brand radar: campaigns the outside world is reacting to.
+
+    A sibling of `desk`, deliberately separate. Both write CAMPAIGN_RANKED,
+    and a reader has to be able to tell a settled trading figure from a count
+    of strangers talking — so they are never assembled into one list.
+    """
+    rows = [e for e in events
+            if e.type == "CAMPAIGN_RANKED"
+            and (e.payload or {}).get("scope") == "brand_radar"]
+    if not rows:
+        return None
+    corr = rows[0].correlation_id
+    refused = [e for e in events
+               if e.type == "PRIVACY_REFUSED"
+               and e.correlation_id == corr]
+    return {
+        "correlation_id": corr,
+        "rows": [e.payload for e in sorted(rows, key=lambda e: e.payload["rank"])],
+        "refused": [e.payload for e in refused],
+    }
+
+
 def catalogue(events, limit: int = 40):
     """What is actually for sale, so the storefront box can answer honestly."""
     out = {}

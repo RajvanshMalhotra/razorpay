@@ -387,3 +387,22 @@ def test_a_brand_already_on_the_list_is_not_searched_twice():
     discover(brands=("Instagram",), searcher=lambda q, a: [], crawl=Crawl())
 
     assert len(searched) == 1
+
+
+def test_two_companies_rebranding_are_two_campaigns():
+    """Asked to name the campaign and not the company, the model sometimes
+    returns a bare "Rebrand". Keyed on the name alone that merges Instagram's
+    rebrand with Cracker Barrel's into one row with twice the heat — a
+    campaign that does not exist."""
+    mentions = [_m("", "Instagram new logo", "logodesign"),
+                _m("", "Instagram wordmark", "Design"),
+                _m("", "Cracker Barrel logo backlash", "marketing"),
+                _m("", "Cracker Barrel sign change", "advertising")]
+    labels = {1: ("Instagram", "Rebrand"), 2: ("Instagram", "Rebrand"),
+              3: ("Cracker Barrel", "Rebrand"), 4: ("Cracker Barrel", "Rebrand")}
+
+    ranked, _ = rank(mentions, labels)
+
+    assert len(ranked) == 2
+    assert {r.brand for r in ranked} == {"Instagram", "Cracker Barrel"}
+    assert all(r.heat == 4 for r in ranked)      # not one row at heat 16

@@ -84,7 +84,7 @@ generate this.
 ON SCREEN: nothing here was typed by hand
 
 NARRATION: This is a real run. Thirty-two businesses. Nine
-hundred and sixty-eight recorded events. Not one figure you are
+hundred and eighty-six recorded events. Not one figure you are
 about to see was typed by hand.
 
 
@@ -249,7 +249,7 @@ by steady warm yellow lines. Every figure turns to face the
 centre together in one slow motion. Long hold, then fade to
 white.
 
-ON SCREEN: 968 events - 74 rulings - 17 repairs - 0 humans
+ON SCREEN: 986 events - 74 rulings - 17 repairs - 0 humans
 
 NARRATION: Payments told you a transaction happened. This tells
 you who you should be doing business with. And it proves every

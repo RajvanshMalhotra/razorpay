@@ -49,7 +49,7 @@ dumps the same events.
 
 | | |
 |---|---|
-| Recorded events | **968** |
+| Recorded events | **986** |
 | Merchant brokers | **32** |
 | Negotiations / rounds | **67** / 180 (2.7 avg) |
 | Committed on Razorpay orders | **₹1,39,884** |
@@ -59,7 +59,7 @@ dumps the same events.
 | Drifts detected / repaired | **21 / 17** |
 | Freezes / resumes | **1 / 1** |
 | Humans involved | **0** |
-| Tests | **634** |
+| Tests | **676** |
 
 ### One trade, end to end
 
@@ -100,7 +100,7 @@ failed checks** rather than guessing. An unconfirmed settlement stays unconfirme
 
 ## How it is built
 
-Python, ~14,000 lines, 634 tests. Three properties do the load-bearing work:
+Python, ~15,000 lines, 676 tests. Three properties do the load-bearing work:
 
 **One append-only event log**, enforced by a database trigger. Order books, point
 balances, the relationship graph and every page in the replay are *projections* of it,
@@ -125,11 +125,25 @@ cp .env.example .env          # add your Razorpay TEST-mode keys
 
 .venv/bin/python -m scripts.market.run          # run a market
 .venv/bin/python -m scripts.market.research     # publish the campaign board
+.venv/bin/python -m scripts.market.radar        # publish the brand radar
 .venv/bin/python -m scripts.replay.generate     # build the replay pages
 ```
 
 The config **refuses to start** on a key that does not begin `rzp_test_`. Not a
 warning — it raises and the run stops.
+
+### Optional keys, each one adding a source
+
+Everything above runs with no keys but the Razorpay ones. The research agents get
+better as you add more, and every result records which sources it was actually
+built from — a board built from one source says so.
+
+| Add to `.env` | What it buys |
+|---|---|
+| *(nothing)* | Reddit over public RSS. Throttled, and it reports no upvote counts. |
+| `REDDIT_CLIENT_ID` / `REDDIT_CLIENT_SECRET` | Reddit's own API. Free script app, no throttling. |
+| `SOCIALCRAWL_API_KEY` | The above plus X, on 100 free credits. Upvotes and comment counts. |
+| `X_BEARER_TOKEN` | X directly, for anyone who has paid for it. |
 
 ### Layout
 

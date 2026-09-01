@@ -64,7 +64,7 @@ mono type, so no frame of real product is ever unlabelled:
 ------------------------------------------------------------------
 CLOSING CARD   black type on white, held 3s
 
-  968 events . 74 rulings recorded . 17 repairs . 0 humans
+  986 events . 74 rulings recorded . 17 repairs . 0 humans
 
 Then, after a one second beat, on the same white:
 

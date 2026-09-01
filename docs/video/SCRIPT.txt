@@ -375,7 +375,7 @@ SCENE 9 - CLOSE                                    4:37 - 4:53
 ------------------------------------------------------------------
 4:46  [CARD] black type on white, hold 4s
 
-        968 events . 74 rulings recorded . 17 repairs . 0 humans
+        986 events . 74 rulings recorded . 17 repairs . 0 humans
 
 ------------------------------------------------------------------
 4:50  [CARD] same white, after a one second beat, hold 3s

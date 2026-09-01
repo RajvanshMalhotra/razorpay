@@ -57,6 +57,7 @@ from scripts.replay.read import (
     failure_threads,
     load,
     merchant_view,
+    radar,
     rails,
     storefront,
     tape,
@@ -305,6 +306,15 @@ select.pick{max-width:330px}
   padding:2px 7px;text-decoration:none;max-width:250px;overflow:hidden;
   text-overflow:ellipsis;white-space:nowrap}
 .crow .thr a:hover{color:var(--amber);border-color:var(--amber)}
+/* The radar. Same row shape so the eye reads it as a ranking, one clear
+   band above it so nobody mistakes a count of strangers for a rupee. */
+.scanband{grid-column:1/-1;margin:26px 0 10px;padding:7px 11px;
+  font-family:var(--mono);font-size:10px;letter-spacing:.12em;
+  text-transform:uppercase;color:var(--void);background:var(--amber);
+  display:flex;justify-content:space-between;gap:16px;flex-wrap:wrap}
+.scanband i{font-style:normal;opacity:.72}
+.crow.scan .mv{color:var(--white)}
+.crow.scan .vl{font-family:var(--mono);font-size:10px;color:var(--faint)}
 @media(max-width:1000px){
   .crow{grid-template-columns:24px 1fr 56px}
   .crow .mc,.crow .vl{display:none}}
@@ -1470,7 +1480,8 @@ def build_desk(db_path: str) -> str:
         'any one client could. The ranking is arithmetic over this log; the '
         'sentence under each row comes from the press and carries its '
         'source.</p>'
-        + _board_html(board(events), auction(events), summary))
+        + _board_html(board(events), auction(events), summary,
+                      radar(events)))
 
     lock = (
         '<div class="lock" id="lock"><div class="card">'
@@ -1528,6 +1539,39 @@ def build_desk(db_path: str) -> str:
     )
 
 
+def _radar_html(scan) -> str:
+    """Campaigns the outside world is reacting to, kept visibly apart.
+
+    Under the same heading these would read as one list, and they are not one
+    kind of thing: the rows above are arithmetic over settled trades, these
+    are a count of strangers talking. The band across the top says which is
+    which, because a reader who cannot tell them apart has been handed a
+    tweet dressed as a payment.
+    """
+    if not scan or not scan.get("rows"):
+        return ""
+    rows = ""
+    for row in scan["rows"]:
+        evidence = "".join(
+            f'<a href="{esc(e["url"])}" target="_blank" rel="noopener">'
+            f'{esc(("r/" + e["community"]) if e["source"] == "reddit" else "x")}'
+            f'{" &middot; " + str(e["score"]) + "&#9650;" if e.get("score") else ""}'
+            f'</a>'
+            for e in row.get("evidence", [])[:6] if e.get("url"))
+        rows += (
+            f'<div class="crow scan"><span class="rk">{row["rank"]}</span>'
+            f'<span class="nm">{esc(row["campaign"])}</span>'
+            f'<span class="mv">{row["heat"]}</span>'
+            f'<span class="mc">{row["threads"]} in {row["spread"]}</span>'
+            f'<span class="vl">{esc("/".join(row.get("sources", [])))}</span>'
+            f'<div class="thr">{evidence}</div></div>')
+    return (
+        '<div class="scanband">what the outside world is reacting to '
+        '&mdash; counted from public posts, never from a settled trade'
+        '<i>heat &middot; threads in communities &middot; where</i></div>'
+        + rows)
+
+
 def _talk_html(row) -> str:
     """The Reddit reading, or an honest note about why there isn't one.
 
@@ -1549,7 +1593,7 @@ def _talk_html(row) -> str:
             + (f'<div class="thr">{threads}</div>' if threads else ""))
 
 
-def _board_html(desk, sale, summary) -> str:
+def _board_html(desk, sale, summary, scan=None) -> str:
     """Razorpay's internal board, then the auction that sells a piece of it.
 
     Violet appears on no other surface, and the header says who may read
@@ -1574,6 +1618,7 @@ def _board_html(desk, sale, summary) -> str:
                 f'<div class="why">{esc(row.get("driver", ""))}</div>'
                 f'<div class="src">{sources}</div>'
                 + _talk_html(row) + '</div>')
+        rows += _radar_html(scan)
         refused = desk["refused"]
         refusal = (
             f'<div class="refused">{len(refused)} campaigns refused a place on '

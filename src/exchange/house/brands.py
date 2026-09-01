@@ -281,8 +281,10 @@ You want only posts reacting to a campaign, ad or rebrand that a named company
 actually ran.
 
 Reply with one line per post, exactly `<number>: <company> | <campaign name>`.
-The campaign name names the CAMPAIGN, not the company - "Instagram wordmark
-rebrand", not "Instagram".
+The campaign name must identify the campaign AND carry the company, exactly
+like "Instagram wordmark rebrand" or "Swiggy birthday full-page ad". Never
+"Instagram" alone, and never a bare "Rebrand" or "Wordmark redesign" - a name
+that could belong to any company describes no campaign.
 
 GROUP BOLDLY. Posts about the same campaign MUST get the byte-identical
 company and campaign name. Five posts reacting to one new logo - in different
@@ -365,7 +367,13 @@ def rank(mentions, labels, floor: int = MIN_THREADS):
         if not attributed:
             continue
         brand, name = attributed
-        row = grouped.setdefault(name, Campaign(name=name, brand=brand))
+        # KEYED ON BOTH, and this is a correctness fix rather than a tidy-up.
+        # Asked to name the campaign and not the company, the model sometimes
+        # returns a bare "Rebrand" - and keyed on the name alone that merges
+        # Instagram's rebrand with Cracker Barrel's into one row with twice
+        # the heat, which is a campaign that does not exist.
+        row = grouped.setdefault((brand, name),
+                                 Campaign(name=name, brand=brand))
         row.mentions.append(mention)
 
     ranked, refused = [], []
