@@ -1512,11 +1512,11 @@ def build_desk(db_path: str) -> str:
 
     boardv = (
         '<h3 class="lede">Only the payment processor sees the whole book.</h3>'
-        '<p class="sub">A merchant knows its own sales. Razorpay knows which '
-        'campaigns are climbing across every client, and can rank them before '
-        'any one client could. The ranking is arithmetic over this log; the '
-        'sentence under each row comes from the press and carries its '
-        'source.</p>'
+        '<p class="sub">A seller sees its own asking prices. A buyer sees '
+        'its own bills. Only the party that settles both sides of every trade '
+        'knows what a thing actually costs — so this is the one number no '
+        'merchant can work out alone, and every figure on it is arithmetic '
+        'over this log.</p>'
         + _board_html(board(events), summary, radar(events),
                       performance(events),
                       {b["category"]: b for b in (benchmarks(events) or [])}))
@@ -1578,6 +1578,38 @@ def build_desk(db_path: str) -> str:
     )
 
 
+def _evidence_html(row, bench, perf) -> str:
+    """What stands behind the price, and where to look it up.
+
+    ONE CLAIM PER ROW. This board used to carry four: a clearing price, a
+    trend multiple, a press sentence with six outlets, and a Reddit reading.
+    Only the first is Razorpay's to make. The multiple asked three settled
+    trades to prove a doubling; the press sentence was true of any category in
+    the same industry and explained nothing about this one; and the Reddit
+    block, on a procurement board, kept surfacing consumers — "Best Ratio for
+    Cold Brew?" — because the people in a product's own community are the
+    people who buy it, not the people who sell it.
+
+    The Reddit work is not lost. It is the radar below, where reading what
+    the outside world says IS the claim rather than a decoration on someone
+    else's.
+    """
+    cash = perf or {}
+    bits = []
+    if bench:
+        bits.append(f'{bench["trades"]} priced trades across '
+                    f'{bench["merchants"]} merchants')
+        if bench["below_ask_share"]:
+            bits.append(f'{bench["median_saving"] * 100:.0f}% saved when a '
+                        f'seller moves')
+    if cash.get("revenue_paise"):
+        bits.append(f'{rupees(cash["revenue_paise"])} collected')
+    if cash.get("stopped"):
+        bits.append(f'{cash["stopped"]} stopped by the gate')
+    bits.append(f'<span class="evn">event {row.get("seq", "?")}</span>')
+    return f'<div class="deriv">{" &middot; ".join(bits)}</div>'
+
+
 def _price_html(row, bench) -> str:
     """What the category costs, where the trend claim used to be.
 
@@ -1599,48 +1631,6 @@ def _price_html(row, bench) -> str:
     return (f'<span class="mv">{rupees(bench["clears_paise"])}</span>'
             f'<span class="mc">{move}</span>'
             f'<span class="vl">{rupees(row["value_paise"])}</span>')
-
-
-def _derivation(row, perf=None) -> str:
-    """The arithmetic behind the multiple, and the event it was published as.
-
-    It also carries what the campaign actually collected, which used to be a
-    two-line green strip of its own. That strip spent most of its space on a
-    caveat about the payment harness — "the run pays one per merchant" — which
-    is a fact about how the demo was run and not about the market, and it
-    printed an average order that simply repeated the total whenever there
-    was one payment. One number survived that block and it now sits on this
-    line.
-
-    Every other figure on this desk carries the event number it came from.
-    These rows did not, which left the most load-bearing numbers on the page
-    as the only ones a reader had to take on trust. And "2.0x" alone says
-    nothing about what doubled, so the two amounts it was computed from are
-    printed beside it and anyone can do the division.
-    """
-    early, late = row.get("early_paise", 0), row.get("late_paise", 0)
-    if early > 0:
-        # THE MOVEMENT LIVES HERE NOW, BESIDE THE SAMPLE IT CAME FROM.
-        # It used to head the row as a bare "2.0x", which is a trend claim.
-        # Electronics Assembly's 2.0x is 4,995 growing to 9,975 across three
-        # settled trades - roughly one extra trade landing. Alone it is
-        # over-read; printed next to "3 of 8 attempts" it is honest.
-        sum_ = (f'{row.get("movement", 0):.1f}&times; over the run, '
-                f'{rupees(early)} to {rupees(late)}')
-
-    else:
-        sum_ = 'started at nothing, so there is no multiple to report'
-
-    cash = perf or {}
-    money = (f' &middot; {rupees(cash["revenue_paise"])} collected'
-             if cash.get("revenue_paise") else "")
-    stopped = (f' &middot; {cash["stopped"]} stopped by the gate'
-               if cash.get("stopped") else "")
-    return (
-        f'<div class="deriv">{sum_} &middot; '
-        f'{row.get("settled", 0)} of {row.get("attempts", 0)} attempts '
-        f'settled{money}{stopped} &middot; '
-        f'<span class="evn">event {row.get("seq", "?")}</span></div>')
 
 
 def _radar_html(scan) -> str:
@@ -1676,27 +1666,6 @@ def _radar_html(scan) -> str:
         + rows)
 
 
-def _talk_html(row) -> str:
-    """The Reddit reading, or an honest note about why there isn't one.
-
-    A row with nothing here would read as "we looked and the category is
-    quiet", which is a claim. The desk only gets to make that claim when it
-    actually looked, so a blocked read says so in its own words.
-    """
-    note = (row.get("discussion") or "").strip()
-    if not note:
-        return ""
-    label = ("could not be read" if row.get("discussion_blocked")
-             else "what operators are saying")
-    cls = " blocked" if row.get("discussion_blocked") else ""
-    threads = "".join(
-        f'<a href="{esc(t["url"])}" target="_blank" rel="noopener">'
-        f'r/{esc(t["subreddit"])} &middot; {esc(t["title"][:52])}</a>'
-        for t in row.get("threads", []) if t.get("url"))
-    return (f'<div class="talk{cls}"><b>{label}</b>{esc(note)}</div>'
-            + (f'<div class="thr">{threads}</div>' if threads else ""))
-
-
 def _board_html(desk, summary, scan=None, perf=None, bench=None) -> str:
     """Razorpay's internal board, then the auction that sells a piece of it.
 
@@ -1718,10 +1687,9 @@ def _board_html(desk, summary, scan=None, perf=None, bench=None) -> str:
                 f'<span class="rk">{row["rank"]}</span>'
                 f'<span class="nm">{esc(row["campaign"])}</span>'
                 + _price_html(row, (bench or {}).get(row["campaign"]))
-                + _derivation(row, (perf or {}).get(row['campaign']))
-                + f'<div class="why">{esc(row.get("driver", ""))}</div>'
-                f'<div class="src">{sources}</div>'
-                + _talk_html(row) + '</div>')
+                + _evidence_html(row, (bench or {}).get(row["campaign"]),
+                                 (perf or {}).get(row["campaign"]))
+                + '</div>')
         # The refusal note belongs to the board it refused FROM. Appended
         # after the radar it read as though two of the radar's campaigns had
         # been kept off, which is a different claim about a different set of
@@ -1744,8 +1712,8 @@ def _board_html(desk, summary, scan=None, perf=None, bench=None) -> str:
             # invented.
             # The columns are named, because "18" beside a category name is
             # a riddle. The radar band above earned this the same way.
-            '<span>clears at &middot; how often sellers move &middot; '
-            'settled value</span></div>'
+            '<span>clears at &middot; how often sellers go below their own '
+            'ask &middot; total settled</span></div>'
             f"{rows}{refusal}</div>")
     else:
         board_html = ('<div class="empty">No campaign board published. Run '
@@ -2682,6 +2650,7 @@ def build_howto(db_path: str) -> str:
     desk = board(events)
     perf = performance(events)
     scan = radar(events)
+    bench = {b["category"]: b for b in (benchmarks(events) or [])}
 
     row = (desk["rows"][0] if desk and desk["rows"] else {})
     cash = perf.get(row.get("campaign", ""), {}) if perf else {}
@@ -2692,43 +2661,36 @@ def build_howto(db_path: str) -> str:
                 f'<span class="bd">{body}</span>'
                 f'<span class="sr">{source}</span></div>')
 
-    early = rupees(row.get("early_paise", 0))
-    late = rupees(row.get("late_paise", 0))
+    b = (bench or {}).get(row.get("campaign", ""), {})
     anatomy = (
         line("the heading",
              f'<b>{esc(row.get("campaign", ""))}</b> &middot; what it clears '
              f'at &middot; how often sellers go below their own ask &middot; '
              f'what settled in total',
              "the log")
+        + line("what it clears at",
+               (f'the median price this category actually settles at &mdash; '
+                f'{rupees(b["clears_paise"])} here, against a median ask of '
+                f'{rupees(b["ask_paise"])}' if b else "no priced trades yet"),
+               "the log")
+        + line("how often sellers move",
+               (f'{b["below_ask_share"] * 100:.0f}% of trades closed under '
+                f'the seller&rsquo;s own ask. Push here.'
+                if b and b["below_ask_share"] else
+                'no trade has ever closed under the ask. Pushing here spends '
+                'goodwill for nothing.') if b else "&mdash;",
+               "the log")
         + line("the line under it",
-               f'{row.get("movement", 0):.1f}&times; over the run, {early} to '
-               f'{late} &middot; {row.get("settled", 0)} of '
-               f'{row.get("attempts", 0)} attempts settled &middot; '
-               f'{rupees(cash.get("revenue_paise", 0))} collected &middot; '
-               f'<span class="evn">event {row.get("seq", "?")}</span>',
+               'how many trades and merchants stand behind the price, what '
+               'was collected, what the gate stopped, and the event number to '
+               'look the row up by',
                "the log + Razorpay")
-
-        + line("why the movement is not the headline",
-               "It is a trend claim, and the sample under it is small: this "
-               "one is a few thousand rupees growing to a few thousand more "
-               "across three settled trades. It sits beside that sample so "
-               "it cannot be read as more than it is.",
-               "")
-
-        + line("the sentence",
-               esc(_clip_words(row.get("driver", ""), 150)),
-               "the press")
-        + line("the grey chips",
-               "each one is the outlet that sentence was read from, and a "
-               "link to the article",
-               "the press")
-        + line("what operators are saying",
-               esc(_clip_words(row.get("discussion", "") or
-                               "not read for this row", 150)),
-               "Reddit")
-        + line("the r/ chips",
-               "the threads that sentence was read from, each a link",
-               "Reddit"))
+        + line("one claim per row",
+               'This board used to carry four: a price, a trend multiple, a '
+               'press sentence and a Reddit reading. Only the price is '
+               'Razorpay&rsquo;s to make. The rest is below, on a board where '
+               'reading the outside world IS the claim.',
+               ""))
 
     scanning = (
         line("the heading",
