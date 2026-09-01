@@ -2478,11 +2478,7 @@ h1,h2,h3{font-family:var(--disp);font-weight:600;letter-spacing:-.028em;
 footer{padding:26px clamp(20px,5vw,64px);border-top:1px solid var(--pline);
   color:var(--soft);font-family:var(--mono);font-size:11px;line-height:1.8;
   background:var(--paper)}
-@media(prefers-reduced-motion:reduce){
-  *{animation:none!important;scroll-behavior:auto}
-  .js .steps,.js .pr,.js .jobs,.js .wheel{opacity:1;transform:none}
-  .hero h1 em{background-size:100% 100%}
-  .plans{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));
+.plans{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));
   gap:14px;margin-top:8px}
 .plan{border:1px solid var(--line);border-radius:4px;background:var(--card);
   padding:20px 22px;display:flex;flex-direction:column;gap:9px}
@@ -2503,7 +2499,10 @@ footer{padding:26px clamp(20px,5vw,64px);border-top:1px solid var(--pline);
   font-size:10.5px;color:var(--soft);line-height:1.5}
 .fine{margin-top:14px;font-size:13px;color:var(--soft);max-width:64ch}
 @media(prefers-reduced-motion:reduce){
-  .enter,.spread .track i,.spread .val{transition-duration:.01ms!important}
+  *{animation:none!important;scroll-behavior:auto}
+  .js .steps,.js .pr,.js .jobs,.js .wheel{opacity:1;transform:none}
+  .hero h1 em{background-size:100% 100%}
+    .enter,.spread .track i,.spread .val{transition-duration:.01ms!important}
 }
 """ + NET_CSS
 
@@ -3161,7 +3160,9 @@ def _deal_payload(hero) -> str:
                 opening = spread
         lines.append({
             "kind": "offer",
-            "who": turn["who"],
+            # The prefix is plumbing. It survived here because this line is
+            # rendered by the page from JSON rather than by the builder.
+            "who": who(turn["who"]),
             "px": f'₹{(turn["price"] or 0) / 100:,.2f}',
             "said": _clip_words(said, 104),
             "done": n == len(hero["talk"]) - 1,
