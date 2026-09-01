@@ -307,6 +307,9 @@ select.pick{max-width:330px}
 .crow .perf b{color:var(--green);font-size:13px}
 .crow .perf i{display:block;margin-top:3px;font-style:normal;
   font-size:10px;color:var(--faint);letter-spacing:.02em}
+.crow .deriv{grid-column:2/-1;margin-top:5px;font-family:var(--mono);
+  font-size:11px;color:var(--faint);letter-spacing:.01em}
+.crow .deriv .evn{color:var(--amber)}
 .crow .why{grid-column:2/-1;color:var(--white);font-size:14.5px;margin-top:6px;
   line-height:1.45;font-family:var(--serif)}
 .crow .src{grid-column:2/-1;margin-top:8px;display:flex;gap:5px;flex-wrap:wrap}
@@ -1566,6 +1569,29 @@ def build_desk(db_path: str) -> str:
     )
 
 
+def _derivation(row) -> str:
+    """The arithmetic behind the multiple, and the event it was published as.
+
+    Every other figure on this desk carries the event number it came from.
+    These rows did not, which left the most load-bearing numbers on the page
+    as the only ones a reader had to take on trust. And "2.0x" alone says
+    nothing about what doubled, so the two amounts it was computed from are
+    printed beside it and anyone can do the division.
+    """
+    early, late = row.get("early_paise", 0), row.get("late_paise", 0)
+    if early > 0:
+        sum_ = (f'{rupees(early)} in the opening rounds grew to '
+                f'{rupees(late)} in the closing ones')
+    else:
+        sum_ = ('nothing in the opening rounds, so there is no multiple '
+                'to report')
+    return (
+        f'<div class="deriv">{sum_} &middot; '
+        f'{row.get("settled", 0)} of {row.get("attempts", 0)} attempts '
+        f'settled &middot; '
+        f'<span class="evn">event {row.get("seq", "?")}</span></div>')
+
+
 def _perf_html(row) -> str:
     """What the campaign actually earned, on the row that ranked it.
 
@@ -1665,6 +1691,7 @@ def _board_html(desk, sale, summary, scan=None, perf=None) -> str:
                 f'<span class="mv">{movement}</span>'
                 f'<span class="mc">{row["merchants"]} merchants</span>'
                 f'<span class="vl">{rupees(row["value_paise"])}</span>'
+                + _derivation(row)
                 # Directly under the name. Above it, the strip read as a
                 # banner floating between two rows and belonging to neither.
                 + _perf_html((perf or {}).get(row["campaign"]))

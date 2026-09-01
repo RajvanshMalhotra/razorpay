@@ -505,8 +505,13 @@ def board(events):
                and e.correlation_id == corr]
     return {
         "correlation_id": corr,
-        "rows": [e.payload for e in sorted(rows, key=lambda e: e.payload["rank"])],
-        "refused": [e.payload for e in refused],
+        # The seq travels with the payload. Everything else on this page
+        # carries the event number it came from and these rows did not, which
+        # made the most load-bearing figures on the desk the only unprovable
+        # ones.
+        "rows": [dict(e.payload, seq=e.seq)
+                 for e in sorted(rows, key=lambda e: e.payload["rank"])],
+        "refused": [dict(e.payload, seq=e.seq) for e in refused],
     }
 
 
