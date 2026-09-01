@@ -21,7 +21,14 @@ import sys
 
 from exchange import events as ev
 from exchange.eventlog import EventLog
-from exchange.house.campaigns import label, observe, publish, rank, research
+from exchange.house.campaigns import (
+    is_board_row,
+    label,
+    observe,
+    publish,
+    rank,
+    research,
+)
 from exchange.ids import new_id
 
 
@@ -59,7 +66,8 @@ def main(argv=None) -> int:
     log = EventLog(args.db)
     try:
         events = log.read_all()
-        existing = [e for e in events if e.type == ev.CAMPAIGN_RANKED]
+        existing = [e for e in events
+                    if e.type == ev.CAMPAIGN_RANKED and is_board_row(e)]
         if existing:
             print(f"  a board is already published "
                   f"({len(existing)} rows, {existing[0].correlation_id}).")

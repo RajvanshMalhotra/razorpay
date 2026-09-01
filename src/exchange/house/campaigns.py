@@ -61,6 +61,25 @@ CAMPAIGN_FLOOR_K = int(os.environ.get("CAMPAIGN_FLOOR_K", "3"))
 # show it was not one loud post, and few enough to sit on a card.
 THREADS_PER_ROW = 4
 
+# TWO BOARDS SHARE ONE EVENT TYPE, so every reader must say which it wants.
+#
+# The procurement board (this module) and the brand radar (`brands.py`) both
+# write CAMPAIGN_RANKED. Filtering on the type alone silently mixes them, and
+# the mixing is invisible: the desk would rank a rival's rebrand beside a
+# settled category, and the auctioned playbook would carry outside chatter as
+# though it were trading data.
+#
+# Rows written before the radar existed carry no scope at all, so absence
+# means procurement. That default is load-bearing for every already-published
+# log, including the one the demo runs on.
+BOARD_SCOPE = "procurement"
+
+
+def is_board_row(event) -> bool:
+    """Is this CAMPAIGN_RANKED row the procurement board's, not the radar's?"""
+    payload = getattr(event, "payload", event) or {}
+    return payload.get("scope", BOARD_SCOPE) == BOARD_SCOPE
+
 NEWS_RSS = "https://news.google.com/rss/search"
 
 LABEL_PROMPT = """You are Razorpay's market research agent, grouping what
@@ -410,6 +429,7 @@ def publish(log, campaigns, refusals, correlation_id: str) -> None:
     for position, campaign in enumerate(campaigns, start=1):
         log.append(HOUSE_ACTOR_ID, ev.CAMPAIGN_RANKED, {
             "audience": "razorpay_internal",
+            "scope": BOARD_SCOPE,
             "rank": position,
             "campaign": campaign.name,
             "movement": round(campaign.movement, 3),

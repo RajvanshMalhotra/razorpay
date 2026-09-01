@@ -57,8 +57,8 @@ def test_spread_beats_volume():
     broad = [_m("CRED", f"CRED rebrand {i}", c) for i, c in
              enumerate(("marketing", "advertising", "PPC", "ecommerce"))]
     mentions = loud + broad
-    labels = ({i: "Zomato monsoon" for i in range(1, 9)}
-              | {i: "CRED rebrand" for i in range(9, 13)})
+    labels = ({i: ("Zomato", "Zomato monsoon") for i in range(1, 9)}
+              | {i: ("CRED", "CRED rebrand") for i in range(9, 13)})
 
     ranked, _ = rank(mentions, labels)
 
@@ -70,7 +70,8 @@ def test_a_campaign_in_one_thread_is_refused_and_the_refusal_is_logged():
     mentions = [_m("Nykaa", "Nykaa festive ad", "marketing"),
                 _m("boAt", "boAt launch a", "marketing"),
                 _m("boAt", "boAt launch b", "PPC")]
-    labels = {1: "Nykaa festive", 2: "boAt launch", 3: "boAt launch"}
+    labels = {1: ("Nykaa", "Nykaa festive"), 2: ("boAt", "boAt launch"),
+              3: ("boAt", "boAt launch")}
 
     ranked, refused = rank(mentions, labels)
 
@@ -83,11 +84,13 @@ def test_the_order_is_total_so_a_rerun_cannot_shuffle():
     """Two campaigns with identical heat must still have a fixed order."""
     mentions = [_m("A", "A one", "marketing"), _m("A", "A two", "PPC"),
                 _m("B", "B one", "marketing"), _m("B", "B two", "PPC")]
-    labels = {1: "A camp", 2: "A camp", 3: "B camp", 4: "B camp"}
+    labels = {1: ("A", "A camp"), 2: ("A", "A camp"),
+              3: ("B", "B camp"), 4: ("B", "B camp")}
 
     first, _ = rank(mentions, labels)
     second, _ = rank(list(reversed(mentions)),
-                     {1: "B camp", 2: "B camp", 3: "A camp", 4: "A camp"})
+                     {1: ("B", "B camp"), 2: ("B", "B camp"),
+                      3: ("A", "A camp"), 4: ("A", "A camp")})
 
     assert [r.name for r in first] == [r.name for r in second]
 
@@ -98,7 +101,8 @@ def test_engagement_breaks_a_tie_but_never_makes_the_ranking():
     mentions = [_m("A", "A one", "marketing", score=500, comments=100),
                 _m("A", "A two", "PPC", score=500, comments=100),
                 _m("B", "B one", "marketing"), _m("B", "B two", "PPC")]
-    labels = {1: "A camp", 2: "A camp", 3: "B camp", 4: "B camp"}
+    labels = {1: ("A", "A camp"), 2: ("A", "A camp"),
+              3: ("B", "B camp"), 4: ("B", "B camp")}
 
     ranked, _ = rank(mentions, labels)
 
@@ -109,10 +113,10 @@ def test_engagement_breaks_a_tie_but_never_makes_the_ranking():
 
 # --- grouping ----------------------------------------------------------------
 
-def test_unlabelled_posts_are_counted_not_silently_invented():
-    """A model that returns nothing would otherwise produce one campaign per
-    post — which reads as a finding rather than as a broken call."""
-    mentions = [_m("Apple", "Apple ad", "marketing")] * 3
+def test_unattributed_posts_are_counted_not_silently_dropped():
+    """A model that returns nothing produces zero rows, and zero rows looks
+    exactly like a quiet week."""
+    mentions = [_m("", "Some ad", "marketing")] * 3
 
     mapping, fallbacks = label(mentions, Says(""))
 
@@ -120,14 +124,26 @@ def test_unlabelled_posts_are_counted_not_silently_invented():
     assert fallbacks == 3
 
 
-def test_a_post_about_no_particular_campaign_is_dropped():
-    mentions = [_m("Meta", "Meta ad manager down again", "PPC"),
-                _m("Meta", "Meta new brand campaign is everywhere", "marketing")]
+def test_a_post_about_using_a_companys_ad_platform_is_not_its_campaign():
+    """The measurement that forced attribution onto the model: "learn meta and
+    google adds campaign" is a beginner asking about tools, and lexical
+    matching filed it as evidence that both companies ran noticed campaigns."""
+    mentions = [_m("", "How difficult it is learn meta and google adds campaign?", "PPC"),
+                _m("", "Instagram rebrand its wordmark", "marketing")]
 
-    mapping, fallbacks = label(mentions, Says("1: none\n2: Meta brand refresh"))
+    mapping, fallbacks = label(
+        mentions, Says("1: none\n2: Instagram | Instagram wordmark rebrand"))
 
-    assert mapping == {2: "Meta brand refresh"}
+    assert mapping == {2: ("Instagram", "Instagram wordmark rebrand")}
     assert fallbacks == 1
+
+
+def test_a_campaign_named_without_a_company_is_dropped():
+    """There would be nothing to check the row against."""
+    mapping, fallbacks = label([_m("", "Some rebrand", "marketing")],
+                               Says("1: a clever rebrand"))
+
+    assert mapping == {} and fallbacks == 1
 
 
 def test_no_mentions_never_calls_the_model():
@@ -138,16 +154,17 @@ def test_no_mentions_never_calls_the_model():
 
 # --- collecting --------------------------------------------------------------
 
-def test_a_post_that_does_not_name_the_brand_is_not_evidence_for_it():
-    """Reddit's search is fuzzy enough to answer "Apple campaign" with posts
-    about neither. A mention nobody can verify is worse than a missing one."""
+def test_discover_collects_without_guessing_who_a_post_is_about():
+    """Attribution is the model's job now. Guessing it here is what filed a
+    beginner's Google Ads question as a Google campaign."""
     def searcher(query, anchors):
         return [Post("Our Q3 campaign flopped", "marketing", "a", "u1", "d", 1),
                 Post("Apple new campaign is clever", "marketing", "b", "u2", "d", 2)]
 
-    found = discover(brands=("Apple",), searcher=searcher)
+    found = discover(searcher=searcher)
 
-    assert [m.title for m in found] == ["Apple new campaign is clever"]
+    assert len(found) == 2
+    assert all(m.brand == "" for m in found)
 
 
 def test_the_same_post_found_by_two_angles_counts_once():
@@ -156,7 +173,7 @@ def test_the_same_post_found_by_two_angles_counts_once():
     def searcher(query, anchors):
         return [Post("Apple campaign is clever", "marketing", "a", "u1", "d", 1)]
 
-    found = discover(brands=("Apple",), searcher=searcher)
+    found = discover(searcher=searcher)
 
     assert len(found) == 1
 
@@ -186,7 +203,7 @@ def test_every_row_records_which_sources_it_was_built_from():
     read the whole internet."""
     mentions = [_m("A", "A one", "marketing"),
                 _m("A", "A two", "x", source="x", score=5, comments=1)]
-    labels = {1: "A camp", 2: "A camp"}
+    labels = {1: ("A", "A camp"), 2: ("A", "A camp")}
 
     ranked, _ = rank(mentions, labels)
 
@@ -200,8 +217,8 @@ def test_the_radar_writes_its_evidence_and_its_refusals():
     mentions = [_m("CRED", "CRED rebrand a", "marketing"),
                 _m("CRED", "CRED rebrand b", "PPC"),
                 _m("Nykaa", "Nykaa ad", "marketing")]
-    ranked, refused = rank(mentions, {1: "CRED rebrand", 2: "CRED rebrand",
-                                      3: "Nykaa festive"})
+    ranked, refused = rank(mentions, {1: ("CRED", "CRED rebrand"), 2: ("CRED", "CRED rebrand"),
+                                      3: ("Nykaa", "Nykaa festive")})
 
     publish(log, ranked, refused, "corr")
 
@@ -225,7 +242,7 @@ def test_the_radar_never_writes_into_the_procurement_board():
     log = EventLog(":memory:")
     ranked, refused = rank(
         [_m("A", "A one", "marketing"), _m("A", "A two", "PPC")],
-        {1: "A camp", 2: "A camp"})
+        {1: ("A", "A camp"), 2: ("A", "A camp")})
 
     publish(log, ranked, refused, "corr")
 
@@ -233,3 +250,33 @@ def test_the_radar_never_writes_into_the_procurement_board():
         assert event.payload.get("scope") == "brand_radar"
         assert "value_paise" not in event.payload
         assert "merchants" not in event.payload
+
+
+# --- two boards, one event type ----------------------------------------------
+
+def test_radar_rows_never_reach_the_procurement_board():
+    """Both write CAMPAIGN_RANKED. A reader that filters on the type alone
+    would rank a rival's rebrand beside a settled category, and would put
+    outside chatter into the playbook that gets auctioned."""
+    from exchange.house.campaigns import is_board_row
+
+    log = EventLog(":memory:")
+    ranked, refused = rank(
+        [_m("CRED", "CRED rebrand a", "marketing"),
+         _m("CRED", "CRED rebrand b", "PPC")],
+        {1: ("CRED", "CRED rebrand"), 2: ("CRED", "CRED rebrand")})
+    publish(log, ranked, refused, "corr")
+
+    rows = [e for e in log.read_all() if e.type == "CAMPAIGN_RANKED"]
+    assert rows and not any(is_board_row(e) for e in rows)
+
+
+def test_a_row_written_before_the_radar_existed_is_still_the_board():
+    """Every already-published log, including the demo's, has rows with no
+    scope at all. Absence must mean procurement or those boards vanish."""
+    from exchange.house.campaigns import is_board_row
+
+    class Old:
+        payload = {"rank": 1, "campaign": "Cold Brew", "movement": 1.5}
+
+    assert is_board_row(Old())

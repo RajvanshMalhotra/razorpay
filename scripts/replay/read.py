@@ -492,7 +492,11 @@ def board(events):
     whole — including what was kept off it, which is the half a reader is
     least likely to be shown and most entitled to see.
     """
-    rows = [e for e in events if e.type == "CAMPAIGN_RANKED"]
+    # Scoped, because the brand radar writes the same event type and its rows
+    # are outside chatter rather than settled trading.
+    from exchange.house.campaigns import is_board_row
+    rows = [e for e in events
+            if e.type == "CAMPAIGN_RANKED" and is_board_row(e)]
     if not rows:
         return None
     corr = rows[0].correlation_id

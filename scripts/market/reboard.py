@@ -27,7 +27,14 @@ import sys
 
 from exchange import events as ev
 from exchange.eventlog import EventLog
-from exchange.house.campaigns import Campaign, Refusal, Source, publish, research
+from exchange.house.campaigns import (
+    Campaign,
+    Refusal,
+    Source,
+    is_board_row,
+    publish,
+    research,
+)
 from exchange.ids import new_id
 
 
@@ -76,8 +83,10 @@ def main(argv=None) -> int:
 
     old = EventLog(args.db)
     events = old.read_all()
-    board = [e for e in events if e.type in (ev.CAMPAIGN_RANKED,
-                                             ev.PRIVACY_REFUSED)]
+    board = [e for e in events
+             if (e.type == ev.CAMPAIGN_RANKED and is_board_row(e))
+             or (e.type == ev.PRIVACY_REFUSED
+                 and _payload(e).get("scope") != "brand_radar")]
     if not board:
         print("  no board published on this log; use scripts.market.research.")
         return 1

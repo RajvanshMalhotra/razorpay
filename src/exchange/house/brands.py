@@ -143,52 +143,36 @@ class Refusal:
 
 def discover(brands=SEED_BRANDS, searcher=None, x=None,
              communities=MARKETING_COMMUNITIES, queries=QUERIES) -> list[Mention]:
-    """Collect posts that discuss campaigns. Reads; never ranks.
+    """Collect posts that might discuss a brand's campaign. Reads; never ranks.
 
-    Runs a handful of broad campaign queries against the marketing
-    communities, then attributes each post to whichever known brand it names.
-    A post naming no brand on the list is dropped rather than guessed at: a
-    row whose brand was inferred is a row nobody can check.
+    ATTRIBUTION IS NOT DONE HERE, and the reason is a measurement. Matching
+    brand names in titles put "How difficult it is learn meta and google adds
+    campaign?" under both Meta's and Google's campaigns - a beginner asking
+    about ad platforms, recorded as evidence that two companies were running
+    campaigns people had noticed. On a board that gets auctioned, that is an
+    invented finding with a price on it.
 
-    `searcher` is injected so this runs from a fixture in tests and from
-    Reddit in a run; `x` is the optional paid path and is simply absent when
-    nobody has configured a bearer token.
+    So posts come back unattributed, and `label` decides both which company a
+    post is about and whether it is about a campaign at all. The model does
+    extraction, which it is good at. It still never decides an order.
     """
     searcher = searcher or _reddit_search
     anchors = [Community(name, name) for name in communities]
-    lookup = {b.lower(): b for b in brands}
 
     found: list[Mention] = []
     for query in queries:
         for post in searcher(query, anchors):
-            named = _brand_in(post.title, lookup)
-            if named is None:
-                continue
             found.append(Mention(
-                brand=named, title=post.title, url=post.url,
+                brand="", title=post.title, url=post.url,
                 community=post.subreddit, source="reddit",
                 when=post.when, score=None, comments=None))
 
-    # X is queried per brand, because its API takes a real query and does not
-    # throttle the way Reddit's RSS does. Only for brands already seen on
-    # Reddit, so one paid source cannot invent a campaign on its own.
+    # X is queried per brand from the seed list, because its API takes a real
+    # query and does not throttle the way Reddit's RSS does.
     if x is not None:
-        for brand in sorted({m.brand for m in found}):
+        for brand in brands:
             found.extend(x.mentions(brand))
     return _unique(found)
-
-
-def _brand_in(title: str, lookup: dict):
-    """Which known brand does this post name, if any?
-
-    Word-boundary matched. Substring matching put every post containing the
-    word "meta" — metadata, metaphor — under Meta's campaigns.
-    """
-    for word in re.findall(r"[A-Za-z][A-Za-z0-9]+", title):
-        found = lookup.get(word.lower())
-        if found:
-            return found
-    return None
 
 
 def _reddit_search(query, anchors):
@@ -206,29 +190,39 @@ def _unique(mentions):
     return out
 
 
-LABEL_PROMPT = """You group posts that discuss the same marketing campaign.
+LABEL_PROMPT = """You identify marketing campaigns that companies ran.
 
-You are given numbered post titles, each about one brand. Reply with one line
-per post, exactly `<number>: <campaign name>`.
+You are given numbered post titles from marketing communities. MOST are
+practitioners discussing their own advertising work - their budgets, their ad
+groups, their clients. Those are not what you are looking for.
 
-The campaign name must name the CAMPAIGN, not the company and not the product
-category — "Zomato monsoon delivery ads", not "Zomato" and not "food delivery".
-Posts about the same campaign must get the exact same name. A post that
-discusses the brand but no particular campaign gets the name `none`."""
+You want only posts reacting to a campaign, ad or rebrand that a named company
+actually ran.
+
+Reply with one line per post, exactly `<number>: <company> | <campaign name>`.
+The campaign name names the CAMPAIGN, not the company - "Instagram wordmark
+rebrand", not "Instagram". Posts about the same campaign must get the exact
+same company and the exact same campaign name.
+
+Reply `<number>: none` for everything else, and be strict. A post that merely
+mentions a company's ad platform - running Google Ads, using Meta Ads Manager
+- is `none`, because there the company is the tool and not the advertiser.
+When in doubt, `none`."""
 
 
 def label(mentions, provider):
-    """Group many phrasings into campaign names. Returns (mapping, fallbacks).
+    """Attribute and group. Returns ({index: (company, campaign)}, fallbacks).
 
-    `fallbacks` counts the posts the model left unnamed. It is returned rather
-    than swallowed because the failure mode is silent and plausible: a model
-    that returns nothing produces one campaign per post, and a board of
-    one-post campaigns looks like a finding instead of a broken call.
+    `fallbacks` counts the posts that were not about a company's campaign,
+    which on this source is most of them and is the correct outcome. It is
+    returned rather than swallowed because the failure mode is silent and
+    plausible: a model that returns nothing produces zero rows, and zero rows
+    looks exactly like a quiet week.
     """
     if not mentions:
         return {}, 0
 
-    listing = "\n".join(f"{i}. [{m.brand}] {m.title}"
+    listing = "\n".join(f"{i}. [{m.community}] {m.title}"
                         for i, m in enumerate(mentions, start=1))
     reply = provider.complete(
         [LLMMessage("user", listing)],
@@ -237,23 +231,23 @@ def label(mentions, provider):
         reasoning_effort="low",
     )
 
-    named: dict[int, str] = {}
+    named: dict[int, tuple] = {}
     for line in reply.text.splitlines():
         match = re.match(r"\s*(\d+)\s*[:.)-]\s*(.+)", line)
         if not match:
             continue
-        index, name = int(match.group(1)), match.group(2).strip()
-        if 1 <= index <= len(mentions):
-            named[index] = name
-
-    mapping, fallbacks = {}, 0
-    for i, mention in enumerate(mentions, start=1):
-        name = named.get(i, "")
-        if not name or name.lower() == "none":
-            fallbacks += 1
+        index, rest = int(match.group(1)), match.group(2).strip()
+        if not (1 <= index <= len(mentions)) or rest.lower() == "none":
             continue
-        mapping[i] = name
-    return mapping, fallbacks
+        if "|" not in rest:
+            # Named a campaign but no company, so there is nothing to check it
+            # against. Dropped rather than half-recorded.
+            continue
+        brand, campaign = (part.strip() for part in rest.split("|", 1))
+        if brand and campaign:
+            named[index] = (brand, campaign)
+
+    return named, len(mentions) - len(named)
 
 
 def rank(mentions, labels, floor: int = MIN_THREADS):
@@ -264,10 +258,11 @@ def rank(mentions, labels, floor: int = MIN_THREADS):
     """
     grouped: dict[str, Campaign] = {}
     for i, mention in enumerate(mentions, start=1):
-        name = labels.get(i)
-        if not name:
+        attributed = labels.get(i)
+        if not attributed:
             continue
-        row = grouped.setdefault(name, Campaign(name=name, brand=mention.brand))
+        brand, name = attributed
+        row = grouped.setdefault(name, Campaign(name=name, brand=brand))
         row.mentions.append(mention)
 
     ranked, refused = [], []

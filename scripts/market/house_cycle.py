@@ -28,6 +28,7 @@ from dataclasses import dataclass, field
 
 from exchange import events as ev
 from exchange.house.auction import pay_royalties, run_auction, settle_purchase
+from exchange.house.campaigns import is_board_row
 from exchange.house.insights import HOUSE_ACTOR_ID
 
 
@@ -76,7 +77,7 @@ def run_house_cycle(
     # market rather than a ritual: without it the winner buys a trade count
     # and a total, and no business would part with points for that.
     board = [e.payload for e in exchange.log.read_all()
-             if e.type == ev.CAMPAIGN_RANKED]
+             if e.type == ev.CAMPAIGN_RANKED and is_board_row(e)]
     board.sort(key=lambda row: row["rank"])
     report.board_rows = len(board)
 
