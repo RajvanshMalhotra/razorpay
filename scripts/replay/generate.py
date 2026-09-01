@@ -56,6 +56,7 @@ from scripts.replay.read import (
     catalogue,
     failure_threads,
     load,
+    benchmarks,
     merchant_view,
     performance,
     radar,
@@ -2670,6 +2671,47 @@ table.bids td.q{font-size:12.5px;line-height:1.5}
 """
 
 
+def _bench_html(bench) -> str:
+    """The second lot type: what each category actually clears at.
+
+    Kept beside the radar rather than replacing it, because the two answer
+    different questions and a merchant wants both. The radar says what the
+    outside world is reacting to. This says what the merchant is about to be
+    charged, and whether pushing back has ever worked in that category.
+    """
+    if not bench:
+        return ""
+    rows = ""
+    for row in bench:
+        share = row["below_ask_share"]
+        saving = row["median_saving"]
+        move = (f'{share * 100:.0f}% of trades closed under it'
+                if share else 'no trade has ever closed under it')
+        rows += (
+            f'<tr><td class="a">{esc(row["category"])}</td>'
+            f'<td class="pt">{rupees(row["clears_paise"])}</td>'
+            f'<td class="pt">{rupees(row["ask_paise"])}</td>'
+            f'<td class="mk">{move}</td>'
+            f'<td class="pt">{saving * 100:.1f}%</td>'
+            f'<td>{row["trades"]} trades &middot; '
+            f'{row["merchants"]} merchants</td></tr>')
+    return (
+        '<h2>The other lot: what a category actually clears at</h2>'
+        '<p>A seller sees its own asks and a buyer sees its own bills. Only '
+        'the party that settles both sides of every trade can say what the '
+        'middle is &mdash; which is why this is Razorpay&rsquo;s to sell and '
+        'nobody else&rsquo;s. Every figure is arithmetic over settled '
+        'matches; no model and no scraping.</p>'
+        '<table class="bids"><tr><th>category</th><th>clears at</th>'
+        '<th>median ask</th><th>how often it moves</th><th>saving</th>'
+        f'<th>evidence</th></tr>{rows}</table>'
+        '<p><b>Read it as a merchant would.</b> A category that clears well '
+        'under its ask and moves most of the time is one to push on. A '
+        'category that closes at the ask every time is one where pushing '
+        'spends the only thing an agent cannot buy more of &mdash; the '
+        'counterparty&rsquo;s patience.</p>')
+
+
 def build_auction(db_path: str) -> str:
     """The sealed auction, on a page of its own.
 
@@ -2681,6 +2723,7 @@ def build_auction(db_path: str) -> str:
     """
     summary, _trades, events = load(db_path)
     sale = auction(events)
+    bench = benchmarks(events)
 
     if not sale:
         body = ('<div class="empty">No auction on this log. Run '
@@ -2712,7 +2755,8 @@ def build_auction(db_path: str) -> str:
             'the ranked campaigns, how far each has spread, and the threads '
             'each was counted from.</p>'
 
-            '<h2>The bids, sealed</h2>'
+            + _bench_html(bench)
+            + '<h2>The bids, sealed</h2>'
             '<p>Every agent priced the lot without seeing any other bid. '
             'Under a second-price rule the honest number is also the best '
             'one to write down, which is why the reasoning below is about '

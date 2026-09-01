@@ -522,6 +522,12 @@ def performance(events):
             if e.type == "CAMPAIGN_PERFORMANCE"}
 
 
+def benchmarks(events):
+    """What each category clears at, as published."""
+    rows = [e.payload for e in events if e.type == "BENCHMARK_PUBLISHED"]
+    return sorted(rows, key=lambda r: r["rank"]) if rows else None
+
+
 def radar(events):
     """The brand radar: campaigns the outside world is reacting to.
 
