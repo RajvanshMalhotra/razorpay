@@ -39,7 +39,14 @@ def main(argv=None) -> int:
     from exchange.llm.openai_compat import providers_from_env
 
     load_dotenv()
-    _, fast = providers_from_env()
+    # THE STRONG TIER, and this one is not a preference. Labelling here does
+    # two jobs at once over a hundred noisy posts: decide which are about a
+    # company's campaign at all, and give every post about the same campaign
+    # a byte-identical name. On the fast tier the second job failed - five
+    # posts about one new logo came back under five near-identical names, so
+    # each fell below the thread floor and the campaign vanished from a board
+    # whose entire signal is that one campaign was discussed in many places.
+    strong, _ = providers_from_env()
 
     brands = (tuple(b.strip() for b in args.brands.split(",") if b.strip())
               or SEED_BRANDS)
@@ -60,15 +67,17 @@ def main(argv=None) -> int:
         print("  nothing collected; not publishing an empty radar.")
         return 1
 
-    labels, fallbacks = label(mentions, fast)
-    if fallbacks and fallbacks >= len(mentions) // 2:
-        # A radar built mostly from unlabelled posts is one campaign per post,
-        # which reads as a finding rather than as the model having failed.
-        print(f"  REFUSING TO PUBLISH: {fallbacks} of {len(mentions)} posts "
-              f"went unnamed, so the grouping is not the model's.")
+    labels, fallbacks, answered = label(mentions, strong)
+    if answered < len(mentions) // 2:
+        # The health check is whether the model ANSWERED, not whether it said
+        # yes. Most posts here are practitioners discussing their own work and
+        # a high `none` rate is the model being correctly strict; a model that
+        # returned nothing also yields zero rows, and that is the failure.
+        print(f"  REFUSING TO PUBLISH: the model addressed only {answered} of "
+              f"{len(mentions)} posts, so the grouping is not the model's.")
         return 1
-    print(f"  {len(set(labels.values()))} campaigns named "
-          f"({fallbacks} posts not about a campaign)")
+    print(f"  {len(set(labels.values()))} campaigns named; {fallbacks} posts "
+          f"were not about a campaign (expected — most never are)")
 
     kwargs = {"floor": args.floor} if args.floor is not None else {}
     ranked, refused = rank(mentions, labels, **kwargs)

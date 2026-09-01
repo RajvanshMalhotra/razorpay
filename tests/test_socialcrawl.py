@@ -129,3 +129,37 @@ def test_absent_without_a_key():
     finally:
         if saved is not None:
             os.environ["SOCIALCRAWL_API_KEY"] = saved
+
+
+def test_counts_come_back_as_strings_and_must_be_numbers():
+    """Measured on the live API: engagement.likes is '401', not 401. Ranking
+    adds these, so a string either raises or concatenates two numbers into a
+    much larger one and silently reorders the board."""
+    post = {"post": {"content": {"text": "Instagram rebrand"},
+                     "url": "https://reddit.com/1",
+                     "engagement": {"likes": "401", "comments": "142"},
+                     "ext": {"subreddit": "popculturechat"}}}
+
+    got = SocialCrawl("k", opener=_opener(_envelope([post]))).reddit_search("x")
+
+    assert got.items[0]["score"] == 401
+    assert got.items[0]["comments"] == 142
+    assert got.items[0]["score"] + got.items[0]["comments"] == 543
+
+
+def test_a_search_result_is_wrapped_in_post_not_bare():
+    """The live shape is {"post": {...}, "computed": {...}}. Reading the
+    unwrapped paths mapped 0 of 7 real items, spent a credit, and would have
+    reported that nobody was discussing the topic."""
+    post = {"post": {"content": {"text": "Brands poke fun at Instagram's logo"},
+                     "url": "https://reddit.com/1",
+                     "author": {"username": "mlg1981"},
+                     "published_at": "2026-08-23T14:02:36.000Z",
+                     "engagement": {"likes": 401, "comments": 142},
+                     "ext": {"subreddit": "popculturechat"}}}
+
+    got = SocialCrawl("k", opener=_opener(_envelope([post]))).reddit_search("x")
+
+    assert got.unmapped == 0
+    assert got.items[0]["community"] == "popculturechat"
+    assert got.items[0]["author"] == "mlg1981"

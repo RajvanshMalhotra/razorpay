@@ -37,18 +37,30 @@ from dataclasses import dataclass
 
 BASE = "https://www.socialcrawl.dev"
 
-# Candidate paths for each field we need. Ordered: the first that resolves to
-# a non-empty value wins. Written as a table because the archetype is stable
-# across platforms, so one map serves Reddit and X alike.
+# Candidate paths for each field we need, tried in order; the first that
+# resolves to a non-empty value wins.
+#
+# EVERY ITEM IS WRAPPED. A search result is not the post — it is
+# `{"post": {...}, "computed": {...}}`, and the post's own subreddit lives one
+# level deeper again in `post.ext`. The first version of this map read the
+# unwrapped paths and mapped 0 of 7 real items. It did not fail: it returned
+# an empty list, spent a credit, and would have reported "nobody is
+# discussing this". That is why `unmapped` is counted rather than skipped, and
+# why the unwrapped paths are kept below as fallbacks rather than deleted —
+# other archetypes on this API are not wrapped the same way.
 FIELDS = {
-    "text": (("content", "text"), ("title",), ("text",)),
-    "url": (("url",), ("permalink",), ("link",)),
-    "author": (("author", "handle"), ("author", "name"), ("author",)),
-    "when": (("published_at",), ("created_at",), ("date",)),
-    "score": (("engagement", "likes"), ("engagement", "score"), ("score",)),
-    "comments": (("engagement", "comments"), ("comments",),
-                 ("num_comments",)),
-    "community": (("subreddit",), ("community",), ("source",)),
+    "text": (("post", "content", "text"), ("post", "ext", "title"),
+             ("content", "text"), ("title",), ("text",)),
+    "url": (("post", "url"), ("url",), ("permalink",)),
+    "author": (("post", "author", "username"), ("author", "username"),
+               ("author", "handle"), ("author", "name")),
+    "when": (("post", "published_at"), ("published_at",), ("created_at",)),
+    "score": (("post", "engagement", "likes"), ("engagement", "likes"),
+              ("engagement", "score"), ("score",)),
+    "comments": (("post", "engagement", "comments"), ("engagement", "comments"),
+                 ("comments",), ("num_comments",)),
+    "community": (("post", "ext", "subreddit"), ("subreddit",),
+                  ("community",), ("source",)),
 }
 
 
@@ -76,14 +88,26 @@ def _dig(item, path):
     return node
 
 
+# The API returns counts as STRINGS — '401', not 401. Ranking adds them, so
+# left alone `engagement` either raises or silently concatenates two numbers
+# into a much larger one and reorders the board.
+NUMERIC = ("score", "comments")
+
+
 def _read(item) -> dict:
     out = {}
     for name, paths in FIELDS.items():
         for path in paths:
             value = _dig(item, path)
-            if value not in (None, "", []):
-                out[name] = value
-                break
+            if value in (None, "", []):
+                continue
+            if name in NUMERIC:
+                try:
+                    value = int(float(value))
+                except (TypeError, ValueError):
+                    continue
+            out[name] = value
+            break
     return out
 
 
@@ -142,15 +166,24 @@ class SocialCrawl:
 
     # --- the two calls the radar actually makes ------------------------------
 
-    def reddit_search(self, query: str, limit: int = 20) -> Reply:
-        """1 credit. Scores and comment counts, which RSS cannot give."""
-        return self.get("reddit/search", query=query, limit=limit)
+    def reddit_search(self, query: str, sort: str = "relevance",
+                      timeframe: str = "month") -> Reply:
+        """1 credit. Scores and comment counts, which RSS cannot give.
+
+        There is no `limit` parameter — passing one is a 400, which is how
+        the first live call failed. The optional set is sort, timeframe,
+        after and trim; a month matches the window the RSS path uses, so
+        both paths answer the same question about the same period.
+        """
+        return self.get("reddit/search", query=query, sort=sort,
+                        timeframe=timeframe)
 
     def subreddit_search(self, subreddit: str, query: str,
-                         limit: int = 20) -> Reply:
+                         sort: str = "relevance",
+                         timeframe: str = "month") -> Reply:
         """1 credit. The same shape as the RSS path, without the throttling."""
         return self.get("reddit/subreddit/search", subreddit=subreddit,
-                        query=query, limit=limit)
+                        query=query, sort=sort, timeframe=timeframe)
 
     def x_search(self, query: str) -> Reply:
         """5 credits. Natural-language search over X with source citations.

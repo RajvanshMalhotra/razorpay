@@ -183,26 +183,55 @@ def discover(brands=SEED_BRANDS, searcher=None, x=None,
             found.extend(x.mentions(brand))
     if crawl is not None:
         found.extend(_from_crawl(crawl, brands))
+        if x is None:          # not both; the direct token wins if present
+            found.extend(_x_from_crawl(crawl))
     return _unique(found)
 
 
 def _from_crawl(crawl, brands) -> list[Mention]:
-    """One natural-language question over X, not one query per brand.
+    """One search per brand, which the throttled path could not afford.
+
+    THE QUERY DECIDES THE ANSWER, again. Broad queries — "ad campaign",
+    "brand rebrand" — return practitioners discussing their own work: "Im
+    rebranding, help lol". Naming the company returns the reaction to what
+    that company actually did: "Brands poke fun at Instagram's new logo",
+    401 upvotes, alongside the same story in r/logodesign and r/graphic_design.
+    That is a campaign with measurable spread, which is what the ranking is
+    made of.
+
+    One credit each, cached for two minutes, and a cache hit is free — so a
+    sweep of the seed list costs about what one X question costs.
+    """
+    out: list[Mention] = []
+    for brand in brands:
+        reply = crawl.reddit_search(f"{brand} campaign rebrand ad")
+        if reply.error:
+            continue
+        out.extend(Mention(
+            brand="", title=item.get("text", "")[:250],
+            url=item.get("url", ""), community=item.get("community", "reddit"),
+            source="reddit", when=(item.get("when") or "")[:10],
+            score=item.get("score"), comments=item.get("comments"))
+            for item in reply.items)
+    return out
+
+
+def _x_from_crawl(crawl) -> list[Mention]:
+    """One natural-language question over X for the whole field.
 
     `twitter/ai-search` costs five credits and answers a question rather than
-    matching a term, so asking it once about the whole field is both cheaper
-    and closer to what it is good at. A free account starts with 100 credits,
-    and one sweep must not be able to spend them all.
+    matching a term, so asking once about everything is both cheaper and
+    closer to what it is good at.
     """
     reply = crawl.x_search(
         "Which brand marketing campaigns, ads or rebrands are people "
         "reacting to on X right now? Name the company for each.")
     if reply.error:
         return []
-    return [Mention(brand="", title=item.get("text", "")[:200],
+    return [Mention(brand="", title=item.get("text", "")[:250],
                     url=item.get("url", ""), community="x", source="x",
-                    when=item.get("when", ""), score=item.get("score"),
-                    comments=item.get("comments"))
+                    when=(item.get("when") or "")[:10],
+                    score=item.get("score"), comments=item.get("comments"))
             for item in reply.items]
 
 
@@ -232,8 +261,16 @@ actually ran.
 
 Reply with one line per post, exactly `<number>: <company> | <campaign name>`.
 The campaign name names the CAMPAIGN, not the company - "Instagram wordmark
-rebrand", not "Instagram". Posts about the same campaign must get the exact
-same company and the exact same campaign name.
+rebrand", not "Instagram".
+
+GROUP BOLDLY. Posts about the same campaign MUST get the byte-identical
+company and campaign name. Five posts reacting to one new logo - in different
+subreddits, worded differently, some praising and some mocking - are ONE
+campaign and must share one name. Splitting them into five near-identical
+names is the most common way to get this wrong, and it destroys the answer:
+the whole signal is that one campaign was discussed in many places. Before you
+write a name, check whether you have already used one that means the same
+thing, and reuse that one exactly.
 
 Reply `<number>: none` for everything else, and be strict. A post that merely
 mentions a company's ad platform - running Google Ads, using Meta Ads Manager
@@ -242,16 +279,26 @@ When in doubt, `none`."""
 
 
 def label(mentions, provider):
-    """Attribute and group. Returns ({index: (company, campaign)}, fallbacks).
+    """Attribute and group.
 
-    `fallbacks` counts the posts that were not about a company's campaign,
-    which on this source is most of them and is the correct outcome. It is
-    returned rather than swallowed because the failure mode is silent and
-    plausible: a model that returns nothing produces zero rows, and zero rows
-    looks exactly like a quiet week.
+    Returns ({index: (company, campaign)}, fallbacks, answered).
+
+    THE TWO NUMBERS MEAN DIFFERENT THINGS AND ONLY ONE IS A FAULT.
+
+    `fallbacks` counts posts the model looked at and said were not about a
+    company's campaign. On this source that is most of them — 88 of 100 in
+    the first live run — and it is the correct answer, not a failure. These
+    communities are full of practitioners discussing their own work.
+
+    `answered` counts posts the model addressed at all, either by naming a
+    campaign or by explicitly saying `none`. THAT is the health check: a
+    model returning nothing also produces zero rows, and zero rows looks
+    exactly like a quiet week. Refusing on a high fallback rate — which the
+    first version did — refuses precisely when the model is being correctly
+    strict.
     """
     if not mentions:
-        return {}, 0
+        return {}, 0, 0
 
     listing = "\n".join(f"{i}. [{m.community}] {m.title}"
                         for i, m in enumerate(mentions, start=1))
@@ -263,12 +310,16 @@ def label(mentions, provider):
     )
 
     named: dict[int, tuple] = {}
+    answered: set[int] = set()
     for line in reply.text.splitlines():
         match = re.match(r"\s*(\d+)\s*[:.)-]\s*(.+)", line)
         if not match:
             continue
         index, rest = int(match.group(1)), match.group(2).strip()
-        if not (1 <= index <= len(mentions)) or rest.lower() == "none":
+        if not (1 <= index <= len(mentions)):
+            continue
+        answered.add(index)
+        if rest.lower() == "none":
             continue
         if "|" not in rest:
             # Named a campaign but no company, so there is nothing to check it
@@ -278,7 +329,7 @@ def label(mentions, provider):
         if brand and campaign:
             named[index] = (brand, campaign)
 
-    return named, len(mentions) - len(named)
+    return named, len(mentions) - len(named), len(answered)
 
 
 def rank(mentions, labels, floor: int = MIN_THREADS):

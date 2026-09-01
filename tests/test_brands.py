@@ -113,15 +113,28 @@ def test_engagement_breaks_a_tie_but_never_makes_the_ranking():
 
 # --- grouping ----------------------------------------------------------------
 
-def test_unattributed_posts_are_counted_not_silently_dropped():
-    """A model that returns nothing produces zero rows, and zero rows looks
-    exactly like a quiet week."""
+def test_a_model_that_answers_nothing_is_a_fault():
+    """Zero rows from silence looks exactly like zero rows from a quiet week,
+    so `answered` is the health check and it must be zero here."""
     mentions = [_m("", "Some ad", "marketing")] * 3
 
-    mapping, fallbacks = label(mentions, Says(""))
+    mapping, fallbacks, answered = label(mentions, Says(""))
 
-    assert mapping == {}
-    assert fallbacks == 3
+    assert mapping == {} and fallbacks == 3
+    assert answered == 0
+
+
+def test_a_model_that_rejects_almost_everything_is_working_correctly():
+    """Measured live: 88 of 100 posts were not about a company's campaign.
+    That is these communities being full of practitioners discussing their own
+    work, and refusing on it refuses exactly when the model is being strict."""
+    mentions = [_m("", f"post {i}", "marketing") for i in range(4)]
+    reply = "1: none\n2: none\n3: none\n4: Instagram | Instagram wordmark rebrand"
+
+    mapping, fallbacks, answered = label(mentions, Says(reply))
+
+    assert len(mapping) == 1 and fallbacks == 3
+    assert answered == 4          # it looked at every one of them
 
 
 def test_a_post_about_using_a_companys_ad_platform_is_not_its_campaign():
@@ -131,24 +144,24 @@ def test_a_post_about_using_a_companys_ad_platform_is_not_its_campaign():
     mentions = [_m("", "How difficult it is learn meta and google adds campaign?", "PPC"),
                 _m("", "Instagram rebrand its wordmark", "marketing")]
 
-    mapping, fallbacks = label(
+    mapping, fallbacks, answered = label(
         mentions, Says("1: none\n2: Instagram | Instagram wordmark rebrand"))
 
     assert mapping == {2: ("Instagram", "Instagram wordmark rebrand")}
-    assert fallbacks == 1
+    assert fallbacks == 1 and answered == 2
 
 
 def test_a_campaign_named_without_a_company_is_dropped():
     """There would be nothing to check the row against."""
-    mapping, fallbacks = label([_m("", "Some rebrand", "marketing")],
-                               Says("1: a clever rebrand"))
+    mapping, fallbacks, answered = label([_m("", "Some rebrand", "marketing")],
+                                         Says("1: a clever rebrand"))
 
-    assert mapping == {} and fallbacks == 1
+    assert mapping == {} and fallbacks == 1 and answered == 1
 
 
 def test_no_mentions_never_calls_the_model():
     provider = Says("")
-    assert label([], provider) == ({}, 0)
+    assert label([], provider) == ({}, 0, 0)
     assert provider.calls == 0
 
 
@@ -290,6 +303,9 @@ def test_socialcrawl_asks_x_once_not_once_per_brand():
     class Crawl:
         credits_remaining = 95
 
+        def reddit_search(self, query):
+            return type("R", (), {"error": "", "items": []})()
+
         def x_search(self, query):
             calls.append(query)
             return type("R", (), {"error": "", "items": [
@@ -307,6 +323,9 @@ def test_socialcrawl_asks_x_once_not_once_per_brand():
 
 def test_socialcrawl_failing_leaves_the_reddit_side_standing():
     class Broken:
+        def reddit_search(self, query):
+            return type("R", (), {"error": "insufficient credits", "items": []})()
+
         def x_search(self, query):
             return type("R", (), {"error": "insufficient credits", "items": []})()
 
