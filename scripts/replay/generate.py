@@ -57,6 +57,7 @@ from scripts.replay.read import (
     failure_threads,
     load,
     benchmarks,
+    benchmarks,
     merchant_view,
     performance,
     radar,
@@ -1563,7 +1564,6 @@ def build_desk(db_path: str) -> str:
           'live floor</button>'
           '<button class="nav house" data-view="board" aria-selected="false">'
           'the board</button>'
-          '<a class="nav" href="auction.html">the auction</a>'
           '<a class="nav" href="how-to.html">how to read this</a>'
           '<a class="nav" href="replay.html">&larr; exchange</a>'
           "</span></div>"
@@ -1733,20 +1733,14 @@ def _board_html(desk, sale, summary, scan=None, perf=None) -> str:
         board_html = ('<div class="empty">No campaign board published. Run '
                       'scripts.market.research over this log.</div>')
 
-    if sale:
-        # The auction has its own page. Sitting under the board it was one
-        # more block on an already long instrument, and the thing it proves —
-        # that intelligence is priced, sold and paid back for — is a separate
-        # argument from what is trending.
-        return board_html + (
-            f'<div class="note">The lot mined from this board sold for '
-            f'<b>{esc(sale["price"])}</b> points. '
-            f'<a href="auction.html">See the auction &rarr;</a></div>')
-
+    # NO AUCTION. It was a mechanism looking for a use: a coffee roaster has
+    # no reason to bid against a clothing brand for apparel benchmarks. The
+    # board is published to every business on the plan that includes it.
     return board_html + (
-        f'<div class="note">The privacy floor refused: only '
-        f'{summary.distinct_traders} merchants contributed. A floor that '
-        f'refuses is the control working.</div>')
+        '<div class="note">Published to every business on a plan that '
+        'includes the market layer, and refreshed as the market trades. No '
+        'figure appears unless at least three businesses stand behind '
+        'it.</div>')
 
 
 # =============================================================================
@@ -1929,39 +1923,6 @@ def _network_html(net) -> str:
         '<p class="hint" id="dhint">Hover any merchant. These are real '
         'counterparties, found by agents with no introduction.</p>'
         "</aside></div>")
-
-
-def _auction_html(sale) -> str:
-    """The sealed auction, playable.
-
-    A second-price auction is the one mechanism here that nobody believes
-    until they have lost one. So: eight real sealed bids, face down, and the
-    visitor's own number goes in beside them. The rule is applied to their
-    bid exactly as it was applied to the eight.
-    """
-    if not sale:
-        return ""
-    envelopes = "".join(
-        f'<li class="env" data-amt="{e.payload.get("amount")}" '
-        f'data-who="{esc(who(e.actor_id))}">'
-        f'<span class="seal"></span>'
-        f'<span class="bw">{esc(who(e.actor_id))}</span>'
-        f'<span class="ba">{esc(e.payload.get("amount"))}</span></li>'
-        for e in sale["bids"])
-    return (
-        '<div class="auction">'
-        f'<div class="lot"><span class="lb">the lot</span>'
-        f'<p>&ldquo;{esc(sale["headline"])}&rdquo;</p>'
-        f'<span class="src">mined from {sale["contributors"]} merchants&rsquo; '
-        f'settled trades &middot; no merchant named</span></div>'
-        '<div class="play">'
-        '<label for="bid">Your sealed bid, in points</label>'
-        '<div class="bidrow"><input id="bid" type="number" min="0" max="9999" '
-        'step="50" placeholder="1200" inputmode="numeric">'
-        '<button id="place">Open the envelopes</button></div>'
-        '<p class="verdict" id="verdict" role="status"></p>'
-        f'<ul class="envs" id="envs">{envelopes}</ul>'
-        '</div></div>')
 
 
 NET_CSS = """
@@ -2533,6 +2494,27 @@ footer{padding:26px clamp(20px,5vw,64px);border-top:1px solid var(--pline);
   *{animation:none!important;scroll-behavior:auto}
   .js .steps,.js .pr,.js .jobs,.js .wheel{opacity:1;transform:none}
   .hero h1 em{background-size:100% 100%}
+  .plans{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));
+  gap:14px;margin-top:8px}
+.plan{border:1px solid var(--line);border-radius:4px;background:var(--card);
+  padding:20px 22px;display:flex;flex-direction:column;gap:9px}
+.plan.lit{border-color:var(--gold);box-shadow:0 0 0 1px var(--gold)}
+.plan h3{margin:0;font-family:var(--disp);font-size:20px;font-weight:600;
+  color:var(--ink)}
+.plan p{margin:0;color:var(--body);font-size:14.5px;line-height:1.55}
+.plan .inc{margin-top:auto;font-family:var(--mono);font-size:10.5px;
+  letter-spacing:.1em;text-transform:uppercase;color:var(--soft)}
+.plan.lit .inc{color:var(--gold)}
+.benches{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));
+  gap:10px;margin-top:14px}
+.bench{border:1px solid var(--line);border-radius:4px;background:var(--card);
+  padding:13px 15px}
+.bench b{display:block;color:var(--ink);font-size:14.5px;margin-bottom:3px}
+.bench span{display:block;color:var(--body);font-size:13px}
+.bench i{display:block;margin-top:5px;font-style:normal;font-family:var(--mono);
+  font-size:10.5px;color:var(--soft);line-height:1.5}
+.fine{margin-top:14px;font-size:13px;color:var(--soft);max-width:64ch}
+@media(prefers-reduced-motion:reduce){
   .enter,.spread .track i,.spread .val{transition-duration:.01ms!important}
 }
 """ + NET_CSS
@@ -2669,136 +2651,6 @@ table.bids td.mk{font-family:var(--mono);font-size:10px;color:var(--green);
 table.bids tr.top td{background:rgba(255,255,255,.035)}
 table.bids td.q{font-size:12.5px;line-height:1.5}
 """
-
-
-def _bench_html(bench) -> str:
-    """The second lot type: what each category actually clears at.
-
-    Kept beside the radar rather than replacing it, because the two answer
-    different questions and a merchant wants both. The radar says what the
-    outside world is reacting to. This says what the merchant is about to be
-    charged, and whether pushing back has ever worked in that category.
-    """
-    if not bench:
-        return ""
-    rows = ""
-    for row in bench:
-        share = row["below_ask_share"]
-        saving = row["median_saving"]
-        move = (f'{share * 100:.0f}% of trades closed under it'
-                if share else 'no trade has ever closed under it')
-        rows += (
-            f'<tr><td class="a">{esc(row["category"])}</td>'
-            f'<td class="pt">{rupees(row["clears_paise"])}</td>'
-            f'<td class="pt">{rupees(row["ask_paise"])}</td>'
-            f'<td class="mk">{move}</td>'
-            f'<td class="pt">{saving * 100:.1f}%</td>'
-            f'<td>{row["trades"]} trades &middot; '
-            f'{row["merchants"]} merchants</td></tr>')
-    return (
-        '<h2>The other lot: what a category actually clears at</h2>'
-        '<p>A seller sees its own asks and a buyer sees its own bills. Only '
-        'the party that settles both sides of every trade can say what the '
-        'middle is &mdash; which is why this is Razorpay&rsquo;s to sell and '
-        'nobody else&rsquo;s. Every figure is arithmetic over settled '
-        'matches; no model and no scraping.</p>'
-        '<table class="bids"><tr><th>category</th><th>clears at</th>'
-        '<th>median ask</th><th>how often it moves</th><th>saving</th>'
-        f'<th>evidence</th></tr>{rows}</table>'
-        '<p><b>Read it as a merchant would.</b> A category that clears well '
-        'under its ask and moves most of the time is one to push on. A '
-        'category that closes at the ask every time is one where pushing '
-        'spends the only thing an agent cannot buy more of &mdash; the '
-        'counterparty&rsquo;s patience.</p>')
-
-
-def build_auction(db_path: str) -> str:
-    """The sealed auction, on a page of its own.
-
-    Under the board it was one more block on an already long instrument, and
-    a reader had to scroll past six radar rows to reach it. What it proves is
-    also a separate argument: not what is trending, but that the intelligence
-    has a price, that the price is set by a rule rather than by the seller,
-    and that the merchants whose trading produced it are paid.
-    """
-    summary, _trades, events = load(db_path)
-    sale = auction(events)
-    bench = benchmarks(events)
-
-    if not sale:
-        body = ('<div class="empty">No auction on this log. Run '
-                'scripts.market.house_cycle over it.</div>')
-    else:
-        ordered = sorted(sale["bids"],
-                         key=lambda e: -int(e.payload.get("amount") or 0))
-        rows = ""
-        for n, e in enumerate(ordered):
-            mark = ("won" if n == 0 else "set the price" if n == 1 else "")
-            rows += (
-                f'<tr class="{"top" if n < 2 else ""}">'
-                f'<td class="a">{esc(who(e.actor_id))}</td>'
-                f'<td class="pt">{esc(e.payload.get("amount"))}</td>'
-                f'<td class="mk">{mark}</td>'
-                f'<td class="q">{esc(str(e.payload.get("reason", ""))[:190])}</td>'
-                f"</tr>")
-        paid = (sale["royalties"][0].payload.get("amount")
-                if sale["royalties"] else 0)
-        body = (
-            f'<div class="won"><b>{esc(who(sale["winner"]))}</b> won it for '
-            f'<b>{esc(sale["price"])} points</b>'
-            f'<i>the runner-up&rsquo;s bid, not its own</i></div>'
-
-            '<h2>What was sold</h2>'
-            f'<p class="lot">&ldquo;{esc(sale["headline"])}&rdquo;</p>'
-            '<p>The headline above is free and published to everyone. What '
-            'the winner actually bought is the detail underneath it &mdash; '
-            'the ranked campaigns, how far each has spread, and the threads '
-            'each was counted from.</p>'
-
-            + _bench_html(bench)
-            + '<h2>The bids, sealed</h2>'
-            '<p>Every agent priced the lot without seeing any other bid. '
-            'Under a second-price rule the honest number is also the best '
-            'one to write down, which is why the reasoning below is about '
-            'what the lot is worth to that business rather than about '
-            'outbidding anyone.</p>'
-            f'<table class="bids"><tr><th>bidder</th><th>points</th>'
-            f'<th></th><th>why they valued it there</th></tr>{rows}</table>'
-
-            '<h2>Why the winner paid less than it bid</h2>'
-            f'<p>The top bid wins and pays the <em>second</em> price. '
-            f'Bidding your true value can then never cost you more than the '
-            f'thing is worth to you, so nobody has to guess at rivals &mdash; '
-            f'and the reasoning in that table stays legible instead of '
-            f'becoming a bluff.</p>'
-
-            '<h2>Who got paid</h2>'
-            f'<p><b>{len(sale["royalties"])} merchants</b> each earned '
-            f'<b>{esc(paid)} points</b> from this sale. Their trading '
-            f'produced the insight; none of them was named in it, and none '
-            f'knew it was being sold. That is the whole shape of the '
-            f'product: the platform sees what no single client can, sells '
-            f'it once, and pays the clients whose activity made it.</p>')
-
-    return (
-        '<!doctype html>\n<html lang="en"><head><meta charset="utf-8">'
-        '<meta name="viewport" content="width=device-width,initial-scale=1">'
-        '<title>The auction</title>'
-        f"<style>{CSS}{HOWTO_CSS}</style></head><body>"
-        + '<div class="bar"><span class="mark">RAZORPAY DESK</span>'
-          '<span class="navs">'
-          '<a class="nav" href="desk.html">&larr; the desk</a>'
-          '<a class="nav" href="how-to.html">how to read this</a>'
-          "</span></div>"
-        + '<main class="doc"><h1>One insight, sold once.</h1>'
-          '<p class="stand">Razorpay mints a lot from what it can see across '
-          'every client, sells it by sealed bid, and pays a royalty to the '
-          'merchants whose trading produced it &mdash; without naming any of '
-          'them.</p>'
-        + body
-        + "</main>"
-        + _footer(db_path, summary)
-        + "</body></html>")
 
 
 def build_howto(db_path: str) -> str:
@@ -2952,6 +2804,47 @@ def build_howto(db_path: str) -> str:
         + "</body></html>")
 
 
+def _plan_html(bench) -> str:
+    """What the intelligence is, and how a merchant gets it.
+
+    IT IS A PLAN FEATURE, NOT AN AUCTION. The auction was a mechanism looking
+    for a use: a coffee roaster has no reason to bid against a clothing brand
+    for apparel benchmarks, and watching it do so said more about the
+    mechanism than about the product. What a merchant wants is the part of
+    the market it is actually in, kept current, without an event to attend.
+
+    So the intelligence ships the way everything on a payments platform
+    ships — included with a plan, priced by how much of the market you see.
+    """
+    rows = ""
+    for row in (bench or [])[:4]:
+        share = row["below_ask_share"]
+        moves = (f'{share * 100:.0f}% of trades close under it &middot; '
+                 f'{row["median_saving"] * 100:.0f}% saved when they do'
+                 if share else "sellers here never move")
+        rows += (
+            f'<div class="bench"><b>{esc(row["category"])}</b>'
+            f'<span>clears at {rupees(row["clears_paise"])}, against a '
+            f'{rupees(row["ask_paise"])} ask</span><i>{moves}</i></div>')
+    return (
+        '<div class="plans">'
+        '<div class="plan"><h3>Standard</h3>'
+        '<p>Your own agents, your own books, your own audit trail. Everything '
+        'a business needs to trade on the exchange.</p>'
+        '<span class="inc">included today</span></div>'
+        '<div class="plan lit"><h3>Standard + Market</h3>'
+        '<p>The board above, kept current as the market trades: what your '
+        'category clears at, how often sellers move, and which campaigns are '
+        'climbing across the whole client base.</p>'
+        '<span class="inc">the intelligence layer</span></div>'
+        "</div>"
+        + (f'<div class="benches">{rows}</div>' if rows else "")
+        + '<p class="fine">Your own trading is what produces this, and a '
+          'figure is published only where at least three businesses stand '
+          'behind it &mdash; so no row can be traced back to one shop, '
+          'including yours.</p>')
+
+
 def build_landing(db_path: str, roster) -> str:
     """The front door, following the product narrative end to end.
 
@@ -2969,7 +2862,7 @@ def build_landing(db_path: str, roster) -> str:
     summary, _trades, events = load(db_path)
     failures = failure_threads(events)
     desk = board(events)
-    sale = auction(events)
+    bench = benchmarks(events)
     rail_map = rails(events)
     first = _page_name(roster[0])
 
@@ -3086,15 +2979,9 @@ def build_landing(db_path: str, roster) -> str:
           '<em>what is working</em>.</h2>'
           '<p>A campaign nobody noticed yesterday can be the strategy everyone '
           'copies tomorrow. Instead of asking what is working in the market, '
-          'you get a continuously evolving answer — and agents bid for the '
-          'detail in sealed envelopes. Put your own number in.</p></div>'
-        + _auction_html(sale)
-        + '<div style="height:clamp(44px,6vw,76px)"></div>'
-        + '<div class="lead"><h2>And you are paid when your win '
-          '<em>is the thing being sold</em>.</h2>'
-          '<p>The businesses whose trading produced an insight take a share of '
-          'what it fetches, without ever being named.</p></div>'
-        + _flywheel_html(sale)
+          'you get a continuously evolving answer — refreshed as the market '
+          'trades, and included with your plan.</p></div>'
+        + _plan_html(bench)
         + "</div></section>"
 
         # ---- 8. two sides --------------------------------------------------
@@ -3123,8 +3010,8 @@ def build_landing(db_path: str, roster) -> str:
           f'happens</span></li>'
           f'<li>{_icon("ledger")}<span>Trending client campaigns, ranked from '
           f'the whole network</span></li>'
-          f'<li>{_icon("gavel")}<span>The sealed-bid auction that sells '
-          f'them</span></li></ul>'
+          f'<li>{_icon("gavel")}<span>What every category actually clears '
+          f'at, and how often sellers move</span></li></ul>'
         + f'<a class="enter" href="desk.html">Enter the terminal'
           f'{_icon("arrow", 18)}</a>'
         + f'</div>{_vision_html()}</div></section>'
@@ -3314,8 +3201,8 @@ def _deal_payload(hero) -> str:
     return json.dumps({"lines": lines}, separators=(",", ":"))
 
 
-def _jobs_html(summary, relationships, book_entries, sale) -> str:
-    won = f'{sale["price"]} points' if sale else "—"
+def _jobs_html(summary, relationships, book_entries, bench) -> str:
+    won = str(len(bench)) if bench else "—"
     jobs = (
         ("swap", "Buys and sells for you",
          "Posts what you need in plain words, finds who has it, argues the "
@@ -3330,10 +3217,10 @@ def _jobs_html(summary, relationships, book_entries, sale) -> str:
          "Every buy and sell lands in a ledger with the counterparty, the "
          "unit price, and the payment id — and syncs to your Google Sheet.",
          str(book_entries), "entries kept without anyone typing"),
-        ("gavel", "Bids for what is working",
-         "Sealed-bid auctions for market intelligence, paid in points you "
-         "earned by trading well, not in cash.",
-         won, "for the last lot, at the runner-up's price"),
+        ("gavel", "Knows what things really cost",
+         "What each category actually clears at against the asking price, "
+         "computed from both sides of every settled trade.",
+         won, "categories priced from the whole network"),
     )
     return '<div class="jobs">' + "".join(
         f'<article class="job">{_icon(icon, 22)}<h3>{esc(title)}</h3>'
@@ -3341,39 +3228,6 @@ def _jobs_html(summary, relationships, book_entries, sale) -> str:
         f'<div class="ev"><b>{esc(figure)}</b><span>{esc(caption)}</span></div>'
         f"</article>"
         for icon, title, body, figure, caption in jobs) + "</div>"
-
-
-def _flywheel_html(sale) -> str:
-    if not sale:
-        return ('<p class="pull">The privacy floor refused to publish this '
-                'one. A floor that refuses is the control working.</p>')
-
-    paid_each = (sale["royalties"][0].payload.get("amount")
-                 if sale["royalties"] else 0)
-    steps = (
-        ("You trade", "Your settled deals are part of what the house can see.",
-         f'{sale["contributors"]} merchants'),
-        ("The house finds a pattern",
-         "Never from one business, and never naming one.",
-         "anonymised"),
-        ("Agents bid, sealed",
-         "Highest bid wins and pays the runner-up's price, so guessing at "
-         "rivals is pointless and honest valuation wins.",
-         f'{len(sale["bids"])} bids'),
-        ("You are paid",
-         "Everyone whose trading produced the insight takes a share of what "
-         "it fetched.",
-         f'{paid_each} points each'),
-    )
-    wheel = '<div class="wheel">' + "".join(
-        f'<div class="wf"><div class="n">{n + 1}</div><h3>{esc(t)}</h3>'
-        f'<p>{esc(d)}</p><div class="fig">{esc(f)}</div></div>'
-        for n, (t, d, f) in enumerate(steps)) + "</div>"
-
-    return wheel + (
-        '<p class="pull">Razorpay is the platform. Merchants are the creators. '
-        '<span>Their wins are the content.</span> Other merchants pay to '
-        'watch, and the revenue is shared.</p>')
 
 
 def _steps_html() -> str:
@@ -3448,7 +3302,6 @@ def main(argv=None) -> int:
 
     (out / "desk.html").write_text(build_desk(db), encoding="utf-8")
     (out / "how-to.html").write_text(build_howto(db), encoding="utf-8")
-    (out / "auction.html").write_text(build_auction(db), encoding="utf-8")
     (out / "index.html").write_text(build_landing(db, roster), encoding="utf-8")
 
     print(f"wrote index.html + desk.html + {written} merchant pages "

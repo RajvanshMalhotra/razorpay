@@ -38,7 +38,7 @@ only watches:
 Plus three house agents that belong to Razorpay rather than to any merchant: a
 **research desk** that ranks trending campaigns across the whole client base, an
 **accountant** that reconciles against Razorpay and repairs drift, and an
-**auctioneer** that sells market intelligence by sealed second-price bid.
+**market desk** that prices each category from both sides of every trade.
 
 ---
 
@@ -126,6 +126,8 @@ cp .env.example .env          # add your Razorpay TEST-mode keys
 .venv/bin/python -m scripts.market.run          # run a market
 .venv/bin/python -m scripts.market.research     # publish the campaign board
 .venv/bin/python -m scripts.market.radar        # publish the brand radar
+.venv/bin/python -m scripts.market.benchmark    # what each category clears at
+.venv/bin/python -m scripts.market.perform      # what each campaign earned
 .venv/bin/python -m scripts.replay.generate     # build the replay pages
 ```
 
@@ -150,7 +152,7 @@ built from — a board built from one source says so.
 ```
 src/exchange/          the core: event log, matching, policy gate, settlement rails
 src/exchange/agents/   the merchant broker and its four parts
-src/exchange/house/    research desk, accountant, auctions, campaign board, Reddit
+src/exchange/house/    research desk, accountant, price benchmarks, campaign board
 scripts/market/        running a market, reconciling, publishing, Sheets sync
 scripts/replay/        generating the replay pages from a finished log
 docs/                  the generated replay — landing page, 32 merchant pages, desk

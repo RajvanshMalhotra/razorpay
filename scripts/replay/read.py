@@ -590,7 +590,7 @@ ROLE_EVENTS = {
 
 ROLE_BLURB = {
     "trader": "Buys and sells. Posts what you need, negotiates, settles.",
-    "scout": "Watches what is rising and bids points for market intelligence.",
+    "scout": "Watches what is rising across the market and prices what it is worth to this business.",
     "diplomat": "Reads counterparties and advises who to deal with. Never vetoes.",
     "subconscious": "Never acts. Watches every deal and keeps what is worth "
                     "remembering.",
