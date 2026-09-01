@@ -151,7 +151,8 @@ class Refusal:
 
 
 def discover(brands=SEED_BRANDS, searcher=None, x=None,
-             communities=MARKETING_COMMUNITIES, queries=QUERIES) -> list[Mention]:
+             communities=MARKETING_COMMUNITIES, queries=QUERIES,
+             crawl=None) -> list[Mention]:
     """Collect posts that might discuss a brand's campaign. Reads; never ranks.
 
     ATTRIBUTION IS NOT DONE HERE, and the reason is a measurement. Matching
@@ -176,12 +177,33 @@ def discover(brands=SEED_BRANDS, searcher=None, x=None,
                 community=post.subreddit, source="reddit",
                 when=post.when, score=None, comments=None))
 
-    # X is queried per brand from the seed list, because its API takes a real
-    # query and does not throttle the way Reddit's RSS does.
+    # X, when somebody has paid for it, one way or the other.
     if x is not None:
         for brand in brands:
             found.extend(x.mentions(brand))
+    if crawl is not None:
+        found.extend(_from_crawl(crawl, brands))
     return _unique(found)
+
+
+def _from_crawl(crawl, brands) -> list[Mention]:
+    """One natural-language question over X, not one query per brand.
+
+    `twitter/ai-search` costs five credits and answers a question rather than
+    matching a term, so asking it once about the whole field is both cheaper
+    and closer to what it is good at. A free account starts with 100 credits,
+    and one sweep must not be able to spend them all.
+    """
+    reply = crawl.x_search(
+        "Which brand marketing campaigns, ads or rebrands are people "
+        "reacting to on X right now? Name the company for each.")
+    if reply.error:
+        return []
+    return [Mention(brand="", title=item.get("text", "")[:200],
+                    url=item.get("url", ""), community="x", source="x",
+                    when=item.get("when", ""), score=item.get("score"),
+                    comments=item.get("comments"))
+            for item in reply.items]
 
 
 def _reddit_search(query, anchors):

@@ -280,3 +280,40 @@ def test_a_row_written_before_the_radar_existed_is_still_the_board():
         payload = {"rank": 1, "campaign": "Cold Brew", "movement": 1.5}
 
     assert is_board_row(Old())
+
+
+def test_socialcrawl_asks_x_once_not_once_per_brand():
+    """ai-search costs five credits and a free account starts with 100. One
+    sweep must not be able to spend them all."""
+    calls = []
+
+    class Crawl:
+        credits_remaining = 95
+
+        def x_search(self, query):
+            calls.append(query)
+            return type("R", (), {"error": "", "items": [
+                {"text": "Everyone is talking about the Instagram rebrand",
+                 "url": "https://x.com/1", "when": "2026-08-30",
+                 "score": 900, "comments": 40}]})()
+
+    found = discover(brands=("Apple", "Meta", "Nike", "CRED"),
+                     searcher=lambda q, a: [], crawl=Crawl())
+
+    assert len(calls) == 1
+    assert len(found) == 1 and found[0].source == "x"
+    assert found[0].score == 900
+
+
+def test_socialcrawl_failing_leaves_the_reddit_side_standing():
+    class Broken:
+        def x_search(self, query):
+            return type("R", (), {"error": "insufficient credits", "items": []})()
+
+    found = discover(brands=("Apple",),
+                     searcher=lambda q, a: [
+                         Post("Apple ad is everywhere", "marketing", "a",
+                              "u1", "d", 1)],
+                     crawl=Broken())
+
+    assert [m.source for m in found] == ["reddit"]

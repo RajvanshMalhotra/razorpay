@@ -35,6 +35,7 @@ def main(argv=None) -> int:
     from dotenv import load_dotenv
 
     from exchange.house.brands import XAPI
+    from exchange.house.socialcrawl import SocialCrawl
     from exchange.llm.openai_compat import providers_from_env
 
     load_dotenv()
@@ -43,10 +44,17 @@ def main(argv=None) -> int:
     brands = (tuple(b.strip() for b in args.brands.split(",") if b.strip())
               or SEED_BRANDS)
     x = XAPI.from_env()
-    print(f"  {len(brands)} brands | reddit: yes | "
-          f"x: {'yes' if x else 'no (set X_BEARER_TOKEN)'}")
+    crawl = SocialCrawl.from_env()
+    # The ladder, printed, so a run says out loud how much of the world it
+    # could actually see. A thin board from one source is a finding; a thin
+    # board that looks like it read everything is a lie.
+    print(f"  {len(brands)} brands | reddit rss: yes | "
+          f"socialcrawl: {'yes' if crawl else 'no (set SOCIALCRAWL_API_KEY)'} | "
+          f"x direct: {'yes' if x else 'no (set X_BEARER_TOKEN)'}")
 
-    mentions = discover(brands=brands, x=x)
+    mentions = discover(brands=brands, x=x, crawl=crawl)
+    if crawl is not None and crawl.credits_remaining is not None:
+        print(f"  socialcrawl credits remaining: {crawl.credits_remaining}")
     print(f"  {len(mentions)} posts collected")
     if not mentions:
         print("  nothing collected; not publishing an empty radar.")
