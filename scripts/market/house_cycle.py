@@ -15,7 +15,7 @@ is a good thing to have on camera.
 The order matters and is the whole shape of the product:
 
     observe  -> what actually settled, per merchant
-    read     -> the campaign board, which is what the lot is made of
+    read     -> the brand radar, which is what the lot is made of
     mint     -> a headline, if the floor allows it
     value    -> each broker prices the lot in its own words
     auction  -> sealed bids, second price
@@ -73,11 +73,21 @@ def run_house_cycle(
     report.observations = len(observations)
     report.contributors = len({o["actor_id"] for o in observations})
 
-    # The board, if one has been published. This is what makes the auction a
-    # market rather than a ritual: without it the winner buys a trade count
-    # and a total, and no business would part with points for that.
+    # THE RADAR IS THE LOT, NOT THE PROCUREMENT BOARD, and the difference is
+    # who owns the underlying facts.
+    #
+    # The procurement board and the campaign-to-cash figures beside it are
+    # computed from these merchants' OWN settled trades. Selling a merchant a
+    # summary of its own money back is not a market, and the privacy floor
+    # exists precisely because that material is theirs.
+    #
+    # The radar is different in kind: what the outside world is reacting to,
+    # gathered at cost from Reddit and X, about companies that are not on this
+    # exchange at all. Nobody here owns it, everybody here wants it, and it
+    # took real credits to assemble. That is the thing worth bidding for.
     board = [e.payload for e in exchange.log.read_all()
-             if e.type == ev.CAMPAIGN_RANKED and is_board_row(e)]
+             if e.type == ev.CAMPAIGN_RANKED
+             and (e.payload or {}).get("scope") == "brand_radar"]
     board.sort(key=lambda row: row["rank"])
     report.board_rows = len(board)
 

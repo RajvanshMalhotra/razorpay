@@ -76,16 +76,19 @@ class HouseAgent:
         WHAT THE WINNER ACTUALLY GETS. Without `board` the playbook was two
         integers — a trade count and a total — which is not something a
         business would pay points for, and made the auction a ritual rather
-        than a market. Given the campaign board, the playbook becomes the
-        board: which categories are climbing, by how much, what those
-        businesses are trying to buy, and what operators in them are saying.
-        That is the thing the free headline is a teaser for.
+        than a market. The board it is given is the BRAND RADAR: which
+        campaigns the outside world is reacting to, how far each has spread,
+        and the threads it was counted from.
 
-        THE FLOOR STILL BINDS, and it binds on the same contributors as
-        before: the merchants whose settled trades produced the observations.
-        The board is a description of their activity, so publishing it in a
-        lot is publishing their activity, and it may not clear a lower bar
-        than the activity itself would.
+        WHY THAT ONE AND NOT THE PROCUREMENT BOARD. The procurement board is
+        computed from these merchants' own settled trades, and selling a
+        merchant a summary of its own money back is not a market. The radar
+        is about companies that are not on this exchange, assembled at real
+        cost from sources none of these merchants can afford to sweep alone.
+
+        THE FLOOR STILL BINDS on the merchants whose settled trades produced
+        the observations, because their activity is what earned the points
+        being spent and what pays the royalty afterwards.
         """
         contributors = [o["actor_id"] for o in observations]
         verdict = check_privacy(contributors)
@@ -102,9 +105,10 @@ class HouseAgent:
         if board:
             # Movements only. Naming the categories here would put the paid
             # half into the free half.
-            moves = ", ".join(f"{row['movement']:.1f}x" for row in board)
-            ask = (f"{len(board)} categories ranked across {verdict.k} "
-                   f"merchants, moving {moves}. Write the headline.")
+            heat = ", ".join(str(row.get("heat", row.get("movement", 0)))
+                             for row in board)
+            ask = (f"{len(board)} campaigns ranked by how widely the market is "
+                   f"reacting to them, at {heat}. Write the headline.")
         else:
             ask = (f"{len(observations)} settled trades across {verdict.k} "
                    f"merchants, totalling {total} paise. Write the headline.")
@@ -124,19 +128,18 @@ class HouseAgent:
         if board:
             playbook["board"] = [
                 {"rank": row["rank"], "campaign": row["campaign"],
-                 "movement": row["movement"], "merchants": row["merchants"],
-                 "value_paise": row["value_paise"],
-                 "needs": list(row.get("needs", [])),
-                 "driver": row.get("driver", ""),
-                 "discussion": row.get("discussion", ""),
-                 "threads": row.get("threads", [])}
+                 "brand": row.get("brand", ""),
+                 "heat": row.get("heat"), "threads": row.get("threads"),
+                 "spread": row.get("spread"),
+                 "sources": list(row.get("sources", [])),
+                 "evidence": list(row.get("evidence", []))}
                 for row in board
             ]
         lot = mint_lot(
             headline=headline,
             playbook=playbook,
             contributor_ids=contributors,
-            category="campaign_board" if board else "market",
+            category="brand_radar" if board else "market",
         )
         self._lots.append(lot)
         self._log.append(

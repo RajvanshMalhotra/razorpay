@@ -133,27 +133,34 @@ def test_the_house_never_bids():
 
 # --- the lot is the board's detail, not a trade count ------------------------
 
-def test_a_lot_minted_from_the_board_carries_it_as_the_playbook():
-    """The auction sells the detail behind the leaderboard. If the playbook is
-    a trade count and a total, there is nothing a business would pay for and
-    the auction is theatre."""
+def _radar_row():
+    return {"rank": 1, "campaign": "Instagram wordmark rebrand",
+            "brand": "Instagram", "heat": 30, "threads": 6, "spread": 5,
+            "sources": ["reddit", "x"],
+            "evidence": [{"title": "Instagram's new wordmark",
+                          "community": "logodesign", "source": "reddit",
+                          "url": "https://reddit.com/1", "score": 272}]}
+
+
+def test_the_lot_carries_the_radar_not_the_merchants_own_trading():
+    """Selling a merchant a summary of its own settled money back is not a
+    market. The radar is about companies that are not on this exchange, and
+    it cost real credits to assemble — that is what is worth bidding for."""
     log = EventLog(":memory:")
-    house = HouseAgent(log, ScriptedProvider(["Several categories are climbing this week."]))
-    board = [{"rank": 1, "campaign": "Cold Brew", "movement": 1.5,
-              "merchants": 9, "value_paise": 620_000,
-              "needs": ["cold brew concentrate"], "driver": "demand is up",
-              "discussion": "Operators say margins are thin.",
-              "threads": [{"title": "t", "subreddit": "r/x", "url": "u"}]}]
+    house = HouseAgent(log, ScriptedProvider(["Several campaigns are spreading fast."]))
 
     lot = house.mint_from(
         [{"actor_id": f"m_{i}", "amount": 1000} for i in range(30)],
-        correlation_id="c", board=board)
+        correlation_id="c", board=[_radar_row()])
 
     assert lot is not None
-    assert lot.spec["playbook"]["board"][0]["campaign"] == "Cold Brew"
-    assert lot.spec["playbook"]["board"][0]["discussion"]
-    assert lot.spec["playbook"]["board"][0]["threads"]
-    assert lot.spec["category"] == "campaign_board"
+    row = lot.spec["playbook"]["board"][0]
+    assert row["campaign"] == "Instagram wordmark rebrand"
+    assert row["brand"] == "Instagram" and row["heat"] == 30
+    assert row["evidence"][0]["url"]
+    assert lot.spec["category"] == "brand_radar"
+    # Nothing about these merchants' own trades travels in the lot.
+    assert "needs" not in row and "value_paise" not in row
 
 
 def test_the_free_headline_does_not_give_away_the_paid_board():
@@ -170,12 +177,10 @@ def test_the_free_headline_does_not_give_away_the_paid_board():
     log = EventLog(":memory:")
     house = HouseAgent(log, Capture())
     house.mint_from([{"actor_id": f"m_{i}", "amount": 1} for i in range(30)],
-                    correlation_id="c",
-                    board=[{"rank": 1, "campaign": "Cold Brew", "movement": 1.5,
-                            "merchants": 9, "value_paise": 1}])
+                    correlation_id="c", board=[_radar_row()])
 
-    assert "Cold Brew" not in seen["asked"]
-    assert "1.5x" in seen["asked"]
+    assert "Instagram" not in seen["asked"]
+    assert "30" in seen["asked"]
     assert "do not name" in seen["system"].lower()
 
 

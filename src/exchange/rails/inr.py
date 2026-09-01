@@ -23,6 +23,14 @@ from exchange.models import Currency, Settlement, SettlementStatus
 from exchange.rails.capture import find_captured_payment
 
 
+def _notes(match_id: str, settlement_id: str, campaign: str | None) -> dict:
+    """What travels with the money. Razorpay stores and returns these."""
+    notes = {"match_id": match_id, "settlement_id": settlement_id}
+    if campaign:
+        notes["campaign"] = campaign
+    return notes
+
+
 class RazorpayRail:
     def __init__(
         self,
@@ -67,7 +75,16 @@ class RazorpayRail:
         amount: int,
         correlation_id: str,
         causation_id: str | None = None,
+        campaign: str | None = None,
     ) -> Settlement:
+        """`campaign` is what makes attribution possible later.
+
+        Razorpay sees the payment, not the ad click. The only way to know
+        which campaign a rupee came from is for the tag to travel WITH the
+        money, and `notes` is where it rides. Tag the link at creation and
+        the account itself can be asked what each campaign earned, from any
+        machine, with no log and no simulation — see house/attribution.py.
+        """
         settlement_id = new_id("stl")
 
         try:
@@ -136,7 +153,7 @@ class RazorpayRail:
                 "amount": amount,
                 "currency": "INR",
                 "description": f"Exchange settlement {settlement_id}",
-                "notes": {"match_id": match_id, "settlement_id": settlement_id},
+                "notes": _notes(match_id, settlement_id, campaign),
                 "reference_id": settlement_id,
             })
             payment_link_url = link.get("short_url")
