@@ -69,24 +69,28 @@ from scripts.replay.read import (
 
 
 def humanise(text) -> str:
-    """Rewrite actor ids inside quoted agent text into readable names.
+    """Rewrite ids and paise inside quoted agent text so a person can read it.
 
     These ARE quotations — an agent's own reasoning, a lesson the Subconscious
-    filed — and rewriting the inside of a quotation is normally the wrong
-    thing to do. This substitution is allowed because it changes no meaning:
-    `m_reelco` and `reelco` name the identical business, and the underscore
-    form is only there because the log needs a key. Leaving it on a merchant's
-    page makes their own agent look like it is talking about variables.
+    filed — and rewriting the inside of a quotation is normally wrong. These
+    substitutions change no meaning: `m_reelco` and `reelco` name the same
+    business, and 19500 paise and 195 rupees are the same money. Both forms
+    exist only because the log needs keys and integers.
     """
     out = re.sub(r"\bm_([a-z0-9_]+)",
                  lambda m: m.group(1).replace("_", " "), str(text or ""))
-    # And the money. An agent files its lessons in the units it was handed —
-    # "they paid the full 308000 paise at the agreed 1540 per unit" — and a
-    # merchant reading its own agent should be reading rupees.
-    out = re.sub(r"\b(\d{3,})\s*paise\b",
-                 lambda m: f"\u20b9{int(m.group(1)) / 100:,.0f}", out)
-    return re.sub(r"\b(\d{4,})\b",
-                  lambda m: f"\u20b9{int(m.group(1)) / 100:,.0f}", out)
+    out = re.sub(r"\b(\d{3,})\s*paise\b", _inr, out)
+    # "per unit" is what marks a bare number as a price rather than a
+    # quantity, and it is the only place a three-digit figure is safe to
+    # convert: "packmate at 850 per unit" is 8.50, not eight hundred of
+    # anything. Quantities elsewhere in the sentence are left alone.
+    out = re.sub(r"\b(\d{3,})(?=\s*(?:per unit|a unit|/unit|each))", _inr, out)
+    return re.sub(r"\b(\d{4,})\b", _inr, out)
+
+
+def _inr(m) -> str:
+    rupees = int(m.group(1)) / 100
+    return f"\u20b9{rupees:,.2f}".replace(".00", "")
 
 
 def who(actor_id) -> str:
@@ -1101,22 +1105,53 @@ if(add){
 
 
 def _crew(view) -> str:
-    marks = {"trader": "₹", "scout": "◎", "diplomat": "◇", "subconscious": "✦"}
+    """Four cards, each answering one question: what does this part do, and
+    what did it last do for me.
+
+    WHAT CAME OFF. Every card ended with the raw event constants it was read
+    from — ORDER_POSTED MATCH_PROPOSED NEGOTIATION_OPENED — which is a debug
+    view sitting on a merchant's dashboard. Provenance is already carried
+    where it belongs: every station on the rail prints the event number it
+    came from, and one page explains how to look it up. Repeating the
+    vocabulary here bought nothing and cost the card its shape.
+
+    The action count went too. "29 actions" beside "3 settled, 1 walked away"
+    invites a reader to reconcile two numbers that count different things.
+    The one that means something to a business is the second.
+    """
+    marks = {"trader": "\u20b9", "scout": "\u25ce",
+             "diplomat": "\u25c7", "subconscious": "\u2726"}
     out = ""
     for role in ("trader", "scout", "diplomat", "subconscious"):
         info = view["roles"][role]
         out += (
             f'<article class="role {role}"><div class="rh">'
             f'<span class="dot">{marks[role]}</span>'
-            f"<h3>{esc(role)}</h3>"
-            f'<span class="cnt">{info["count"]} '
-            f'{"action" if info["count"] == 1 else "actions"}</span></div>'
+            f"<h3>{esc(role)}</h3></div>"
             f'<div class="rb"><p class="job">{esc(info["blurb"])}</p>'
-            f'<p class="did">{esc(humanise(info["last"]))}</p></div>'
+            f'<p class="did">{esc(_said(info["last"]))}</p></div>'
             f'<div class="rf"><span class="res">{esc(info["result"])}</span>'
-            f'<span class="src">{esc(" ".join(info["types"][:3]))}</span>'
             f"</div></article>")
     return out
+
+
+def _said(text) -> str:
+    """An agent's last action, as a sentence rather than a fragment.
+
+    The Diplomat ranks its options, so the log holds "3. packmate at 850 per
+    unit is the lowest-priced offer by far, meets your quantity and budget
+    limits, and their proven history of honoring…". On a card that opens
+    mid-list and ends mid-word. The rank marker comes off and the sentence is
+    cut at a sentence end rather than at a character count.
+    """
+    said = humanise(text).strip()
+    said = re.sub(r"^\s*\d+[.)]\s*", "", said)
+    said = re.sub(r"^(BID|PRICE|ASK)\s*:\s*\d*\s*", "", said, flags=re.I)
+    if len(said) <= 150:
+        return said
+    cut = said[:150]
+    stop = max(cut.rfind(". "), cut.rfind("; "))
+    return (cut[:stop + 1] if stop > 60 else cut.rsplit(" ", 1)[0] + "\u2026")
 
 
 def build_merchant(db_path: str, actor_id: str, roster) -> str:

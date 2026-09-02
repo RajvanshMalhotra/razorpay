@@ -342,15 +342,18 @@ def _money_words(text: str) -> str:
     """Rewrite paise inside quoted agent text into rupees.
 
     The Subconscious files lessons in the units it was handed: "They paid the
-    full 308000 paise at the agreed 24500 per unit." Both figures are money
-    and a merchant reading its own agent should see money.
+    full 308000 paise at the agreed 1540 per unit." Both figures are money and
+    a merchant reading its own agent should see money.
     """
     import re as _re
-    out = _re.sub(r"\b(\d{3,})\s*paise\b",
-                  lambda m: f"\u20b9{int(m.group(1)) / 100:,.0f}", text)
-    out = _re.sub(r"\b(\d{4,})\b",
-                  lambda m: f"\u20b9{int(m.group(1)) / 100:,.0f}", out)
-    return out
+
+    def inr(m):
+        return f"\u20b9{int(m.group(1)) / 100:,.2f}".replace(".00", "")
+
+    out = _re.sub(r"\b(\d{3,})\s*paise\b", inr, str(text or ""))
+    # "per unit" marks a bare number as a price rather than a quantity.
+    out = _re.sub(r"\b(\d{3,})(?=\s*(?:per unit|a unit|/unit|each))", inr, out)
+    return _re.sub(r"\b(\d{4,})\b", inr, out)
 
 
 def _gate_reason(payload) -> str:
@@ -746,13 +749,15 @@ def _role_line(role, acted):
         if last.type == "NEGOTIATION_ROUND":
             return f'offered {payload.get("price")}'
         if last.type == "SETTLEMENT_INITIATED":
-            return f'committed {(payload.get("amount") or 0) / 100:,.2f} rupees'
+            return f'committed {_rupees(payload.get("amount"))}'
         if last.type == "ORDER_POSTED":
             return f'posted for {payload.get("qty")} units'
     if role == "diplomat" and last.type == "COUNTERPARTY_CHOSEN":
         return _clip(payload.get("reason"), 150)
     if role == "scout" and last.type == "BID_PLACED":
-        return f'bid {payload.get("amount")} points for market intelligence'
+        # The auction is gone as a product. What the Scout does now is price
+        # what the market layer is worth to this business.
+        return f'valued the market read at {payload.get("amount")} points'
     if role == "subconscious" and last.type == "LESSON_CONSOLIDATED":
         return _clip(payload.get("text"), 190)
     return last.type.lower().replace("_", " ")
@@ -765,17 +770,18 @@ def _role_result(role, acted, thread, actor_id):
                       and e.actor_id == actor_id)
         walked = sum(1 for e in thread if e.type == "NEGOTIATION_ENDED"
                      and not e.payload.get("agreed"))
-        return f"{settled} settled, {walked} walked away"
+        return (f"{settled} deal{'' if settled == 1 else 's'} done"
+                + (f", {walked} walked away" if walked else ""))
     if role == "scout":
-        won = sum(1 for e in thread if e.type == "AUCTION_CLEARED"
-                  and e.payload.get("winner_id") == actor_id)
-        bids = sum(1 for e in acted if e.type == "BID_PLACED")
-        return f"{bids} bids, {won} won"
+        reads = sum(1 for e in acted if e.type == "BID_PLACED")
+        return (f"{reads} market read{'' if reads == 1 else 's'} priced"
+                if reads else "nothing priced yet")
     if role == "diplomat":
-        return f"{len(acted)} counterparties chosen"
+        n = len(acted)
+        return f"{n} counterpart{'y' if n == 1 else 'ies'} chosen"
     if role == "subconscious":
-        lessons_kept = sum(1 for e in acted if e.type == "LESSON_CONSOLIDATED")
-        return f"{lessons_kept} lessons kept"
+        kept = sum(1 for e in acted if e.type == "LESSON_CONSOLIDATED")
+        return f"{kept} lesson{'' if kept == 1 else 's'} kept"
     return ""
 
 
