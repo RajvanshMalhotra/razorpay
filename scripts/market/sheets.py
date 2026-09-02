@@ -51,6 +51,18 @@ def merchants(events) -> list[str]:
     return sorted({e.actor_id for e in events if e.actor_id.startswith("m_")})
 
 
+def trading_names() -> dict:
+    """Actor id -> the name the business trades under.
+
+    The roster is where a merchant's real name lives; the log stores ids
+    because a log has to join on something stable. A business that joined
+    after the roster was written — the one registered live on the day — is
+    simply absent here, and the renderer falls back to its id tidied up.
+    """
+    from scripts.market.roster import MERCHANTS
+    return {m.actor_id: m.name for m in MERCHANTS}
+
+
 def write_csvs(events, out_dir: pathlib.Path) -> tuple[int, pathlib.Path]:
     """One file per merchant, plus one combined ledger across the market."""
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -105,6 +117,7 @@ CARD_TONE = {"money": (BRAND, BRAND_WASH), "good": (GOOD, GOOD_WASH),
 RUPEES = "\u20b9#,##0.00"
 RUPEES_ROUND = "\u20b9#,##0"
 CARD_SPAN = 2          # columns per headline card
+FORMAT_CHUNK = 6       # tabs of formatting per batch_update
 
 
 def sheet_grid(sheet) -> tuple:
@@ -386,7 +399,8 @@ def _cleanup_requests(book, sheet_ids: set) -> list:
 
 
 def push_to_sheet(events, key_file: str, sheet_id: str, limit: int | None = None,
-                  out_dir: pathlib.Path | None = None, only: str | None = None):
+                  out_dir: pathlib.Path | None = None, only: str | None = None,
+                  skip: tuple = ()):
     """One tab per business, each a dashboard of that business's own trading.
 
     THREE CALLS, NOT NINETY. Tabs are created in one batch, values written in
@@ -402,17 +416,40 @@ def push_to_sheet(events, key_file: str, sheet_id: str, limit: int | None = None
     creds = Credentials.from_service_account_file(key_file, scopes=scopes)
     book = gspread.authorize(creds).open_by_key(sheet_id)
 
-    roster = [only] if only else merchants(events)[:limit]
+    # `skip` holds back a business whose books are written in front of an
+    # audience. Pushing it now would mean the tab already existed when the
+    # demo claims to create it, and a demo that shows a result it prepared
+    # earlier is not a demo.
+    roster = ([only] if only
+              else [a for a in merchants(events) if a not in set(skip)][:limit])
+    names = trading_names()
     built, owners = {}, {}
     for actor in roster:
         if not entries_for(events, actor).entries:
             continue
-        sheet = merchant_sheet(events, actor)
+        sheet = merchant_sheet(events, actor, names)
         grid, layout = sheet_grid(sheet)
         built[sheet.key] = (sheet, grid, layout)
         owners[actor] = sheet.key
 
     existing = {w.title: w for w in book.worksheets()}
+
+    # TABS ARE RENAMED, NOT REPLACED. Earlier runs named a tab after the
+    # actor id — `bl_thirdwave`. Renaming keeps the tab's id, so every link
+    # already written into the pages still opens the right sheet; creating a
+    # new one would leave the old figures sitting beside the new ones under a
+    # name that looks just as authoritative.
+    renames = []
+    for actor, key in owners.items():
+        was = (actor[2:] or actor)[:99]
+        if key not in existing and was in existing:
+            renames.append({"updateSheetProperties": {
+                "properties": {"sheetId": existing[was].id, "title": key},
+                "fields": "title"}})
+    if renames:
+        book.batch_update({"requests": renames})
+        existing = {w.title: w for w in book.worksheets()}
+
     adds = [{"addSheet": {"properties": {
                 "title": key,
                 "gridProperties": {"rowCount": max(len(grid) + 8, 60),
@@ -443,10 +480,19 @@ def push_to_sheet(events, key_file: str, sheet_id: str, limit: int | None = None
         "data": [{"range": f"'{k}'!A1", "values": grid}
                  for k, (_s, grid, _l) in built.items()]})
 
-    fmt = []
-    for key, (sheet, grid, layout) in built.items():
-        fmt += sheet_requests(existing[key].id, sheet, grid, layout)
-    book.batch_update({"requests": fmt})
+    # FORMATTING GOES UP IN CHUNKS. One tab is roughly a hundred and fifty
+    # requests, so a thirty-merchant roster is four thousand in a single
+    # call — big enough that a refusal costs the whole run rather than one
+    # batch. Tabs are independent of each other, so the split is free; the
+    # order WITHIN a tab is preserved, which is the part that matters, since
+    # banding and conditional rules are positional.
+    batch, keys = [], list(built)
+    for start in range(0, len(keys), FORMAT_CHUNK):
+        batch = []
+        for key in keys[start:start + FORMAT_CHUNK]:
+            sheet, grid, layout = built[key]
+            batch += sheet_requests(existing[key].id, sheet, grid, layout)
+        book.batch_update({"requests": batch})
 
     tabs = {actor: existing[key].id for actor, key in owners.items()}
     if out_dir is not None:
@@ -479,6 +525,10 @@ def main(argv=None) -> int:
     parser.add_argument("--merchant", default=None,
                         help="push one business only, e.g. m_bl_thirdwave — "
                              "what a demo actually needs")
+    parser.add_argument("--skip", default="m_daybreak",
+                        help="businesses to leave out, comma separated. "
+                             "Defaults to the one whose books are written "
+                             "live on camera; pass --skip '' for all of them.")
     args = parser.parse_args(argv)
 
     from dotenv import load_dotenv
@@ -526,15 +576,22 @@ def main(argv=None) -> int:
         return 1
 
     try:
+        skip = tuple(a.strip() for a in args.skip.split(",") if a.strip())
         pushed = push_to_sheet(events, key_file, sheet_id, args.only,
                                out_dir=pathlib.Path(args.out),
-                               only=args.merchant)
+                               only=args.merchant, skip=skip)
     except Exception as error:  # noqa: BLE001 — the cause belongs on screen
         print(f"\n  Google refused the sync: {type(error).__name__}: {error}")
         print("  The usual cause is the sheet not being shared with the "
               "service account's client_email as an Editor.")
         return 1
 
+    held = [a for a in skip if a not in pushed and not args.merchant]
+    if held:
+        names = trading_names()
+        for actor in held:
+            print(f"\n  held back: {names.get(actor) or actor[2:]} — push it "
+                  f"live with --merchant {actor} --skip ''")
     print(f"\n  synced {len(pushed)} tabs to "
           f"https://docs.google.com/spreadsheets/d/{sheet_id}")
     print(f"  tab ids written to {args.out}/{TABS_FILE} — rebuild the pages "

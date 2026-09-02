@@ -21,6 +21,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
+from exchange import plain
 from exchange.books import entries_for
 
 
@@ -56,6 +57,12 @@ def _rupees(paise) -> float:
 def _who(name) -> str:
     n = str(name or "")
     return n[2:].replace("_", " ") if n.startswith("m_") else n
+
+
+def _namer(names):
+    """A function from actor id to the name a person would say out loud."""
+    lookup = dict(names or {})
+    return lambda actor: lookup.get(str(actor or "")) or _who(actor).title()
 
 
 def _spoken(message) -> str:
@@ -139,8 +146,16 @@ def _deals(events, actor_id):
     return sorted(out, key=lambda d: d["seq"])
 
 
-def merchant_sheet(events, actor_id: str) -> Sheet:
-    """Everything one business should see about its own agent."""
+def merchant_sheet(events, actor_id: str, names=None) -> Sheet:
+    """Everything one business should see about its own agent.
+
+    `names` maps an actor id to the business's real trading name — "Third
+    Wave Bengaluru" rather than `bl_thirdwave`. The log stores ids because a
+    log has to; a merchant opening its own books should never meet one. Where
+    a name is missing the id is cleaned up rather than printed raw, so a
+    business that joined after the roster was written still reads as a name.
+    """
+    who = _namer(names)
     deals = _deals(events, actor_id)
     books = entries_for(events, actor_id)
     bought = [d for d in deals if d["buying"]]
@@ -161,23 +176,27 @@ def merchant_sheet(events, actor_id: str) -> Sheet:
         ("Partners found", len(partners), "count"),
     ]
 
+    # The tab's name IS the business's name. A tab called `bl_thirdwave`
+    # sitting in a merchant's own workbook reads as a database table.
+    name = who(actor_id)
     return Sheet(
-        key=actor_id[2:][:99] or actor_id,
-        title=_who(actor_id).title(),
+        key=name[:99] or actor_id,
+        title=name,
         subtitle="What your agent did on your behalf. Every figure is read "
                  "from the exchange's audit trail — nothing was typed by hand.",
         cards=cards,
-        blocks=[_deals_block(deals), _talks_block(deals),
-                _partners_block(deals, lessons), _stopped_block(deals)],
+        blocks=[_deals_block(deals, who), _talks_block(deals, who),
+                _partners_block(deals, lessons, who), _stopped_block(deals)],
     )
 
 
-def _deals_block(deals) -> Block:
+def _deals_block(deals, who=None) -> Block:
+    who = who or _namer(None)
     rows = []
     for d in deals:
         rows.append([
             d["date"], "bought" if d["buying"] else "sold",
-            _who(d["partner"]), d["item"][:70], d["qty"],
+            who(d["partner"]), d["item"][:70], d["qty"],
             _rupees(d["listed"]) if d["listed"] else "",
             _rupees(d["paid"]) if d["paid"] else "",
             _rupees(d["saved"]) if d["saved"] else "",
@@ -200,15 +219,17 @@ def _deals_block(deals) -> Block:
     )
 
 
-def _talks_block(deals, limit: int = 40) -> Block:
+def _talks_block(deals, who=None, limit: int = 40) -> Block:
+    who = who or _namer(None)
     rows = []
     for d in deals:
         for e in d["rounds"]:
-            rows.append([_who(d["partner"]) if e.actor_id != d["partner"]
-                         else _who(e.actor_id),
-                         d["item"][:44], _who(e.actor_id),
+            rows.append([who(d["partner"]) if e.actor_id != d["partner"]
+                         else who(e.actor_id),
+                         d["item"][:44], who(e.actor_id),
                          _rupees(e.payload.get("price")),
-                         _spoken(e.payload.get("message"))[:260]])
+                         plain.people(plain.money_words(
+                             _spoken(e.payload.get("message"))), who)[:260]])
     rows = [[r[1], r[2], r[3], r[4]] for r in rows][:limit]
     return Block(
         heading="How your agent argued for you",
@@ -223,7 +244,8 @@ def _talks_block(deals, limit: int = 40) -> Block:
     )
 
 
-def _partners_block(deals, lessons) -> Block:
+def _partners_block(deals, lessons, who=None) -> Block:
+    who = who or _namer(None)
     totals = {}
     for d in deals:
         if not d["partner"]:
@@ -235,9 +257,13 @@ def _partners_block(deals, lessons) -> Block:
     rows = []
     for partner, t in sorted(totals.items(), key=lambda kv: -kv[1]["spend"]):
         lesson = lessons.get(partner) or {}
-        rows.append([_who(partner), t["n"], _rupees(t["spend"]),
+        # An agent files its verdict in paise because that is what it was
+        # handed. "They paid the agreed 19500 per unit" is its own sentence
+        # and it is right — it is just not in the units a merchant reads.
+        rows.append([who(partner), t["n"], _rupees(t["spend"]),
                      _rupees(t["saved"]),
-                     str(lesson.get("text", ""))[:260]
+                     plain.people(
+                         plain.money_words(lesson.get("text", "")), who)[:260]
                      or "No verdict yet — too few dealings to judge."])
     return Block(
         heading="Who you are dealing with",
@@ -263,12 +289,16 @@ def _stopped_block(deals) -> Block:
     rows = []
     for d in deals:
         for e in d["refusals"]:
+            # The amount the gate weighed sits in what it evaluated, not at
+            # the top of the ruling — the column read empty for every refusal
+            # while the figure was in the payload all along.
+            asked = (e.payload.get("amount")
+                     or (e.payload.get("limits_evaluated") or {}).get("amount"))
             rows.append([d["item"][:56],
-                         _rupees(e.payload.get("amount"))
-                         if e.payload.get("amount") else "",
-                         str(e.payload.get("reason", ""))[:220],
+                         _rupees(asked) if asked else "",
+                         plain.gate_reason(e.payload),
                          (f'Retried smaller and settled at '
-                          f'{_rupees(d["amount"]):,.2f}'
+                          f'{plain.rupees(d["amount"])}'
                           if d["paid"] else "Did not proceed")])
     return Block(
         heading="What the gate stopped",
@@ -279,7 +309,7 @@ def _stopped_block(deals) -> Block:
         widths=(260, 124, 500, 300),
         money=("Amount asked",),
         wrap=("Why it was refused", "What happened next"),
-        rules=(("Why it was refused", "exceeds", "warn"),),
+        rules=(("Why it was refused", "over the", "warn"),),
         empty="Nothing was refused. Every action your agent took was inside "
               "the limits you set.",
     )

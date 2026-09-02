@@ -14,6 +14,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
+from exchange import plain
 from exchange.eventlog import EventLog
 from exchange.projections import fold
 
@@ -231,14 +232,15 @@ def tape(events, limit: int = 2000):
         if e.type == "POLICY_DECIDED":
             verdict = p.get("verdict", "")
             tone = "allow" if verdict == "ALLOW" else "deny"
-            detail = f"{verdict} — {p.get('reason','')}"
+            detail = f"{verdict} — {plain.gate_reason(p)}"
         elif e.type == "NEGOTIATION_ROUND":
-            detail = f"{p.get('price')} — {str(p.get('message','')).strip()}"
+            detail = (f"{plain.rupees(p.get('price'))} — "
+                      f"{plain.offer_text(p.get('message'), _plain)}")
         elif e.type == "NEGOTIATION_ENDED":
             ok = p.get("agreed")
             tone = "allow" if ok else "deny"
-            detail = (f"agreed at {p.get('final_price')}" if ok
-                      else str(p.get("reason", "")))
+            detail = (f"agreed at {plain.rupees(p.get('final_price'))}" if ok
+                      else _human(p.get("reason", "")))
         elif e.type == "SETTLEMENT_INITIATED":
             detail = f"{p.get('amount',0)/100:,.2f} rupees · {p.get('razorpay_order_id','')}"
         elif e.type == "SETTLEMENT_COMPLETED":
@@ -248,31 +250,31 @@ def tape(events, limit: int = 2000):
             tone = "amber"
             detail = f"{p.get('points')} points"
         elif e.type == "LESSON_CONSOLIDATED":
-            detail = str(p.get("text", ""))[:120]
+            detail = _human(p.get("text", ""))[:120]
         elif e.type == "DRIFT_DETECTED":
             tone = "deny"
             detail = (f"local {p.get('local_status')} vs "
                       f"remote {p.get('remote_status')}")
         elif e.type in ("ACTOR_FROZEN",):
             tone = "deny"
-            detail = str(p.get("reason", ""))
+            detail = _human(p.get("reason", ""))
         elif e.type == "ACTOR_RESUMED":
             tone = "allow"
             detail = "cleared to trade again"
         elif e.type == "INSIGHT_MINTED":
             tone = "amber"
-            detail = str((p.get("spec") or p).get("headline", ""))[:130]
+            detail = _human((p.get("spec") or p).get("headline", ""))[:130]
         elif e.type == "BID_PLACED":
             detail = f"{p.get('amount')} points"
         elif e.type == "AUCTION_CLEARED":
             tone = "amber"
-            detail = f"{p.get('winner_id')} pays {p.get('price')}"
+            detail = f"{_plain(p.get('winner_id'))} pays {p.get('price')}"
         elif e.type == "ORDER_POSTED":
             q = p.get("asset_query") or {}
             detail = q.get("text", "") or f"selling {p.get('qty')} units"
         elif e.type == "PRIVACY_REFUSED":
             tone = "deny"
-            detail = str(p.get("reason", ""))
+            detail = _human(p.get("reason", ""))
         out.append({
             "seq": e.seq, "actor": e.actor_id, "type": e.type,
             "says": SAYS.get(e.type, e.type.lower().replace("_", " ")),
@@ -331,61 +333,31 @@ def _station(key, seq=None, head="", lines=(), tone="", seller_id=""):
     The two used to be one field and a pretty name in it silently emptied
     the network ring, whose edges test `head.startswith("m_")`.
     """
-    out = {"key": key, "seq": seq, "head": head,
-           "lines": [str(x) for x in lines if x], "tone": tone}
+    # EVERY READER-FACING STRING GOES THROUGH ONE DOOR. The crew cards ran
+    # their text through `humanise` and the rail did not, so the same
+    # sentence read "reelco at ₹50 per unit" on one half of the page and
+    # "m_reelco at 5000 per unit" on the other. A station is the only place
+    # the rail's words are made, so it is the place to do it.
+    out = {"key": key, "seq": seq, "head": _human(head),
+           "lines": [_human(x) for x in lines if x], "tone": tone}
     if seller_id:
         out["seller_id"] = seller_id
     return out
 
 
-def _money_words(text: str) -> str:
-    """Rewrite paise inside quoted agent text into rupees.
-
-    The Subconscious files lessons in the units it was handed: "They paid the
-    full 308000 paise at the agreed 1540 per unit." Both figures are money and
-    a merchant reading its own agent should see money.
-    """
-    import re as _re
-
-    def inr(m):
-        return f"\u20b9{int(m.group(1)) / 100:,.2f}".replace(".00", "")
-
-    out = _re.sub(r"\b(\d{3,})\s*paise\b", inr, str(text or ""))
-    # "per unit" marks a bare number as a price rather than a quantity.
-    out = _re.sub(r"\b(\d{3,})(?=\s*(?:per unit|a unit|/unit|each))", inr, out)
-    return _re.sub(r"\b(\d{4,})\b", inr, out)
+# Money and rulings are written for a merchant in exchange.plain, so the
+# pages and each merchant's Google Sheet cannot drift apart — which they did:
+# the rail was fixed to say ₹195 while the sheet still filed the same verdict
+# as "19500 per unit".
+def _human(text) -> str:
+    """Quoted agent text as a merchant reads it: names, and rupees."""
+    return plain.humanise(text, _plain)
 
 
-def _gate_reason(payload) -> str:
-    """The gate's ruling in money, not paise.
-
-    "Amount 3120000 exceeds per-transaction cap 2000000" is the log's own
-    words and unreadable on a merchant's page. The rule and the two figures
-    are all that matter.
-    """
-    import re as _re
-    text = str(payload.get("reason", ""))
-    text = _re.sub(r"\b(\d{4,})\b",
-                   lambda m: f"\u20b9{int(m.group(1)) / 100:,.0f}", text)
-    text = text.replace("Amount ", "").replace("exceeds", "is over the")
-    text = text.replace("per-transaction cap", "cap on a single payment of")
-    text = text.replace("unknown counterparty cap",
-                        "cap for a supplier with no track record of")
-    return text[:110] or "within every limit"
-
-
-def _rupees(paise) -> str:
-    """Money as a person writes it.
-
-    The rail printed raw paise — "agreed 19500", "Amount 3120000 exceeds
-    per-transaction cap 2000000" — because that is how the log stores it. A
-    merchant reading their own trade should not have to divide by a hundred
-    in their head to find out what they paid.
-    """
-    try:
-        return f"\u20b9{int(paise) / 100:,.0f}"
-    except (TypeError, ValueError):
-        return str(paise)
+_money_words = plain.money_words
+_people = plain.people
+_gate_reason = plain.gate_reason
+_rupees = plain.rupees
 
 
 def _plain(actor_id) -> str:
@@ -503,7 +475,8 @@ def rails(events, limit: int = 90):
             stations.append(_station(
                 "remembered", lesson.seq,
                 str(lesson.payload.get("kind") or "lesson"),
-                [_money_words(str(lesson.payload.get("text", "")))[:150]]))
+                [_people(_money_words(
+                    str(lesson.payload.get("text", ""))))[:150]]))
 
         if len(stations) < 2:
             continue
@@ -524,9 +497,17 @@ def rails(events, limit: int = 90):
             "stations": stations,
             "amount": (opened.payload.get("amount") if opened else None),
             "settled": bool(done),
+            # IDENTITY AND DISPLAY ARE SEPARATE FIELDS, again. `who` and
+            # `price` are what anything joining on this thread reads; the
+            # `_name` and `_inr` pair beside them is what the page prints.
+            # The page printed the raw pair for a year: "m_bl_hsr" over
+            # "PRICE: 24500".
             "talk": [{"who": e.actor_id,
+                      "who_name": _plain(e.actor_id),
                       "price": e.payload.get("price"),
-                      "said": str(e.payload.get("message", "")).strip()[:150]}
+                      "price_inr": plain.rupees(e.payload.get("price")),
+                      "said": plain.offer_text(
+                          e.payload.get("message"), _plain)[:150]}
                      for e in rounds][:12],
         }
 

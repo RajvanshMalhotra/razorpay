@@ -49,6 +49,7 @@ import pathlib
 import sys
 from datetime import datetime, timezone
 
+from exchange import plain
 from exchange.books import COLUMNS, entries_for
 from scripts.replay.read import (
     auction,
@@ -76,16 +77,12 @@ def humanise(text) -> str:
     substitutions change no meaning: `m_reelco` and `reelco` name the same
     business, and 19500 paise and 195 rupees are the same money. Both forms
     exist only because the log needs keys and integers.
+
+    The rules live in `exchange.plain` because the merchant's Google Sheet
+    needs the same ones, and a second copy of them is how the page came to
+    say ₹195 while the sheet still said 19500.
     """
-    out = re.sub(r"\bm_([a-z0-9_]+)",
-                 lambda m: m.group(1).replace("_", " "), str(text or ""))
-    out = re.sub(r"\b(\d{3,})\s*paise\b", _inr, out)
-    # "per unit" is what marks a bare number as a price rather than a
-    # quantity, and it is the only place a three-digit figure is safe to
-    # convert: "packmate at 850 per unit" is 8.50, not eight hundred of
-    # anything. Quantities elsewhere in the sentence are left alone.
-    out = re.sub(r"\b(\d{3,})(?=\s*(?:per unit|a unit|/unit|each))", _inr, out)
-    return re.sub(r"\b(\d{4,})\b", _inr, out)
+    return plain.humanise(text, lambda a: str(a)[2:].replace("_", " "))
 
 
 def _inr(m) -> str:
@@ -517,9 +514,9 @@ function drawRail(r,upto,ids){
   if(ids.talk){
     document.getElementById(ids.talk).innerHTML=r.talk.length?
       r.talk.map(function(t){
-        return '<div class="said"><span class="w">'+esc(t.who)+
-          '</span><span class="p">'+esc(t.price)+'</span><span class="m">'+
-          esc(t.said)+'</span></div>'}).join('')
+        return '<div class="said"><span class="w">'+esc(t.who_name||t.who)+
+          '</span><span class="p">'+esc(t.price_inr||t.price)+
+          '</span><span class="m">'+esc(t.said)+'</span></div>'}).join('')
       :'<div class="empty">No offers on this thread — the match cleared '+
        'at the asking price.</div>';
   }

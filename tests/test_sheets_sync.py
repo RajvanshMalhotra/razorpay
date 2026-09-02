@@ -67,6 +67,18 @@ class FakeBook:
                 title = r["addSheet"]["properties"]["title"]
                 self.tabs[title] = FakeTab(title, self._next_id)
                 self._next_id += 1
+            elif "updateSheetProperties" in r:
+                props = r["updateSheetProperties"]["properties"]
+                for title, tab in list(self.tabs.items()):
+                    if tab.id == props.get("sheetId") and "title" in props:
+                        del self.tabs[title]
+                        tab.title = props["title"]
+                        self.tabs[tab.title] = tab
+            elif "deleteSheet" in r:
+                gid = r["deleteSheet"]["sheetId"]
+                for title, tab in list(self.tabs.items()):
+                    if tab.id == gid:
+                        del self.tabs[title]
             elif "mergeCells" in r:
                 gid = r["mergeCells"]["range"]["sheetId"]
                 self._st(gid)["merges"].append(r["mergeCells"]["range"])
@@ -139,7 +151,54 @@ def test_each_merchant_gets_its_own_tab(book):
     pushed = push_to_sheet(_events(), "key.json", "sheet123")
 
     assert sorted(pushed) == ["m_a", "m_b", "m_c"]
-    assert set(book.tabs) == {"a", "b", "c"}
+    assert set(book.tabs) == {"A", "B", "C"}
+
+
+def test_a_tab_is_named_after_the_business_not_its_key(book):
+    """A merchant opening its own workbook should never meet an actor id.
+
+    The roster carries real trading names; where one is missing the id is
+    tidied up rather than printed raw.
+    """
+    import scripts.market.sheets as sheets
+
+    original = sheets.trading_names
+    sheets.trading_names = lambda: {"m_a": "Third Wave Bengaluru"}
+    try:
+        push_to_sheet(_events(), "key.json", "sheet123")
+    finally:
+        sheets.trading_names = original
+
+    assert "Third Wave Bengaluru" in book.tabs
+    assert "a" not in book.tabs and "m_a" not in book.tabs
+    # and the ones the roster does not know still read as names
+    assert "B" in book.tabs
+
+
+def test_an_old_tab_is_renamed_rather_than_left_beside_the_new_one(book):
+    """The tab id is what every link into the sheet already points at.
+
+    Creating a fresh tab under the new name would keep the tab id pointing at
+    a page of last month's figures under a name that looks just as real.
+    """
+    push_to_sheet(_events(), "key.json", "sheet123")
+    gid = book.tabs["A"].id
+    book.tabs["a"] = book.tabs.pop("A")          # as an older run left it
+    book.tabs["a"].title = "a"
+
+    push_to_sheet(_events(), "key.json", "sheet123")
+
+    assert "a" not in book.tabs
+    assert book.tabs["A"].id == gid
+
+
+def test_a_business_can_be_held_back_for_a_live_demo(book):
+    """Its books are written in front of an audience. A tab that already
+    existed makes the demo a replay of something prepared earlier."""
+    pushed = push_to_sheet(_events(), "key.json", "sheet123", skip=("m_b",))
+
+    assert sorted(pushed) == ["m_a", "m_c"]
+    assert "B" not in book.tabs
 
 
 def test_nothing_market_wide_is_written(book):
@@ -156,7 +215,7 @@ def test_one_merchant_can_be_pushed_alone(book):
     pushed = push_to_sheet(_events(), "key.json", "sheet123", only="m_a")
 
     assert pushed == ["m_a"]
-    assert set(book.tabs) == {"a"}
+    assert set(book.tabs) == {"A"}
 
 
 def test_headings_are_readable_not_machine_readable(book):
@@ -165,7 +224,7 @@ def test_headings_are_readable_not_machine_readable(book):
     have to read "unit_price_inr" in their own accounts."""
     push_to_sheet(_events(), "key.json", "sheet123")
 
-    flat = [c for row in book.values["a"] for c in row]
+    flat = [c for row in book.values["A"] for c in row]
     assert "You paid" in flat and "You saved" in flat
     assert "unit_price_inr" not in flat
     assert "unit_price_inr" in COLUMNS, "still the CSV's machine name"
@@ -201,7 +260,7 @@ def test_formatting_does_not_accumulate_across_runs(book):
     a second banding outright and accepts duplicate rules in silence, so a
     tab would carry more of them after every push until it crawled."""
     push_to_sheet(_events(), "key.json", "sheet123")
-    gid = book.tabs["a"].id
+    gid = book.tabs["A"].id
     after_one = {k: len(v) for k, v in book.state[gid].items()}
 
     push_to_sheet(_events(), "key.json", "sheet123")
@@ -215,7 +274,7 @@ def test_the_sheet_leads_with_headline_figures(book):
     there if it wants to."""
     push_to_sheet(_events(), "key.json", "sheet123")
 
-    grid = book.values["a"]
+    grid = book.values["A"]
     labels = grid[3]
     assert "Spent through Razorpay" in labels
     assert "Saved by negotiating" in labels
@@ -225,7 +284,7 @@ def test_the_sheet_leads_with_headline_figures(book):
 def test_the_sheet_carries_every_section_a_merchant_needs(book):
     push_to_sheet(_events(), "key.json", "sheet123")
 
-    flat = [c for row in book.values["a"] for c in row]
+    flat = [c for row in book.values["A"] for c in row]
     for section in ("Your deals", "How your agent argued for you",
                     "Who you are dealing with", "What the gate stopped"):
         assert section in flat
@@ -236,7 +295,7 @@ def test_an_empty_section_says_something(book):
     and what would fill it."""
     push_to_sheet(_events(), "key.json", "sheet123")
 
-    flat = [str(c) for row in book.values["b"] for c in row]
+    flat = [str(c) for row in book.values["B"] for c in row]
     assert any("Nothing was refused" in c or "capped on purpose" in c
                for c in flat)
 
@@ -245,10 +304,10 @@ def test_a_second_run_replaces_rather_than_appends(book):
     """The books are a projection of an append-only log, so the log is the
     only thing that accumulates. Appending would double every row."""
     push_to_sheet(_events(), "key.json", "sheet123")
-    first = len(book.values["a"])
+    first = len(book.values["A"])
     push_to_sheet(_events(), "key.json", "sheet123")
 
-    assert len(book.values["a"]) == first
+    assert len(book.values["A"]) == first
     assert book.calls["values_batch_clear"] == 2, "cleared before each write"
 
 
@@ -258,7 +317,7 @@ def test_a_shorter_run_cannot_strand_last_runs_rows(book):
     where it reads as real trades."""
     push_to_sheet(_events(), "key.json", "sheet123")
 
-    assert any("'a'" in r for r in book.cleared[0])
+    assert any("'A'" in r for r in book.cleared[0])
 
 
 def test_a_merchant_with_no_trades_gets_no_tab(book):
@@ -337,7 +396,9 @@ def test_a_refusal_is_coloured_so_it_cannot_be_missed(book):
              for rule in rules
              for v in rule.get("booleanRule", {}).get("condition", {})
              .get("values", [])]
-    assert "exceeds" in texts, "a refusal is coloured"
+    # The rule matches what the merchant reads, not what the log stores:
+    # the reason is rewritten into money before it ever reaches the cell.
+    assert "over the" in texts, "a refusal is coloured"
     assert "confirmed" in texts, "so is a settled deal"
 
 
