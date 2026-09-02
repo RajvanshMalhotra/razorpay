@@ -43,6 +43,7 @@ from __future__ import annotations
 
 import html
 import json
+import re
 import math
 import pathlib
 import sys
@@ -65,6 +66,20 @@ from scripts.replay.read import (
     storefront,
     tape,
 )
+
+
+def humanise(text) -> str:
+    """Rewrite actor ids inside quoted agent text into readable names.
+
+    These ARE quotations — an agent's own reasoning, a lesson the Subconscious
+    filed — and rewriting the inside of a quotation is normally the wrong
+    thing to do. This substitution is allowed because it changes no meaning:
+    `m_reelco` and `reelco` name the identical business, and the underscore
+    form is only there because the log needs a key. Leaving it on a merchant's
+    page makes their own agent look like it is talking about variables.
+    """
+    return re.sub(r"\bm_([a-z0-9_]+)",
+                  lambda m: m.group(1).replace("_", " "), str(text or ""))
 
 
 def who(actor_id) -> str:
@@ -1018,7 +1033,7 @@ def _crew(view) -> str:
             f'<span class="cnt">{info["count"]} '
             f'{"action" if info["count"] == 1 else "actions"}</span></div>'
             f'<div class="rb"><p class="job">{esc(info["blurb"])}</p>'
-            f'<p class="did">{esc(info["last"])}</p></div>'
+            f'<p class="did">{esc(humanise(info["last"]))}</p></div>'
             f'<div class="rf"><span class="res">{esc(info["result"])}</span>'
             f'<span class="src">{esc(" ".join(info["types"][:3]))}</span>'
             f"</div></article>")
@@ -1343,9 +1358,11 @@ def _catalogue_card(view) -> str:
 
 def _human_thread(events) -> str:
     rows = "".join(
-        f'<tr><td class="a">{r["seq"]}</td><td class="a">{esc(r["actor"])}</td>'
+        # The event NUMBER is what makes this checkable; the actor's raw id
+        # proves nothing extra and reads as a variable on a merchant's page.
+        f'<tr><td class="a">{r["seq"]}</td><td class="a">{esc(who(r["actor"]))}</td>'
         f'<td class="a">{esc(r["type"])}</td>'
-        f'<td class="q">{esc(r["says"])}</td></tr>'
+        f'<td class="q">{esc(humanise(r["says"]))}</td></tr>'
         for r in storefront(events)["rows"])
     return (
         '<section class="card"><div class="ch">'
