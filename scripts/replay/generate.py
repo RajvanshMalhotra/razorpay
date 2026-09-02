@@ -1379,6 +1379,14 @@ def _brief_card(brief, traded=True) -> str:
         'sealed.</div></div></section>')
 
 
+# What each column is called where a merchant reads it, in the order it is
+# read. HEADINGS stays the ledger's own list, keyed to COLUMNS.
+BOOK_HEAD = {"item": "Item", "direction": "Direction", "qty": "Qty",
+             "unit_price_inr": "Unit price", "amount_inr": "Amount",
+             "status": "Status", "counterparty": "Counterparty",
+             "date": "Date"}
+
+
 def _books_card(books) -> str:
     """The books, kept automatically, in the columns an accountant reads.
 
@@ -1395,25 +1403,53 @@ def _books_card(books) -> str:
             return f"{'-' if value < 0 else ''}₹{abs(value):,.0f}"
         return str(value)
 
+    # NET IS ONLY A NET WHEN THERE ARE TWO SIDES. A cafe that buys stock and
+    # sells nothing on this exchange was shown "Net −₹14,750" in bold, which
+    # reads as a business losing money rather than one buying its supplies.
+    # It is dropped where it subtracts nothing.
+    shown = [(label, value) for label, value in books.summary()[1:6]
+             if not (label.startswith("Net")
+                     and not (books.bought_inr and books.sold_inr))]
     figures = "".join(
         f'<div class="bk"><span class="bl">'
         f'{esc(label.replace(" (₹)", ""))}</span>'
         f'<span class="bv">{esc(money(value))}</span></div>'
-        for label, value in books.summary()[1:6])
+        for label, value in shown)
 
     if books.entries:
-        head = "".join(f"<th>{esc(c.replace('_inr', ' ₹').replace('_', ' '))}"
-                       f"</th>" for c in COLUMNS[:8])
-        rows = "".join(
-            "<tr>" + "".join(
-                # Column 2 is the counterparty, which is an actor id in the
-                # ledger and a business name on screen.
-                f'<td class="{"a" if n in (0, 7) else ""}">'
-                f'{esc(who(cell) if n == 2 else cell)}</td>'
-                for n, cell in enumerate(entry.row()[:8]))
-            + "</tr>"
-            for entry in books.entries)
-        table = f'<div class="scrollx"><table><tr>{head}</tr>{rows}</table></div>'
+        # THE COLUMNS THAT FIT ARE THE ONES THAT MATTER. In the ledger's own
+        # order the first four are date, direction, counterparty and item —
+        # which on three purchases of the same thing from the same seller on
+        # the same day are identical on every row, while the amount and the
+        # status that actually differ sat off the right edge behind a scroll.
+        # COLUMNS keeps the machine order, because the CSV and the sheet are
+        # read by something that wants it stable. This is the reading order.
+        order = ("item", "direction", "qty", "unit_price_inr", "amount_inr",
+                 "status", "counterparty", "date")
+        index = {name: COLUMNS.index(name) for name in order}
+        head = "".join(
+            f"<th>{esc(BOOK_HEAD[name])}</th>" for name in order)
+        rows = ""
+        for entry in books.entries:
+            cells = entry.row()
+            row = ""
+            for name in order:
+                cell = cells[index[name]]
+                if name == "counterparty":
+                    cell = who(cell)
+                if name in ("amount_inr", "unit_price_inr"):
+                    cell = f"₹{float(cell or 0):,.0f}"
+                klass = ("a" if name in ("date", "status") else
+                         "n" if name in ("qty", "unit_price_inr", "amount_inr")
+                         else "")
+                title = (f' title="{esc(cells[index["item"]])}"'
+                         if name == "item" else "")
+                text = (_clip_words(str(cell), 34) if name == "item"
+                        else str(cell))
+                row += f'<td class="{klass}"{title}>{esc(text)}</td>'
+            rows += f"<tr>{row}</tr>"
+        table = (f'<div class="scrollx"><table><tr>{head}</tr>'
+                 f'{rows}</table></div>')
     else:
         table = ('<div class="empty">No trades on your books yet. Every buy '
                  'and sell your agents make lands here on its own.</div>')
@@ -1433,10 +1469,11 @@ def _sheet_sync(actor_id: str) -> str:
     if link:
         return (
             '<div class="connect synced">'
-            '<b>These books are synced.</b> The grid above is exactly what is '
-            'in the sheet &mdash; your own tab, replaced on every run, because '
-            'the books are a projection of a log that is the only thing '
-            'allowed to accumulate.'
+            '<b>These books are synced.</b> The same trades are in your own '
+            'tab, with what the seller was asking and what your agent saved '
+            'beside each one. It is replaced on every run, because the books '
+            'are a projection of a log that is the only thing allowed to '
+            'accumulate.'
             f'<a class="sheetbtn" href="{esc(link)}" target="_blank" '
             f'rel="noopener">Open your tab in Google Sheets &rarr;</a></div>')
     # A MERCHANT IS NOT AN OPERATOR. This card used to print the shell
