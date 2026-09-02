@@ -497,7 +497,7 @@ function drawRail(r,upto,ids){
   var stations=r.stations.filter(function(s){return s.seq<=upto});
   if(!stations.length)return false;
   document.getElementById(ids.who).innerHTML=
-    '<span class="agent">'+esc(r.buyer)+'</span>'+
+    '<span class="agent">'+esc(r.buyer_name||r.buyer)+'</span>'+
     '<span class="verb">'+(r.human?'typed':'wants')+'</span>'+
     '<span class="need">'+esc(r.need||'—')+'</span>'+
     (r.human?'<span class="human-tag">a person typed this</span>':'');
@@ -1919,10 +1919,10 @@ def _network_data(events, rail_map, roster):
     """
     from exchange.books import entries_for
 
-    edges = sorted({(r["buyer"], s["head"])
+    edges = sorted({(r["buyer"], s["seller_id"])
                     for r in rail_map.values()
                     for s in r["stations"]
-                    if s["key"] == "picked" and s["head"].startswith("m_")})
+                    if s["key"] == "picked" and s.get("seller_id")})
     degree: dict[str, int] = {}
     for a, b in edges:
         degree[a] = degree.get(a, 0) + 1
@@ -2950,10 +2950,10 @@ def build_landing(db_path: str, roster) -> str:
     rail_map = rails(events)
     first = _page_name(roster[0])
 
-    relationships = len({(r["buyer"], s["head"])
+    relationships = len({(r["buyer"], s["seller_id"])
                          for r in rail_map.values()
                          for s in r["stations"]
-                         if s["key"] == "picked" and s["head"].startswith("m_")})
+                         if s["key"] == "picked" and s.get("seller_id")})
     book_entries = sum(len(entries_for(events, m).entries) for m in roster)
 
     hero = _hero_deal(rail_map)

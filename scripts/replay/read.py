@@ -325,9 +325,17 @@ STATIONS = (
 )
 
 
-def _station(key, seq=None, head="", lines=(), tone=""):
-    return {"key": key, "seq": seq, "head": head,
-            "lines": [str(x) for x in lines if x], "tone": tone}
+def _station(key, seq=None, head="", lines=(), tone="", seller_id=""):
+    """`head` is what a reader sees; `seller_id` is what the graph joins on.
+
+    The two used to be one field and a pretty name in it silently emptied
+    the network ring, whose edges test `head.startswith("m_")`.
+    """
+    out = {"key": key, "seq": seq, "head": head,
+           "lines": [str(x) for x in lines if x], "tone": tone}
+    if seller_id:
+        out["seller_id"] = seller_id
+    return out
 
 
 def _money_words(text: str) -> str:
@@ -440,7 +448,8 @@ def rails(events, limit: int = 90):
             why = _clip(chosen.payload.get("reason"), 96) if chosen else ""
             stations.append(_station(
                 "picked", src.seq, _plain(seller) or "a counterparty",
-                [f"from {shortlist} candidates" if shortlist else "", why]))
+                [f"from {shortlist} candidates" if shortlist else "", why],
+                seller_id=seller))
         if ended or rounds:
             agreed = ended.payload.get("agreed") if ended else False
             stations.append(_station(
@@ -498,11 +507,14 @@ def rails(events, limit: int = 90):
 
         out[corr] = {
             "corr": corr,
-            # The page shows this. The id is the key the log needs, not a
-            # name, and the correlation id is a slug nobody can read - both
-            # were on screen above every trade.
-            "buyer": _plain(posted.actor_id if posted
-                            else thread[0].actor_id),
+            # IDENTITY AND DISPLAY ARE DIFFERENT FIELDS, and collapsing them
+            # is what broke this once already: `buyer` is matched against an
+            # actor id in merchant_view and in the network graph, so putting
+            # a pretty name in it emptied every merchant's trade list and
+            # every edge on the ring at the same time.
+            "buyer": posted.actor_id if posted else thread[0].actor_id,
+            "buyer_name": _plain(posted.actor_id if posted
+                                 else thread[0].actor_id),
             "need": query.get("text", "") or "",
             "human": corr.startswith("shop_"),
             "first_seq": thread[0].seq,
