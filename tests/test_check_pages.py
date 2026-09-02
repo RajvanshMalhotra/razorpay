@@ -71,4 +71,28 @@ def test_the_html_a_reader_sees_is_scanned_too():
 def test_every_pattern_is_a_thing_a_merchant_should_not_read():
     assert set(PATTERNS) == {"actor id", "correlation id", "settlement id",
                              "order/match id", "the word paise",
-                             "bare big number"}
+                             "bare big number", "money without a ₹"}
+
+
+def test_a_comma_does_not_hide_paise():
+    """The one that got through everything. An agent comparing two offers
+    wrote "(12,000 vs 24,500)" — ₹120 against ₹245 — and both the rewriter
+    and this scanner keyed on an unbroken run of digits."""
+    page = _page({"rails": {"t": {"crew": [
+        {"said": "lowest by a margin (12,000 vs 24,500)"}]}}})
+    import tempfile, pathlib as _p
+    d = _p.Path(tempfile.mkdtemp()) / "m-x.html"
+    d.write_text(page)
+
+    found = scan([str(d)])
+
+    assert found["money without a ₹"][str(d)] == ["12,000", "24,500"]
+
+
+def test_a_quantity_with_a_comma_is_not_money():
+    import tempfile, pathlib as _p
+    d = _p.Path(tempfile.mkdtemp()) / "m-x.html"
+    d.write_text(_page({"rails": {"t": {"stations": [
+        {"head": "2,600 units", "lines": ["paid ₹4,875"]}]}}}))
+
+    assert scan([str(d)]) == {}

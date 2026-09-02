@@ -1,6 +1,6 @@
 """Register a new merchant, with no trading history.
 
-    .venv/bin/python -m scripts.market.join m_daybreak
+    .venv/bin/python -m scripts.market.join m_sunrise
 
 FOR THE LIVE DEMO. Every merchant in the finished run has already traded, so
 every page shows a business mid-story. A demo that runs the agents live needs
@@ -23,7 +23,7 @@ from exchange.ids import new_id
 
 def main(argv=None) -> int:
     parser = argparse.ArgumentParser(description="Register a merchant.")
-    parser.add_argument("actor_id", help="e.g. m_daybreak")
+    parser.add_argument("actor_id", help="e.g. m_sunrise")
     parser.add_argument("--db", default="runs/market.db")
     parser.add_argument("--plan", default="standard")
     args = parser.parse_args(argv)

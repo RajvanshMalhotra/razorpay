@@ -8,6 +8,12 @@ PATTERNS = {
     "order/match id":  r"\b(ord|mch|dec|ins|evt)_[0-9a-f]{6,}",
     "the word paise":  r"\bpaise\b",
     "bare big number": r"(?<![\d,.₹])\b\d{5,}\b(?!\s*(units|events))",
+    # A COMMA BREAKS A RUN OF DIGITS, and both this scanner and the rewriter
+    # keyed on the run. "(12,000 vs 24,500)" in an agent's own sentence is
+    # ₹120 against ₹245 and it read straight through every check.
+    "money without a ₹": r"(?<![₹\d,.])\b\d{1,3}(?:,\d{3})+\b"
+                         r"(?!\s*(?:units|events|posts|threads|merchants|"
+                         r"trades|points))",
 }
 
 def visible(html):

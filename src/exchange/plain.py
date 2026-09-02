@@ -37,7 +37,18 @@ def money_words(text) -> str:
     def inr(m):
         return f"₹{int(m.group(1)) / 100:,.2f}".replace(".00", "")
 
-    out = re.sub(r"\b(\d{3,})\s*paise\b", inr, str(text or ""))
+    # A COMMA HID PAISE FROM EVERY CHECK. An agent comparing two offers
+    # wrote "(12,000 vs 24,500)" — ₹120 against ₹245 — and neither the
+    # rewriter nor the page scanner saw it, because both keyed on a run of
+    # digits and a comma breaks the run. The ₹ lookbehind is what keeps this
+    # from re-dividing a figure that has already been converted.
+    def grouped(m):
+        return inr(re.match(r"(\d+)", m.group(1).replace(",", "")))
+
+    out = re.sub(r"(?<![₹\d,.])(\d{1,3}(?:,\d{3})+)(?!\s*(?:units?|events?|"
+                 r"posts?|threads?|merchants?|trades?|points?))",
+                 grouped, str(text or ""))
+    out = re.sub(r"\b(\d{3,})\s*paise\b", inr, out)
     out = re.sub(r"\b(\d{3,})(?=\s*(?:per unit|a unit|/unit|each))", inr, out)
     # A COUNT IS NOT A PRICE. A four-figure number followed by its own noun
     # is a quantity — "2,600 units" became "₹26 units" the first time this

@@ -1203,7 +1203,7 @@ def build_merchant(db_path: str, actor_id: str, roster) -> str:
         'it was read from.</p>'
         f'<div class="crew">{_crew(view)}</div>'
         '<div class="duo">'
-        + _brief_card(brief_for(events, actor_id))
+        + _brief_card(brief_for(events, actor_id), traded=bool(mine))
         + _books_card(books)
         + _catalogue_card(view) + "</div>")
 
@@ -1340,7 +1340,7 @@ BRIEF_KEYWORDS = (
 )
 
 
-def _brief_card(brief) -> str:
+def _brief_card(brief, traded=True) -> str:
     """How this merchant told its agent to behave.
 
     The words on the left are the ones that actually reached the Trader, the
@@ -1353,8 +1353,12 @@ def _brief_card(brief) -> str:
         f'title="{esc(why)}">{esc(k.replace("_", " "))}</button>'
         for k, why in BRIEF_KEYWORDS)
     current = brief or ""
-    state = ("Your agent ran on this brief."
-             if brief else
+    # A business that joined this morning has not had a run to predate
+    # anything. Telling it its brief came too late for a run it was never in
+    # is the page describing itself rather than the merchant.
+    state = ("Your agent ran on this brief." if brief else
+             "No brief yet — your agent uses its defaults until you write one."
+             if not traded else
              "This run predates briefs, so your agent used its defaults.")
     return (
         '<section class="card"><div class="ch"><h3>How your agent '
@@ -1435,14 +1439,17 @@ def _sheet_sync(actor_id: str) -> str:
             'allowed to accumulate.'
             f'<a class="sheetbtn" href="{esc(link)}" target="_blank" '
             f'rel="noopener">Open your tab in Google Sheets &rarr;</a></div>')
+    # A MERCHANT IS NOT AN OPERATOR. This card used to print the shell
+    # command that pushes the sheet, with the name of the env file to put a
+    # service-account key in — a page telling a coffee shop to run Python.
+    # What a merchant needs to know is that the books are already kept and
+    # where they will appear; connecting the workbook is our job, not theirs.
     return (
-        '<div class="connect"><b>These books are ready to sync to a Google '
-        'Sheet.</b> The grid above is exactly what gets pushed &mdash; one tab '
-        'per merchant, replaced on every run. Run '
-        '<code>python -m scripts.market.sheets --sheet</code> with a '
-        'service-account key in <code>.env</code> and this card becomes a link '
-        'straight to your tab. Without one, the same command writes CSVs that '
-        'open in Sheets as they are.</div>')
+        '<div class="connect"><b>Your books are kept for you.</b> Every buy '
+        'and sell your agents make is written here as it happens, from the '
+        'same audit trail the rest of this page is read from. A copy lands in '
+        'your own Google Sheet as soon as your workbook is connected &mdash; '
+        'nothing above changes when it does.</div>')
 
 
 def _catalogue_card(view) -> str:

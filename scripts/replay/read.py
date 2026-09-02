@@ -242,7 +242,8 @@ def tape(events, limit: int = 2000):
             detail = (f"agreed at {plain.rupees(p.get('final_price'))}" if ok
                       else _human(p.get("reason", "")))
         elif e.type == "SETTLEMENT_INITIATED":
-            detail = f"{p.get('amount',0)/100:,.2f} rupees · {p.get('razorpay_order_id','')}"
+            detail = (f"{plain.rupees(p.get('amount'))} · "
+                      f"{p.get('razorpay_order_id','')}")
         elif e.type == "SETTLEMENT_COMPLETED":
             tone = "allow"
             detail = str(p.get("razorpay_payment_id", ""))

@@ -1,6 +1,6 @@
 """The exchange, live, behind the pages.
 
-    .venv/bin/python -m scripts.serve --merchant m_daybreak
+    .venv/bin/python -m scripts.serve --merchant m_sunrise
 
 WHAT THIS IS FOR. The replay pages are static: they prove what happened, and
 a static file cannot post to an order book. So the ask box on a merchant's
@@ -16,15 +16,22 @@ rules on it, and the money moves on a real Razorpay test-mode order.
 THREE ENDPOINTS, AND THE SPLIT BETWEEN THEM IS THE PRODUCT.
 
     GET  /api/catalogue   what is for sale, machine-readable
-    POST /api/quote       what you want, in words -> one offer. Nothing
-                          is written. Nothing is committed.
+    POST /api/quote       what you want, in words -> one offer. Your need is
+                          posted and a counterparty is picked. No terms are
+                          proposed and no money is committed.
     POST /api/buy         take the offer. THIS is where money moves, and
                           only after a person said yes.
 
-The quote/buy split is not REST tidiness. A person must be able to see the
-price before anything happens, and the log must be able to show that nothing
-happened until they agreed — so a quote writes no events at all, and every
-event on the thread comes after the click.
+The quote/buy split is not REST tidiness: a person must see the price before
+anything is committed, and the log must be able to prove nothing was.
+
+WHAT A QUOTE ACTUALLY WRITES, because this docstring said "nothing" and was
+wrong. Asking posts a real BID — that is what searching this exchange IS,
+and other agents can see it — and records which counterparty the Diplomat
+picked and why. What it does NOT write is the half that binds anyone:
+MATCH_PROPOSED, POLICY_DECIDED, SETTLEMENT_INITIATED and SETTLEMENT_COMPLETED
+all come after the click, on the same correlation id, so the thread reads as
+a question and then an answer.
 
 NOT A PUBLIC SERVER. It binds to localhost, holds no auth, and runs a real
 Razorpay client. It is a demo harness for a machine you control.
@@ -112,7 +119,7 @@ class Live:
     # --- what you want, in words -------------------------------------------
 
     def quote(self, need: str, qty: int, limit_paise: int) -> dict:
-        """Search and price, writing nothing.
+        """Search and price. Posts the need; commits nothing.
 
         `find_supply` is the same call the agents make, so the answer a person
         gets is the answer an agent would get — not a keyword match over a
@@ -284,7 +291,12 @@ class Handler(BaseHTTPRequestHandler):
 def main(argv=None) -> int:
     parser = argparse.ArgumentParser(description="Serve the live exchange.")
     parser.add_argument("--db", default="runs/market.db")
-    parser.add_argument("--merchant", default="m_daybreak")
+    # THE DEMO MERCHANT HAS NEVER TRADED, and stays that way until the
+    # camera is on. Rehearsing on it spends it: the first run through this
+    # server put three trades and ₹5,055 on daybreak's page, and an
+    # append-only log has no way to take them back. Rehearse as m_daybreak,
+    # which has that history already, and leave this one alone.
+    parser.add_argument("--merchant", default="m_sunrise")
     parser.add_argument("--port", type=int, default=8795)
     args = parser.parse_args(argv)
 
