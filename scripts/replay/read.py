@@ -330,6 +330,44 @@ def _station(key, seq=None, head="", lines=(), tone=""):
             "lines": [str(x) for x in lines if x], "tone": tone}
 
 
+def _gate_reason(payload) -> str:
+    """The gate's ruling in money, not paise.
+
+    "Amount 3120000 exceeds per-transaction cap 2000000" is the log's own
+    words and unreadable on a merchant's page. The rule and the two figures
+    are all that matter.
+    """
+    import re as _re
+    text = str(payload.get("reason", ""))
+    text = _re.sub(r"\b(\d{4,})\b",
+                   lambda m: f"\u20b9{int(m.group(1)) / 100:,.0f}", text)
+    text = text.replace("Amount ", "").replace("exceeds", "is over the")
+    text = text.replace("per-transaction cap", "cap on a single payment of")
+    text = text.replace("unknown counterparty cap",
+                        "cap for a supplier with no track record of")
+    return text[:110] or "within every limit"
+
+
+def _rupees(paise) -> str:
+    """Money as a person writes it.
+
+    The rail printed raw paise — "agreed 19500", "Amount 3120000 exceeds
+    per-transaction cap 2000000" — because that is how the log stores it. A
+    merchant reading their own trade should not have to divide by a hundred
+    in their head to find out what they paid.
+    """
+    try:
+        return f"\u20b9{int(paise) / 100:,.0f}"
+    except (TypeError, ValueError):
+        return str(paise)
+
+
+def _plain(actor_id) -> str:
+    """A merchant's name, not its key."""
+    name = str(actor_id or "")
+    return (name[2:] if name.startswith("m_") else name).replace("_", " ")
+
+
 def rails(events, limit: int = 90):
     """One follow-along trail per trade, keyed by correlation id.
 
@@ -376,7 +414,7 @@ def rails(events, limit: int = 90):
             stations.append(_station(
                 "wants", posted.seq,
                 f'{posted.payload.get("qty")} units',
-                [f'at most {posted.payload.get("limit_price")} each']))
+                [f'at most {_rupees(posted.payload.get("limit_price"))} each']))
         if chosen or matched:
             src = chosen or matched
             ask = ((chosen.payload.get("ask_order_id") if chosen else None)
@@ -386,51 +424,53 @@ def rails(events, limit: int = 90):
                             if chosen else ())
             why = _clip(chosen.payload.get("reason"), 96) if chosen else ""
             stations.append(_station(
-                "picked", src.seq, seller or "a counterparty",
+                "picked", src.seq, _plain(seller) or "a counterparty",
                 [f"from {shortlist} candidates" if shortlist else "", why]))
         if ended or rounds:
             agreed = ended.payload.get("agreed") if ended else False
             stations.append(_station(
                 "haggled", (ended or rounds[0]).seq,
-                (f'agreed {ended.payload.get("final_price")}' if agreed
-                 else "walked away"),
-                [f"{len(rounds)} offers"],
+                (f'agreed {_rupees(ended.payload.get("final_price"))} a unit'
+                 if agreed else "walked away"),
+                [f"after {len(rounds)} offers"],
                 tone="allow" if agreed else "deny"))
         if rulings:
             verdicts = [r.payload.get("verdict") for r in rulings]
             allowed = "ALLOW" in verdicts
             stations.append(_station(
                 "gate", rulings[0].seq,
-                " then ".join(verdicts),
-                [str(rulings[0].payload.get("reason", ""))[:96]],
+                ("refused, then allowed" if "DENY" in verdicts and allowed
+                 else "allowed" if allowed else "refused"),
+                [_gate_reason(rulings[0].payload)],
                 tone="allow" if allowed and "DENY" not in verdicts
                 else ("mixed" if allowed else "deny")))
         if opened:
             stations.append(_station(
                 "paid", opened.seq,
-                f'{(opened.payload.get("amount") or 0) / 100:,.2f} rupees',
-                [str(opened.payload.get("razorpay_order_id") or ""),
+                _rupees(opened.payload.get("amount")),
+                ["paid on a real Razorpay order",
                  str(done.payload.get("razorpay_payment_id") or "")
                  if done else "awaiting capture"],
                 tone="allow" if done else ""))
         if drift:
             stations.append(_station(
-                "broke", drift.seq, "local vs Razorpay",
-                [f'we said {drift.payload.get("local_status")}',
-                 f'they said {drift.payload.get("remote_status")}'],
+                "broke", drift.seq, "the books disagreed",
+                [f'we had it as {str(drift.payload.get("local_status")).lower()}',
+                 f'Razorpay had it as {str(drift.payload.get("remote_status")).lower()}'],
                 tone="deny"))
         if froze:
             stations.append(_station(
-                "froze", froze.seq, "trading stopped",
-                [str(froze.payload.get("reason", ""))[:70]], tone="deny"))
+                "froze", froze.seq, "this merchant paused",
+                ["stopped from trading until the books agreed again"],
+                tone="deny"))
         if resumed:
             repair = next((e for e in thread
                            if e.type == "SETTLEMENT_COMPLETED"
                            and e.actor_id == "accountant"), None)
             stations.append(_station(
                 "repaired", (repair or resumed).seq, "put right",
-                [str(repair.payload.get("razorpay_payment_id"))
-                 if repair else "", "cleared to trade again"],
+                ["matched to Razorpay using the id Razorpay gave back",
+                 "cleared to trade again"],
                 tone="allow"))
         if lesson:
             stations.append(_station(
@@ -583,7 +623,10 @@ ROLE_EVENTS = {
     "trader": ("ORDER_POSTED", "MATCH_PROPOSED", "NEGOTIATION_OPENED",
                "NEGOTIATION_ROUND", "NEGOTIATION_ENDED",
                "SETTLEMENT_INITIATED", "SETTLEMENT_COMPLETED"),
-    "scout": ("BID_PLACED", "AUCTION_CLEARED", "INSIGHT_MINTED"),
+    # The auction is gone as a product; the Scout reads the market layer.
+    # BID_PLACED stays because this log contains those events and hiding
+    # them would make the card disagree with the log it is read from.
+    "scout": ("BID_PLACED", "CAMPAIGN_RANKED", "BENCHMARK_PUBLISHED"),
     "diplomat": ("COUNTERPARTY_CHOSEN",),
     "subconscious": ("LESSON_CONSOLIDATED", "RECALL_INJECTED"),
 }
