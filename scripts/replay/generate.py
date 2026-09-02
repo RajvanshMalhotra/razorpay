@@ -78,8 +78,15 @@ def humanise(text) -> str:
     form is only there because the log needs a key. Leaving it on a merchant's
     page makes their own agent look like it is talking about variables.
     """
-    return re.sub(r"\bm_([a-z0-9_]+)",
-                  lambda m: m.group(1).replace("_", " "), str(text or ""))
+    out = re.sub(r"\bm_([a-z0-9_]+)",
+                 lambda m: m.group(1).replace("_", " "), str(text or ""))
+    # And the money. An agent files its lessons in the units it was handed —
+    # "they paid the full 308000 paise at the agreed 1540 per unit" — and a
+    # merchant reading its own agent should be reading rupees.
+    out = re.sub(r"\b(\d{3,})\s*paise\b",
+                 lambda m: f"\u20b9{int(m.group(1)) / 100:,.0f}", out)
+    return re.sub(r"\b(\d{4,})\b",
+                  lambda m: f"\u20b9{int(m.group(1)) / 100:,.0f}", out)
 
 
 def who(actor_id) -> str:
@@ -493,8 +500,7 @@ function drawRail(r,upto,ids){
     '<span class="agent">'+esc(r.buyer)+'</span>'+
     '<span class="verb">'+(r.human?'typed':'wants')+'</span>'+
     '<span class="need">'+esc(r.need||'—')+'</span>'+
-    (r.human?'<span class="human-tag">a person typed this</span>':'')+
-    '<span class="cid">'+esc(r.corr)+'</span>';
+    (r.human?'<span class="human-tag">a person typed this</span>':'');
   document.getElementById(ids.rail).innerHTML=stations.map(function(s,n){
     return '<div class="stn" data-tone="'+esc(s.tone||'')+'">'+
       '<div class="gl">'+glyph(s)+'</div>'+

@@ -329,8 +329,7 @@ function drawRail(r,upto,ids){
     '<span class="agent">'+esc(r.buyer)+'</span>'+
     '<span class="verb">'+(r.human?'typed':'wants')+'</span>'+
     '<span class="need">'+esc(r.need||'—')+'</span>'+
-    (r.human?'<span class="human-tag">a person typed this</span>':'')+
-    '<span class="cid">'+esc(r.corr)+'</span>';
+    (r.human?'<span class="human-tag">a person typed this</span>':'');
   document.getElementById(ids.rail).innerHTML=stations.map(function(s,n){
     return '<div class="stn" data-tone="'+esc(s.tone||'')+'">'+
       '<div class="gl">'+glyph(s)+'</div>'+

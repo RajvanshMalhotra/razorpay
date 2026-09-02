@@ -330,6 +330,21 @@ def _station(key, seq=None, head="", lines=(), tone=""):
             "lines": [str(x) for x in lines if x], "tone": tone}
 
 
+def _money_words(text: str) -> str:
+    """Rewrite paise inside quoted agent text into rupees.
+
+    The Subconscious files lessons in the units it was handed: "They paid the
+    full 308000 paise at the agreed 24500 per unit." Both figures are money
+    and a merchant reading its own agent should see money.
+    """
+    import re as _re
+    out = _re.sub(r"\b(\d{3,})\s*paise\b",
+                  lambda m: f"\u20b9{int(m.group(1)) / 100:,.0f}", text)
+    out = _re.sub(r"\b(\d{4,})\b",
+                  lambda m: f"\u20b9{int(m.group(1)) / 100:,.0f}", out)
+    return out
+
+
 def _gate_reason(payload) -> str:
     """The gate's ruling in money, not paise.
 
@@ -476,14 +491,18 @@ def rails(events, limit: int = 90):
             stations.append(_station(
                 "remembered", lesson.seq,
                 str(lesson.payload.get("kind") or "lesson"),
-                [str(lesson.payload.get("text", ""))[:110]]))
+                [_money_words(str(lesson.payload.get("text", "")))[:150]]))
 
         if len(stations) < 2:
             continue
 
         out[corr] = {
             "corr": corr,
-            "buyer": posted.actor_id if posted else thread[0].actor_id,
+            # The page shows this. The id is the key the log needs, not a
+            # name, and the correlation id is a slug nobody can read - both
+            # were on screen above every trade.
+            "buyer": _plain(posted.actor_id if posted
+                            else thread[0].actor_id),
             "need": query.get("text", "") or "",
             "human": corr.startswith("shop_"),
             "first_seq": thread[0].seq,
