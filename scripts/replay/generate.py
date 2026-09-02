@@ -934,25 +934,98 @@ if(sw)sw.addEventListener('change',function(){location.href=sw.value});
    Searches the REAL catalogue read out of the log. It does not pretend to
    run an agent in the browser: the honest claim is that a person reaches
    the same order book, and the evidence is the recorded thread below. */
-var q=document.getElementById('q'),hits=document.getElementById('hits');
+var q=document.getElementById('q'),hits=document.getElementById('hits'),
+    convo=document.getElementById('convo'),
+    qty=document.getElementById('qty'),cap=document.getElementById('cap');
+
+/* --- ask for something -------------------------------------------------
+   TWO MODES, AND THE PAGE FINDS OUT WHICH BY ASKING.
+
+   Served by scripts/serve.py, the live exchange is behind /api and this box
+   does the real thing: the same find_supply the agents use, one price, then
+   money only after a click. Opened as a plain file there is no server, so it
+   falls back to searching the catalogue baked into the page and says so
+   rather than appearing broken. */
+var LIVE=null;
+function api(path,body){
+  return fetch(path,body?{method:'POST',
+      headers:{'Content-Type':'application/json'},body:JSON.stringify(body)}
+    :undefined).then(function(r){
+      if(!r.ok)return r.json().then(function(j){throw new Error(j.error||r.status)});
+      return r.json()});
+}
+function probe(){
+  return api('/api/catalogue').then(function(d){
+    LIVE=true;
+    document.getElementById('bookmeta').textContent=
+      d.items.length+' items, live from the order book';
+    return d}).catch(function(){LIVE=false;return null});
+}
+function say(who,html,tone){
+  var b=document.createElement('div');
+  b.className='bub '+(tone||'')+(who==='you'?' you':'');
+  b.innerHTML='<span class="wh">'+esc(who)+'</span>'+html;
+  convo.appendChild(b);convo.scrollTop=convo.scrollHeight;return b;
+}
+function offline(){
+  var terms=(q.value||q.placeholder).toLowerCase().split(/\s+/)
+    .filter(function(w){return w.length>3});
+  var found=M.cat.map(function(c){
+    var t=c.title.toLowerCase(),n=0;
+    terms.forEach(function(w){if(t.indexOf(w)>=0)n++});
+    return[c,n]}).filter(function(p){return p[1]>0})
+    .sort(function(a,b){return b[1]-a[1]}).slice(0,6);
+  hits.innerHTML=found.length?found.map(function(p){var c=p[0];
+    return '<div class="hit"><span class="tt">'+esc(c.title)+
+      '</span><span class="sl">'+esc(c.seller)+'</span><span class="pr">₹'+
+      (c.price/100).toFixed(2)+'</span></div>'}).join('')
+    :'<div class="empty">Nothing on the book matches that.</div>';
+  say('the exchange','Searching the catalogue on this page. To buy for real, '+
+      'start the live exchange:<br><code>python -m scripts.serve</code>','note');
+}
+function ask(){
+  var need=(q.value||'').trim();
+  if(!need){q.focus();return}
+  say('you',esc(need));
+  var thinking=say('your agent','looking through the book…','wait');
+  api('/api/quote',{need:need,qty:+qty.value||40,limit_inr:+cap.value||0})
+   .then(function(d){
+    thinking.remove();
+    if(!d.found){say('your agent',esc(d.why),'no');return}
+    var b=say('your agent',
+      '<b>'+esc(d.seller)+'</b> will sell <b>'+d.qty+'</b> at <b>₹'+
+      d.unit_price_inr+'</b> each &mdash; ₹'+d.total_inr.toLocaleString('en-IN')+
+      ' in total.<br><span class="sub">chosen from '+d.considered+
+      ' on the book'+(d.within_your_limit?'':', above the cap you set')+
+      '</span><br><button class="buy" id="ok">Buy it</button>'+
+      '<button class="nope" id="no">No thanks</button>','offer');
+    b.querySelector('#no').onclick=function(){
+      b.querySelector('#ok').remove();b.querySelector('#no').remove();
+      say('your agent','Nothing was written. A quote commits nothing.','note')};
+    b.querySelector('#ok').onclick=function(){
+      b.querySelector('#ok').disabled=true;b.querySelector('#no').remove();
+      var w=say('the gate','ruling on it…','wait');
+      api('/api/buy',{quote_id:d.quote_id}).then(function(r){
+        w.remove();
+        if(!r.ok){say('the gate',esc(r.why||'refused'),'no');return}
+        say('the gate',esc(r.gate),'yes');
+        say('razorpay','Paid <b>₹'+r.total_inr.toLocaleString('en-IN')+
+          '</b> on order <code>'+esc(r.razorpay_order_id)+'</code>'+
+          (r.pay_url?'<br><a href="'+esc(r.pay_url)+'" target="_blank">'+
+           'open the payment link →</a>':''),'yes');
+        say('the log',r.events.length+' events written, '+
+          'numbered '+r.events[0].seq+' to '+r.events[r.events.length-1].seq+
+          '. Reload this page and the trade is on your rail.','note');
+      }).catch(function(e){w.remove();say('the exchange',esc(''+e),'no')})};
+   }).catch(function(e){thinking.remove();say('the exchange',esc(''+e),'no')});
+}
 if(q){
-  var search=function(){
-    var terms=(q.value||q.placeholder).toLowerCase().split(/\s+/)
-      .filter(function(w){return w.length>3});
-    var found=M.cat.map(function(c){
-      var t=c.title.toLowerCase(),n=0;
-      terms.forEach(function(w){if(t.indexOf(w)>=0)n++});
-      return[c,n]}).filter(function(p){return p[1]>0})
-      .sort(function(a,b){return b[1]-a[1]}).slice(0,6);
-    hits.innerHTML=found.length?found.map(function(p){var c=p[0];
-      return '<div class="hit"><span class="tt">'+esc(c.title)+
-        '</span><span class="sl">'+esc(c.seller)+'</span><span class="pr">₹'+
-        (c.price/100).toFixed(2)+'</span></div>'}).join('')
-      :'<div class="empty">Nothing on the book matches that. The agents only '+
-       'stock what merchants have actually listed.</div>';
-  };
-  document.getElementById('go').addEventListener('click',search);
-  q.addEventListener('keydown',function(e){if(e.key==='Enter')search()});
+  probe().then(function(){
+    document.getElementById('go').addEventListener('click',function(){
+      LIVE?ask():offline()});
+    q.addEventListener('keydown',function(e){
+      if(e.key==='Enter')LIVE?ask():offline()});
+  });
 }
 
 /* --- your agent's brief ------------------------------------------------
@@ -1118,19 +1191,27 @@ def build_merchant(db_path: str, actor_id: str, roster) -> str:
         'run.</div>')
 
     ask_pane = (
-        '<p class="lede">Type what you need in plain words. This writes a '
-        'descriptive bid to the same order book your agents use &mdash; you '
-        'approve it, and the gate still decides. A person saying yes is '
-        'consent, not permission, and it does not raise a spending cap.</p>'
+        '<p class="lede">Type what you need in plain words. With the live '
+        'exchange running this searches the same order book your agents use, '
+        'shows you one price, and only moves money after you say yes &mdash; '
+        'and the gate still decides. A person saying yes is consent, not '
+        'permission, and it does not raise a spending cap.</p>'
         '<div class="ask"><input id="q" type="text" class="f" '
         'aria-label="what do you need" '
-        'placeholder="biodegradable mailers under 22 rupees a unit">'
-        '<button class="go" id="go">Search the book</button></div>'
+        'placeholder="cold brew concentrate, cafe grade">'
+        '<input id="qty" type="number" class="f n" value="40" min="1" '
+        'aria-label="how many">'
+        '<input id="cap" type="number" class="f n" value="220" min="1" '
+        'aria-label="most per unit in rupees">'
+        '<button class="go" id="go">Find it</button></div>'
+        '<div class="askhint">how many &middot; most you will pay per unit, '
+        'in rupees</div>'
+        '<div id="convo" class="convo"></div>'
         '<section class="card"><div class="ch"><h3>What is actually on the '
-        'book</h3><span class="meta">read from the log</span></div>'
-        '<div class="cb" id="hits"><div class="empty">Type a need and press '
-        'search. This reads the real catalogue and refuses when nothing '
-        'matches.</div></div></section>'
+        'book</h3><span class="meta" id="bookmeta">read from the log</span>'
+        '</div><div class="cb" id="hits"><div class="empty">Type a need and '
+        'press Find it. This reads the real catalogue and refuses when '
+        'nothing matches.</div></div></section>'
         '<div style="height:16px"></div>'
         + _human_thread(events))
 
