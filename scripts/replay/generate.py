@@ -59,7 +59,6 @@ from scripts.replay.read import (
     failure_threads,
     load,
     benchmarks,
-    benchmarks,
     merchant_view,
     performance,
     radar,
@@ -754,6 +753,22 @@ p.lede{font-size:15px;color:var(--body);margin:0 0 20px;max-width:74ch}
 .chip{background:var(--card);border:1px solid var(--edge);border-radius:7px;
   padding:5px 11px;font-size:12px;color:var(--pale);cursor:not-allowed}
 
+/* --- the market read, on the plan that includes it ----------------------- */
+.mkt{margin-top:16px}
+.benches{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));
+  gap:11px}
+.bench{border:1px solid var(--line);border-radius:10px;background:var(--paper);
+  padding:12px 14px}
+.bench b{display:block;font-size:14px;color:var(--ink);margin-bottom:3px}
+.bench span{display:block;font-size:13px;color:var(--body)}
+.bench i{display:block;margin-top:6px;font-style:normal;font-family:var(--mono);
+  font-size:10.5px;color:var(--pale);line-height:1.5}
+.locked{margin-top:12px;padding:14px 16px;border:1px solid var(--edge);
+  border-radius:10px;background:var(--paper)}
+.locked b{display:block;font-size:14px;color:var(--ink);margin-bottom:5px}
+.locked span{display:block;font-size:13px;color:var(--mute);line-height:1.6;
+  max-width:62ch}
+
 /* --- catalogue ----------------------------------------------------------- */
 .brief{font-family:var(--serif);font-size:16px;line-height:1.5;resize:vertical;
   min-height:76px}
@@ -1205,7 +1220,8 @@ def build_merchant(db_path: str, actor_id: str, roster) -> str:
         '<div class="duo">'
         + _brief_card(brief_for(events, actor_id), traded=bool(mine))
         + _books_card(books)
-        + _catalogue_card(view) + "</div>")
+        + _catalogue_card(view) + "</div>"
+        + _market_card(view, benchmarks(events)))
 
     money_pane = (
         '<p class="lede">Every trade your agents made, from what you needed to '
@@ -1257,7 +1273,7 @@ def build_merchant(db_path: str, actor_id: str, roster) -> str:
         f'<a class="avatar" href="index.html" '
         f'aria-label="back to the front">{esc(initial)}</a>'
         f'<div class="whoami"><h1>{esc(view["name"])}</h1>'
-        f'<p>{esc(who(actor_id))} &middot; {esc(view["plan"])} plan &middot; '
+        f'<p>{esc(who(actor_id))} &middot; {esc(PLAN_NAME.get(view["plan"], view["plan"]))} &middot; '
         f'represented by four agents</p></div>'
         '<div class="switch">'
         f'<select class="sw" id="sw" aria-label="view another merchant">'
@@ -1488,6 +1504,78 @@ def _sheet_sync(actor_id: str) -> str:
         'your own Google Sheet as soon as your workbook is connected &mdash; '
         'nothing above changes when it does.</div>')
 
+
+
+# What each plan is called where a merchant reads it. The log stores the key.
+PLAN_NAME = {"standard": "Standard plan", "market": "Standard + Market plan"}
+
+
+def _market_card(view, bench) -> str:
+    """What the Market plan buys, and what Standard does not get.
+
+    THE LOCK IS THE ABSENCE OF THE NUMBERS. A standard merchant's page is
+    built without them — not greyed out, not blurred, not sitting in a data
+    attribute behind a class. Anything else is a paid product's screenshot
+    with a padlock drawn on it, and one look in developer tools ends the
+    argument about whether this is really a plan.
+
+    What Standard does see is true and deliberately useless alone: that a gap
+    exists between what sellers ask and what categories clear at. Knowing
+    there is money on the table is what makes the detail worth buying;
+    knowing neither would just be an advert.
+    """
+    rows = bench or []
+    if not rows:
+        return ""
+    subscribed = str(view.get("plan", "")).lower() == "market"
+
+    if not subscribed:
+        movers = sum(1 for r in rows if r.get("below_ask_share"))
+        return (
+            '<section class="card mkt"><div class="ch">'
+            '<h3>What your category clears at</h3>'
+            '<span class="meta">Standard + Market</span></div>'
+            '<div class="cb">'
+            f'<p class="lede">{len(rows)} categories on this exchange now '
+            f'have a clearing price of their own, and in {movers} of them '
+            f'sellers are settling below their own ask. Yours is one of '
+            f'them.</p>'
+            '<div class="locked">'
+            '<b>Which ones, and by how much, is on the Market plan.</b>'
+            '<span>Your agent already negotiates. This is what it would know '
+            'before it opens: the price your category actually settles at, '
+            'the ask it settles against, and how often a seller moves. Only '
+            'the processor can see both sides of every trade, so nobody else '
+            'can tell you.</span></div>'
+            '<p class="fine">A figure is published only where at least three '
+            'businesses stand behind it, so no row can be traced to one '
+            'shop &mdash; including yours.</p>'
+            '</div></section>')
+
+    lines = ""
+    for row in rows[:5]:
+        share = row.get("below_ask_share") or 0
+        moves = (f'{share * 100:.0f}% of trades close under the ask'
+                 f' &middot; {(row.get("median_saving") or 0) * 100:.0f}% '
+                 f'saved when they do' if share
+                 else "sellers here never move &mdash; do not push")
+        lines += (
+            f'<div class="bench"><b>{esc(row["category"])}</b>'
+            f'<span>clears at {rupees(row["clears_paise"])} against a '
+            f'{rupees(row["ask_paise"])} ask</span>'
+            f'<i>{moves}</i></div>')
+    return (
+        '<section class="card mkt"><div class="ch">'
+        '<h3>What your category clears at</h3>'
+        '<span class="meta">on your plan &middot; kept current as the market '
+        'trades</span></div>'
+        f'<div class="cb"><div class="benches">{lines}</div>'
+        '<p class="fine">Read it before you open: a category that settles '
+        'under its ask is one to push on, and one that never moves is one '
+        'where pushing spends the only thing an agent cannot buy more of '
+        '&mdash; the counterparty\'s patience. A figure is published only '
+        'where at least three businesses stand behind it.</p>'
+        '</div></section>')
 
 def _catalogue_card(view) -> str:
     rows = "".join(

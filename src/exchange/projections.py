@@ -165,6 +165,15 @@ def fold_from(state: ExchangeState, events: Iterable[Event]) -> ExchangeState:
                 ),
             )
 
+        elif event.type == ev.PLAN_CHANGED:
+            # Only the plan moves. Status and identity are untouched, so a
+            # frozen merchant that subscribes is a frozen merchant on a
+            # better plan — which is the correct and slightly funny answer.
+            current = actors.get(p["actor_id"])
+            if current is not None:
+                actors[p["actor_id"]] = replace(
+                    current, plan_tier=p.get("plan_tier", "standard"))
+
         elif event.type == ev.ASSET_LISTED:
             assets[p["asset_id"]] = Asset(
                 asset_id=p["asset_id"],

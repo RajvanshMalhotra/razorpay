@@ -709,8 +709,10 @@ def merchant_view(events, actor_id: str, rail_map=None):
         "actor_id": actor_id,
         # The prefix is plumbing, not a name. See generate.who().
         "name": actor_id[2:].replace("_", " ") if actor_id.startswith("m_") else actor_id,
-        "plan": (registered.payload.get("plan_tier") if registered
-                 else "standard"),
+        # THE PLAN AS IT STANDS, not as it was the day this business joined.
+        # Reading only the registration meant a merchant could subscribe and
+        # its own page would still call it standard.
+        "plan": _plan_now(events, actor_id, registered),
         "spent_paise": spent,
         "confirmed": confirmed,
         "allowed": allowed,
@@ -720,6 +722,16 @@ def merchant_view(events, actor_id: str, rail_map=None):
         "catalogue": catalogue_rows,
         "corrs": sorted(mine_corrs),
     }
+
+
+def _plan_now(events, actor_id, registered):
+    """The last word on what this merchant pays for."""
+    plan = (registered.payload.get("plan_tier") if registered else "standard")
+    for event in events:
+        if (event.type == "PLAN_CHANGED"
+                and (event.payload or {}).get("actor_id") == actor_id):
+            plan = event.payload.get("plan_tier", plan)
+    return plan or "standard"
 
 
 def _role_line(role, acted):

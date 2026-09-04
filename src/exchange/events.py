@@ -77,3 +77,10 @@ INVARIANT_VIOLATED = "INVARIANT_VIOLATED"
 POINTS_MINTED = "POINTS_MINTED"
 ACTOR_FROZEN = "ACTOR_FROZEN"
 ACTOR_RESUMED = "ACTOR_RESUMED"
+# A merchant subscribing to, or dropping, a paid plan. Separate from
+# ACTOR_REGISTERED because a plan changes over a business's life and the
+# registration is the moment it joined — replaying a registration to change a
+# plan would also replay the status, and the frozen-merchant rule exists
+# precisely because a party must not be able to re-register its way out of a
+# containment.
+PLAN_CHANGED = "PLAN_CHANGED"
