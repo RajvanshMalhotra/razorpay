@@ -1,6 +1,6 @@
 """The exchange, live, behind the pages.
 
-    .venv/bin/python -m scripts.serve --merchant m_sunrise
+    .venv/bin/python -m scripts.serve --merchant m_dawn
 
 WHAT THIS IS FOR. The replay pages are static: they prove what happened, and
 a static file cannot post to an order book. So the ask box on a merchant's
@@ -441,7 +441,7 @@ def main(argv=None) -> int:
     # server put three trades and ₹5,055 on daybreak's page, and an
     # append-only log has no way to take them back. Rehearse as m_daybreak,
     # which has that history already, and leave this one alone.
-    parser.add_argument("--merchant", default="m_sunrise")
+    parser.add_argument("--merchant", default="m_dawn")
     parser.add_argument("--port", type=int, default=8795)
     args = parser.parse_args(argv)
 

@@ -525,7 +525,7 @@ def main(argv=None) -> int:
     parser.add_argument("--merchant", default=None,
                         help="push one business only, e.g. m_bl_thirdwave — "
                              "what a demo actually needs")
-    parser.add_argument("--skip", default="m_sunrise",
+    parser.add_argument("--skip", default="m_dawn",
                         help="businesses to leave out, comma separated. "
                              "Defaults to the one whose books are written "
                              "live on camera; pass --skip '' for all of them.")

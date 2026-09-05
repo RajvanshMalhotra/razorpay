@@ -1103,43 +1103,26 @@ function ask(){
   say('you',esc(need));
   steps.innerHTML='';steps.classList.remove('done');seen=0;
   if(followTimer)clearInterval(followTimer);
-  /* One trade, played for both dashboards at once. It is a real correlation
-     id out of the log, replayed — which is why it can be run twice the same
-     way, and why every number in it can be looked up afterwards. */
-  api('/api/demo/start',{need:need}).then(function(){
-    followTimer=setInterval(follow,400);follow()}).catch(function(){});
+  /* ASKING WRITES NOTHING. It used to fire a real purchase alongside the
+     replay, which meant every rehearsal spent the merchant it was rehearsing
+     on — the empty demo page came back with a dead "no deal" trade on its
+     rail and a book that was no longer empty. A question is a question. The
+     real buy lives on the same endpoints and is run deliberately, not as a
+     side effect of typing.
+
+     What plays is a real correlation id out of the log, on a clock the desk
+     reads too. Repeatable, and every number in it can be looked up. */
   var thinking=say('your agent','looking through the book…','wait');
-  api('/api/quote',{need:need,qty:+qty.value||40,limit_inr:+cap.value||0})
-   .then(function(d){
+  api('/api/demo/start',{need:need}).then(function(d){
     thinking.remove();
-    if(!d.found){say('your agent',esc(d.why),'no');return}
-    var b=say('your agent',
-      '<b>'+esc(d.seller)+'</b> will sell <b>'+d.qty+'</b> at <b>₹'+
-      d.unit_price_inr+'</b> each &mdash; ₹'+d.total_inr.toLocaleString('en-IN')+
-      ' in total.<br><span class="sub">chosen from '+d.considered+
-      ' on the book'+(d.within_your_limit?'':', above the cap you set')+
-      '</span><br><button class="buy" id="ok">Buy it</button>'+
-      '<button class="nope" id="no">No thanks</button>','offer');
-    b.querySelector('#no').onclick=function(){
-      b.querySelector('#ok').remove();b.querySelector('#no').remove();
-      say('your agent','Nothing was written. A quote commits nothing.','note')};
-    b.querySelector('#ok').onclick=function(){
-      b.querySelector('#ok').disabled=true;b.querySelector('#no').remove();
-      var w=say('the gate','ruling on it…','wait');
-      api('/api/buy',{quote_id:d.quote_id}).then(function(r){
-        w.remove();
-        if(!r.ok){say('the gate',esc(r.why||'refused'),'no');return}
-        say('the gate',esc(r.gate),'yes');
-        say('razorpay','Paid <b>₹'+r.total_inr.toLocaleString('en-IN')+
-          '</b> on order <code>'+esc(r.razorpay_order_id)+'</code>'+
-          (r.pay_url?'<br><a href="'+esc(r.pay_url)+'" target="_blank">'+
-           'open the payment link →</a>':''),'yes');
-        say('the log',r.events.length+' events written, '+
-          'numbered '+r.events[0].seq+' to '+r.events[r.events.length-1].seq+
-          '. Reload this page and the trade is on your rail.','note');
-      }).catch(function(e){w.remove();say('the exchange',esc(''+e),'no')})};
-   }).catch(function(e){thinking.remove();say('the exchange',esc(''+e),'no')});
+    if(!d.running){say('your agent',
+      esc(d.why||'Nothing on the book matches that.'),'no');return}
+    say('your agent','Following a trade like yours, step by step. Razorpay '+
+      'sees the same one on its desk right now.','note');
+    followTimer=setInterval(follow,400);follow();
+  }).catch(function(){thinking.remove();offline()});
 }
+
 if(q){
   probe().then(function(){
     document.getElementById('go').addEventListener('click',function(){
@@ -1155,7 +1138,13 @@ if(q){
 var brief=document.getElementById('brief');
 if(brief){
   var KEY_B='brief:'+M.actor;
-  try{var saved=localStorage.getItem(KEY_B); if(saved!==null)brief.value=saved}
+  /* NOT `saved`. `function saved()` further down reads the catalogue out of
+     localStorage, and a top-level `var saved` shares its binding — so this
+     line replaced the function with a string, renderAdded() threw
+     "saved is not a function", and the whole script died at load. Everything
+     wired after it, the ask box included, silently never existed. */
+  try{var keptBrief=localStorage.getItem(KEY_B);
+      if(keptBrief!==null)brief.value=keptBrief}
   catch(e){}
   var sync=function(){
     var have=brief.value.toLowerCase();
@@ -1768,7 +1757,17 @@ function merchant(id,cls){
   el.classList.add(cls);
   if(cls!=='frz')setTimeout(function(){el.classList.remove(cls)},2400);
 }
+/* Set while a merchant is asking. Declared up here because step() reads it
+   and step() is defined first. */
+var following=null,followSeen={},bannerEl=null;
 function step(){
+  /* THE GUARD IS HERE, NOT ONLY AT THE CALLER. While a merchant is asking,
+     this desk shows that merchant's trade and nothing else. Pausing the
+     timer from watchDemo was not enough — something restarted it, and the
+     ledger interleaved event 3 of the general tape with event 944 of the
+     trade being followed, which is two stories in one column. A refusal at
+     the point of writing cannot be got around by whoever starts the clock. */
+  if(following)return;
   if(i>=rows.length){stop();label('replay',false);return}
   var r=rows[i++];
   var l=$('ledger');
@@ -1835,7 +1834,7 @@ function restart(){
    The desk's own replay is paused while this happens, so the ledger is not two
    stories at once. Served as a plain file there is no server, /api/demo/state
    fails, and everything below simply never runs. */
-var following=null,followSeen={},bannerEl=null;
+
 function banner(show,who,need){
   if(!show){if(bannerEl){bannerEl.remove();bannerEl=null}return}
   if(bannerEl)return;
