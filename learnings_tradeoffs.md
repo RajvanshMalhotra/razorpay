@@ -1058,6 +1058,89 @@ Adopting one would have meant taking a dependency, eight days from a deadline,
 to replace a differentiator with something less suited — while leaving the
 actual defect, which was that nothing read our own log.
 
+## 4E. Latency: two waits that were nobody's
+
+Both of these were found the same way — by timing the steps instead of
+reasoning about which one felt slow — and in both cases the thing to remove
+was a *wait*, not work.
+
+### The demo took 21 seconds, and the fix was not a faster model
+
+The obvious move when a live agentic demo is slow is to reach for the fast
+model tier. That would have achieved nothing: `LLM_MODEL`, `LLM_MODEL_FAST`
+and `LLM_MODEL_STRONG` were **all already `deepseek-v4-flash`**. The strong
+tier and the fast tier were the same model, so there was no cheaper call to
+switch to. Four printed timings said where the money actually went:
+
+```
+find_supply             12.8s
+choose                   8.4s     <- the Diplomat's reasoning, which is READ
+negotiate                0.0s
+close (gate + razorpay)  0.0s
+```
+
+Two useful facts fall straight out. **The policy gate and the Razorpay round
+trip are free** — the part of the system under the most scrutiny costs nothing
+to run. And the single largest cost was `find_supply`, which does the
+retrieval in microseconds and then spends twelve seconds on an LLM call whose
+output **no human ever sees**: the Trader narrating its own search into the
+orchestrator's context, per spec 4.2.
+
+That summary is real and worth keeping — it is what makes the root context
+grow, and BUG-27 was precisely the case of a promotion that never happened.
+But nothing downstream *waits* on it. It lands for the NEXT decision. So it
+moved onto its own thread and the caller returns its shortlist immediately:
+**21 seconds to 6**, with the promotion still guaranteed to happen.
+
+The general shape, which is the part worth carrying: *a call being on the
+critical path is a separate question from the call being necessary.* Asking
+"can this be faster" produced nothing. Asking "does anything actually wait on
+this" produced a 3.5x.
+
+**What it cost, stated honestly.** Three tests failed immediately, and they
+were right to. Two of them share a `ScriptedProvider` that hands out replies
+**in order** — backgrounding one call made that order racy, so the Trader's
+line could arrive after the Diplomat's. `settle_context()` exists for them,
+and `promote_async=False` restores the old behaviour outright. Production
+shares no such turn ordering; a test that depends on one has to say so out
+loud. A green suite after that change would have meant the tests were not
+watching the thing that moved.
+
+### "Reload this page" was a wait too, and a wrong one
+
+The merchant pages are static HTML generated from the log, so after a live
+trade the log knew about it and the page did not. The screen said *"reload
+this page and the trade is on your rail"* — which served the same file, built
+before the trade, showing nothing. The instruction was not merely lazy, it was
+**false**, and it looked like data loss.
+
+Two changes. The server rebuilds the two pages a trade touches — the
+merchant's own and the desk — the moment it settles. And the page then fetches
+itself and swaps in the two regions that changed, so the steps just watched
+stay on screen and nobody is asked to press anything.
+
+The rule underneath: **a page that tells you to refresh had better be a page
+that refreshing changes.** If it is, the software can do it; if it is not, the
+instruction is a lie. Either way the sentence should not exist.
+
+That fix immediately exposed a second bug it was sitting on top of: `rails`
+was being handed only the trade's own events, but the seller's ASK was posted
+under a different correlation id — so the station had nothing to name and read
+"a counterparty", and the negotiation, which hangs off the same lookup,
+vanished. The rebuild path is also the read path; fixing the first surfaced
+the second.
+
+### A third wait, found while looking for these
+
+`default_embedder()` was taking **over 400 seconds** on a machine whose
+weights were already cached. `StaticModel.from_pretrained` still asks the hub
+whether they are current, and that call was hanging. Setting `HF_HUB_OFFLINE`
+before the first attempt, with a fallback to the network when nothing is
+cached, brought it to **0.8 seconds**. On a demo machine that is the
+difference between a server and a dead terminal, and it had nothing to do with
+the model, the index, or the log.
+
+
 ## 5. Standing risks
 
 | Risk | Status |

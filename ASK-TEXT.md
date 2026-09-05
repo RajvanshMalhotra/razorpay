@@ -78,11 +78,13 @@ not recording.
 **To reset to a fresh empty business** — about thirty seconds:
 
 ```bash
-.venv/bin/python -m scripts.market.join m_newname
-.venv/bin/python -m scripts.market.stock --merchant m_newname
-.venv/bin/python -m scripts.replay.generate runs/market.db docs
-.venv/bin/python -m scripts.serve --merchant m_newname --port 8795
+.venv/bin/python -m scripts.market.fresh
 ```
+
+It registers a business that has never traded, gives it a shelf, rebuilds the
+pages, and prints the serve command with the name it picked. Nothing is
+deleted — the spent merchants keep their trades, because those trades
+happened.
 
 **If nothing matches** what you typed, the agent says so rather than inventing
 a supplier — which is the honest answer, but not the one you want on camera.
