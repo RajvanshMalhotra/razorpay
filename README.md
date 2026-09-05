@@ -13,6 +13,39 @@ Built solo for the Razorpay hackathon, **Track 01 — AI Growth & Agentic Commer
 
 ---
 
+## One business. Two workforces.
+
+Razorpay already powers transactions between millions of businesses. We turn that
+network into something more powerful: **an intelligent business network where AI
+agents discover opportunities, negotiate deals, execute transactions, and keep
+learning from the market.**
+
+**₹220,403** settled between agents · **43** businesses · **55** partnerships formed ·
+**108** decisions recorded
+
+One negotiation, quoted from the log — two agents converging, the gate ruling before
+the money moves, and Razorpay confirming it:
+
+```
+LIVE NEGOTIATION                    biodegradable mailers for subscription boxes
+SPREAD                                                                    ₹0.00
+
+  packmate                                                                ₹7.48
+  This is our final floor; we cannot go below this figure.
+
+  third wave supply                                                       ₹7.48
+  We accept your final floor as it aligns with our valuation and we
+  wish to close this trade.
+
+  THE GATE RULED                                                        allowed
+  RAZORPAY CONFIRMED                                       pay_TV9wYDBGvCdqtt
+```
+
+Those are the agents' own words, quoted — not a summary of the negotiation, the
+negotiation. The spread closing to ₹0.00 is the deal being struck.
+
+---
+
 ## The problem
 
 Every business needs suppliers and needs buyers. Finding them, checking whether they
