@@ -1052,7 +1052,7 @@ function probe(){
   return api('/api/catalogue').then(function(d){
     LIVE=true;
     document.getElementById('bookmeta').textContent=
-      d.items.length+' items, live from the order book';
+      d.items.length+' things you can buy right now';
     /* SHOW THE BOOK, DO NOT DESCRIBE IT. This panel sat on the placeholder
        "type a need and press Find it" forever, because only the offline
        fallback ever wrote to it — so on a running exchange, the card headed
@@ -1413,10 +1413,11 @@ def build_merchant(db_path: str, actor_id: str, roster) -> str:
         '<div id="stepnote" class="stepnote"></div>'
         '<div id="steps" class="steps" aria-live="polite"></div>'
         '<div id="convo" class="convo"></div>'
-        '<section class="card"><div class="ch"><h3>What is actually on the '
-        'book</h3><span class="meta" id="bookmeta">read from the log</span>'
-        '</div><div class="cb" id="hits"><div class="empty">Reading the '
-        'order book&hellip;</div></div></section>'
+        '<section class="card"><div class="ch">'
+        '<h3>What other businesses have for sale</h3>'
+        '<span class="meta" id="bookmeta">what your agent searches</span>'
+        '</div><div class="cb" id="hits"><div class="empty">Reading what is '
+        'for sale&hellip;</div></div></section>'
         '<div style="height:16px"></div>')
 
     return (
