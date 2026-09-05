@@ -85,10 +85,30 @@ class Live:
                                  HybridIndex(embed_fn=default_embedder()),
                                  RazorpayRail(self.log, client),
                                  CreditRail(self.log))
-        self.broker = Broker(merchant, self.exchange, strong,
-                             fast_provider=fast)
+        self._strong, self._fast = strong, fast
+        self._brokers: dict = {}
+        self.broker = self.broker_for(merchant)
         self.merchant = merchant
         self.db = db
+
+    def broker_for(self, actor_id: str):
+        """The agent belonging to the merchant whose page is asking.
+
+        ONE SERVER, MANY MERCHANTS. There was a single broker, built for
+        whichever merchant the server was started with, and the ask box on
+        every other merchant's page used it — so asking from bl hsr's
+        dashboard put the trade on daylight's books. The page says who it
+        belongs to; that is who buys.
+
+        Cheap to make one per merchant: the providers and the index are
+        shared, and only the memory tree is per-agent.
+        """
+        from exchange.agents.broker import Broker
+
+        if actor_id not in self._brokers:
+            self._brokers[actor_id] = Broker(
+                actor_id, self.exchange, self._strong, fast_provider=self._fast)
+        return self._brokers[actor_id]
 
     # --- what is for sale ---------------------------------------------------
 
@@ -331,8 +351,10 @@ class Demo:
                 return self.state()          # one at a time
             qty, cap = self.figures(need)
             corr = new_id("shop")
+            buyer = _asker or self.live.merchant
             self.running = {
-                "corr": corr, "asked": need, "asker": _plain(self.live.merchant),
+                "corr": corr, "asked": need, "asker": _plain(buyer),
+                "actor": buyer,
                 "asked_qty": qty, "asked_cap": cap,
                 "qty": qty or 40, "cap_paise": (cap or 500) * 100,
                 "done": False, "why": "",
@@ -353,7 +375,7 @@ class Demo:
             clock = now
 
         try:
-            broker = self.live.broker
+            broker = self.live.broker_for(plan["actor"])
             matches = broker.find_supply(
                 need_text=plan["asked"], qty=plan["qty"],
                 limit_price=plan["cap_paise"], correlation_id=corr)
@@ -437,7 +459,8 @@ class Demo:
 
             _s, _t, events = load(self.db)
             roster = sorted(state_actors(events))
-            actor = self.live.merchant
+            with self.lock:
+                actor = (self.running or {}).get("actor") or self.live.merchant
             (DOCS / _page_name(actor)).write_text(
                 build_merchant(self.db, actor, roster), encoding="utf-8")
             (DOCS / "desk.html").write_text(build_desk(self.db),
@@ -562,8 +585,10 @@ class Handler(BaseHTTPRequestHandler):
                 int(round(float(body.get("limit_inr") or 0) * 100)) or 10**9)))
         if path == "/api/demo/start":
             return self._guard(lambda: self._send(
-                200, self.demo.start(str(body.get("need", "")).strip(),
-                                     self.live.merchant)))
+                200, self.demo.start(
+                    str(body.get("need", "")).strip(),
+                    str(body.get("actor", "")).strip()
+                    or self.live.merchant)))
         if path == "/api/demo/stop":
             return self._guard(lambda: self._send(200, self.demo.stop()))
         if path == "/api/buy":

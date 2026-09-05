@@ -78,13 +78,18 @@ not recording.
 **To reset to a fresh empty business** — about thirty seconds:
 
 ```bash
-.venv/bin/python -m scripts.market.fresh
+.venv/bin/python -m scripts.market.rehearse --reset
 ```
 
-It registers a business that has never traded, gives it a shelf, rebuilds the
-pages, and prints the serve command with the name it picked. Nothing is
-deleted — the spent merchants keep their trades, because those trades
-happened.
+Morningside is empty again and you can rehearse on it as often as you like.
+
+This restores a snapshot of the log taken while it was still empty — it does
+not delete anything. The log is append-only and stays that way, because a
+refusal recorded at event 258 only means something if events cannot be tidied
+away afterwards. Starting a run again from a known point is what a rehearsal
+is; editing the record is a different act, and this is not it.
+
+`--status` shows how many rehearsal events a reset would drop.
 
 **If nothing matches** what you typed, the agent says so rather than inventing
 a supplier — which is the honest answer, but not the one you want on camera.

@@ -6,7 +6,7 @@ Seven minutes. Two terminal commands, one browser. Nothing else to remember.
 
 ```bash
 .venv/bin/python -m scripts.replay.generate runs/market.db docs      # rebuild pages
-.venv/bin/python -m scripts.serve --merchant m_meridian --port 8795   # leave running
+.venv/bin/python -m scripts.serve --merchant m_morningside --port 8795   # leave running
 ```
 
 Wait for `35 items on the book`. Then open **http://localhost:8795/index.html**.
@@ -85,7 +85,7 @@ Tab **Where the money went** → **Open your tab in Google Sheets**.
 
 > One tab per business, written from the audit trail. Nobody typed any of it.
 
-## 7 · LIVE — the empty merchant  (2 min) — dropdown to **Meridian**
+## 7 · LIVE — the empty merchant  (2 min) — dropdown to **Morningside**
 
 ₹0. Nothing on its book. Four agents that have never done anything.
 
@@ -111,14 +111,14 @@ Press **Buy it**:
 > counterparty, the gate ruled before the money, and Razorpay took the payment.
 > Five events, one trade id, all of it lookupable.
 
-**Reload the page** — the trade is now on Meridian's rail, and the figures at
+**Reload the page** — the trade is now on Morningside's rail, and the figures at
 the top are no longer zero.
 
 ---
 
 ## If something goes wrong
 
-**Meridian is not empty any more** (you rehearsed on it) — 30 seconds:
+**Morningside is not empty any more** (you rehearsed on it) — 30 seconds:
 
 ```bash
 .venv/bin/python -m scripts.market.join m_newname

@@ -11,14 +11,14 @@ nothing here is a mock-up.
 
 ```bash
 .venv/bin/python -m scripts.replay.generate runs/market.db docs
-.venv/bin/python -m scripts.serve --merchant m_meridian --port 8795
+.venv/bin/python -m scripts.serve --merchant m_morningside --port 8795
 ```
 
 Open two tabs:
 
 | tab | page | who it is for |
 |---|---|---|
-| 1 | `localhost:8795/m-meridian.html` | **the merchant** |
+| 1 | `localhost:8795/m-morningside.html` | **the merchant** |
 | 2 | `localhost:8795/desk.html` (passcode `razorpay`) | **Razorpay** |
 
 Put them side by side if you can. The whole point is that they move together.
@@ -68,7 +68,7 @@ Put them side by side if you can. The whole point is that they move together.
 
 ## 3 · One merchant asks for something  (1:20 – 3:10)  ← *the centrepiece*
 
-**Screen:** tab 1, Meridian. Point at the zeroes.
+**Screen:** tab 1, Morningside. Point at the zeroes.
 
 > This business signed up today. ₹0 committed. Nothing on its books. Four
 > agents that have never done anything.
@@ -85,7 +85,7 @@ for a beat.**
 
 > And here is the same moment on Razorpay's side.
 
-*(Point at the amber banner: **meridian is buying something right now**.)*
+*(Point at the amber banner: **morningside is buying something right now**.)*
 
 > **This is happening now.** Its agent is out on the order book. The merchant
 > sees plain English; Razorpay sees the event numbers and the actor ids. Same
@@ -151,7 +151,7 @@ dealt with — rest on that step:
 **Then, briefly:**
 
 > There is a second revenue line, and it is the one nobody expects. Every
-> business here is also a **seller**. Meridian lists five things. 175 listings
+> business here is also a **seller**. Morningside lists five things. 175 listings
 > across the exchange, and every one is searchable by 35 other businesses'
 > agents. A merchant does not just buy cheaper — **it gets found.**
 
@@ -281,7 +281,7 @@ log with its own event numbers, played back on a clock. Say *"this is a trade
 that happened, replayed so you can watch it"* — it is repeatable, which a live
 buy is not, and every number in it can be looked up afterwards.
 
-**Rehearse on `m_daybreak`, never on Meridian.** Asking posts a real order, so a
+**Rehearse on `m_daybreak`, never on Morningside.** Asking posts a real order, so a
 rehearsal spends the empty page you are recording.
 
 **The pay link will be missing.** The Razorpay test account is at its 30-link

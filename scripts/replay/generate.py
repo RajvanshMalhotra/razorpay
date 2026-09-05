@@ -1192,7 +1192,10 @@ function ask(){
   showBook(BOOK||M.cat,need.toLowerCase().split(/\s+/)
     .filter(function(w){return w.length>3}));
   var thinking=say('your agent','looking through the book…','wait');
-  api('/api/demo/start',{need:need}).then(function(d){
+  /* WHOSE PAGE THIS IS. One server serves every merchant's page, so the ask
+     has to say who is asking — otherwise the trade lands on whichever
+     merchant the server happened to be started with. */
+  api('/api/demo/start',{need:need,actor:M.actor}).then(function(d){
     thinking.remove();
     if(!d.running){say('your agent',
       esc(d.why||'Nothing on the book matches that.'),'no');return}
