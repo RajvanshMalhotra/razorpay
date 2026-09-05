@@ -75,51 +75,55 @@ Put them side by side if you can. The whole point is that they move together.
 
 **Click "Ask for something". Type slowly:**
 
-    cold brew concentrate for our cafe        40      ₹220
+    cold brew concentrate 200 units under 300 each
 
-> No form. No supplier directory. No RFQ. You type what you need, the way you
-> would say it to a person.
+> No form. No supplier directory. No RFQ. I type what I need the way I would
+> say it to a person — including the quantity and what I am willing to pay.
 
 **Press Find it. Now switch to tab 2 — the Razorpay desk — and leave it there
 for a beat.**
 
 > And here is the same moment on Razorpay's side.
 
-*(Point at the amber banner: **horizon is asking for something**.)*
+*(Point at the amber banner: **horizon is buying something right now**.)*
 
-> Two screens, one clock. The merchant sees plain English. Razorpay sees the
-> event numbers, the actor ids, the correlation id. **Same trade, same second,
-> two audiences.**
+> **This is happening now.** Its agent is out on the order book. The merchant
+> sees plain English; Razorpay sees the event numbers and the actor ids. Same
+> trade, same second, two audiences.
 
-**Switch back and forth as the stages fill in.** They land about three seconds
-apart, so there is time to talk over each one:
+**Switch back and forth as the stages land.** Nothing is pacing this — a stage
+appears when the event behind it is written, so what you are watching is how
+long it actually takes. About twelve seconds end to end.
 
 | the merchant sees | Razorpay sees |
 |---|---|
-| Posting what you need · 120 units | `110  posted what it needs` |
-| Finding who can supply it · from 3 candidates | `125  picked who to deal with` |
-| Negotiating the price · **agreed ₹144 a unit** | `180  talks ended, agreed at ₹144` |
-| Checking it against your limits · **refused, then allowed** | `182  the gate ruled DENY` |
-| Paying · **₹4,896** | `185  money committed · order_TV9ZXn4loRxgAn` |
+| Posting what you need · 200 units, at most ₹300 each | `1348  posted what it needs` |
+| Finding who can supply it · **packmate**, from 3 candidates | `1349  picked who to deal with` |
+| Checking it against your limits · **allowed** | `1351  the gate ruled` |
+| Paying · **₹4,980** · on a real Razorpay order | `1352  money committed · order_…` |
 
-> The merchant never sees an agent id, a correlation id or a raw event. It sees
-> what a shopkeeper needs to know. Everything underneath is still there, still
-> numbered, and Razorpay can read all of it.
+> The merchant never sees an agent id or a raw event. It sees what a shopkeeper
+> needs to know. Everything underneath is still there, still numbered, and
+> Razorpay can read all of it.
 
-**Rest on the refusal.**
+**If the gate refuses** — it often does with a supplier this merchant has never
+dealt with — rest on that step:
 
-> Look at that fourth step. **The gate refused it.** New supplier, amount over
-> the cap for a first deal with someone you have never traded with. So the
-> agent came back smaller, and that went through.
+> **The gate refused it.** New supplier, amount over the cap for a first deal
+> with someone you have never traded with. So the agent came back smaller, and
+> that went through.
 >
 > **The refusal is written down** — not just the outcome, the ruling itself,
-> before any money moved, whether it says yes or no. **78 rulings in this run.
-> 25 of them said no.**
+> before any money moved, whether it says yes or no. **78 rulings in this run,
+> 25 of them refusals.**
 >
-> That is what makes this sellable to a business. Nobody hands an AI their
-> bank account on a promise of good behaviour.
+> That is what makes this sellable to a business. Nobody hands an AI their bank
+> account on a promise of good behaviour.
 
----
+**Then reload the merchant page.**
+
+> And the zeroes are gone. That trade is on its rail now, under Where the money
+> went, with the event numbers to look any of it up.
 
 ## 4 · Where the revenue comes from  (3:10 – 4:20)  ← *the money slide*
 

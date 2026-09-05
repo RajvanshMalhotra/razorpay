@@ -1,102 +1,89 @@
 # What to type in the ask box
 
-Tested against the running exchange. Each line below plays a real recorded
-trade, and the outcome is what it actually returns — not what it should.
+**This is live.** Pressing Find it sends the merchant's own agent out on the
+real order book. It searches, picks a supplier, negotiates if it has to, the
+gate rules on the money, and Razorpay takes a real payment. About **twelve
+seconds** end to end, and nothing is pacing it — a step appears when the event
+behind it is written.
 
-Leave the two number boxes as they are (**40** and **220**). They are the
-quantity and your price cap; the replay uses the recorded trade's own figures,
-so they do not change what plays.
+Say the quantity and the price in the sentence. Both are read and used.
 
 ---
 
 ## Use this one
 
 ```
-cold brew concentrate for our cafe
+cold brew concentrate 200 units under 300 each
 ```
 
-**Seven stages, and it has everything in it:**
+**What it did when I ran it** — a real trade, so the seller and the price will
+differ slightly each time:
 
-| stage | what appears |
+| stage | what appeared |
 |---|---|
-| Posting what you need | 120 units · at most ₹335 each |
-| Finding who can supply it | bl yelahanka · from 3 candidates |
-| Negotiating the price | **agreed ₹144 a unit** · after 2 offers |
-| Checking it against your limits | **refused, then allowed** · ₹17,280 is over the cap for a supplier with no track record |
-| Paying | **₹4,896** · paid on a real Razorpay order |
-| Your books and Razorpay disagreed | we had it as pending |
-| What your agent will remember | reliability · *"They paid the full ₹4,896 and completed the settlement…"* |
+| Posting what you need | 200 units · at most ₹300 each |
+| Finding who can supply it | **packmate** · from 3 candidates |
+| Checking it against your limits | **refused, then allowed** |
+| Paying | **₹4,876** · on a real Razorpay order |
 
-This is the one to record. It contains the gate refusing, the retry, the real
-payment, the failure, and the lesson — the whole argument in one ask.
-
-**It runs about 20 seconds.** Talk over it; the stages land ~3 seconds apart.
+Then reload the page and the trade is on the merchant's rail with its event
+numbers.
 
 ---
 
-## If you want a second take
+## Others that work
 
 ```
-recycled kraft paper reels
+compostable poly mailers 300 units under 25 each
+bubble wrap rolls 250 units under 40 each
+packing tape rolls 400 units under 30 each
+recycled kraft paper reels 500 units under 60 each
+blank cotton tshirts 200 units under 200 each
 ```
-→ reelco · agreed **₹46** a unit · **₹4,968** · same seven stages
 
-```
-lithium cells for our power banks
-```
-→ bottleworks · agreed **₹18** a unit · **₹4,988** · same seven stages
-
-```
-blank cotton tshirts
-```
-→ threadbare · seven stages
-
-```
-jute sacks for grain
-```
-→ millstone · seven stages
+There are **185 listings** on the book across 36 businesses, so most plain
+sentences about real goods will find something.
 
 ---
 
-## A short one, if you are running out of time
+## What to say while it runs
 
-```
-compostable poly mailers for subscription boxes
-```
-
-Four stages, no failure in it. Use it only if you have already shown the gate
-refusing somewhere else.
-
----
-
-## What to say while it plays
-
-> I am not filling in a form. No supplier directory, no RFQ, no three quotes
-> by email. I type what I need the way I would say it.
+> I am not filling in a form. No supplier directory, no RFQ, no three quotes by
+> email. I type what I need the way I would say it.
 
 *(press Find it, then switch to the Razorpay desk tab)*
 
-> And this is the same moment on Razorpay's side. Same trade, same second.
-> The merchant sees plain English. Razorpay sees the event numbers.
+> And here it is on Razorpay's side, right now. The merchant sees plain
+> English. Razorpay sees the event numbers.
 
-*(switch back as the stages fill)*
+*(switch back as the steps land)*
 
-> Found three suppliers. Argued the price down. **Then the gate refused it** —
-> new supplier, amount over the cap for a first deal. So the agent came back
-> smaller, and that went through. **The refusal is written down either way.**
->
-> Paid on a real Razorpay order. And the last two steps are the ones nobody
-> demos: the books disagreed with Razorpay, it caught that on its own, and it
-> wrote down what it learned about this supplier for next time.
+> It searched the real book, looked at three sellers, and picked one — and it
+> says why. **Then the gate ruled before any money moved.** Paid on a real
+> Razorpay order.
+
+*(reload the page)*
+
+> And the zeroes are gone. Sixty seconds ago this business had nothing.
 
 ---
 
 ## Two things to know
 
-**Asking writes nothing.** Type as many times as you like — the merchant's
-figures stay at zero. It used to fire a real purchase alongside the replay,
-which spent the empty page you were about to record. It does not any more.
+**Every ask is a real purchase.** It spends the merchant. That is the demo
+working — an empty business really does end up with a supplier and a payment.
+But it means **"starts empty" is one-shot**, so rehearse on a merchant you are
+not recording.
 
-**Anything you type will find something.** If your words match no recorded
-trade, it plays the fullest one rather than dead-ending. So you cannot get an
-empty screen on camera by typing something unexpected.
+**To reset to a fresh empty business** — about thirty seconds:
+
+```bash
+.venv/bin/python -m scripts.market.join m_newname
+.venv/bin/python -m scripts.market.stock --merchant m_newname
+.venv/bin/python -m scripts.replay.generate runs/market.db docs
+.venv/bin/python -m scripts.serve --merchant m_newname --port 8795
+```
+
+**If nothing matches** what you typed, the agent says so rather than inventing
+a supplier — which is the honest answer, but not the one you want on camera.
+Stick to goods that are actually on the book; the list above is safe.
