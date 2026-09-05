@@ -463,15 +463,16 @@ function restart(){
    stories at once. Served as a plain file there is no server, /api/demo/state
    fails, and everything below simply never runs. */
 
-function banner(show,who,need){
+function banner(show,who,need,whose){
   if(!show){if(bannerEl){bannerEl.remove();bannerEl=null}return}
   if(bannerEl)return;
   bannerEl=document.createElement('div');
   bannerEl.className='folw';
   bannerEl.innerHTML='<b>'+esc(who||'a merchant')+
     ' is asking for something</b><span>&ldquo;'+esc(need||'')+
-    '&rdquo; &mdash; the same trade is on their dashboard right now, in '+
-    'their words. Here it is in ours.</span>';
+    '&rdquo; &mdash; playing '+esc(whose||'a matching')+'&rsquo;s trade from '+
+    'the log. Their dashboard is showing the same one, in their words.'+
+    '</span>';
   var l=$('ledger');l.parentNode.insertBefore(bannerEl,l);
 }
 function followRow(seq){
@@ -503,7 +504,7 @@ function watchDemo(){
       following=d.corr;followSeen={};
       stop();label('play',false);
       $('ledger').innerHTML='';
-      banner(true,d.asker||d.buyer,d.asked||d.need);
+      banner(true,d.asker||d.buyer,d.asked||d.need,d.buyer);
     }
     (d.seqs||[]).forEach(followRow);
   }).catch(function(){});

@@ -761,6 +761,14 @@ p.lede{font-size:15px;color:var(--body);margin:0 0 20px;max-width:74ch}
 .chip{background:var(--card);border:1px solid var(--edge);border-radius:7px;
   padding:5px 11px;font-size:12px;color:var(--pale);cursor:not-allowed}
 
+.stepnote{margin:18px 0 2px;padding:12px 15px;border:1px solid var(--edge);
+  border-radius:10px;background:var(--brandsoft);max-width:70ch}
+.stepnote:empty{display:none}
+.stepnote b{display:block;font-size:14px;color:var(--ink);margin-bottom:3px}
+.stepnote span{display:block;font-size:12.5px;color:var(--mute);
+  line-height:1.55}
+.f.wide{flex:1 1 340px;min-width:220px}
+
 /* --- what your agent is doing, in stages a shopkeeper would recognise ---- */
 /* The desk shows the same instant as NEGOTIATION_ROUND with an event number.
    Here it says "Negotiating the price". Same clock, two audiences. */
@@ -1020,8 +1028,8 @@ if(sw)sw.addEventListener('change',function(){location.href=sw.value});
    the same order book, and the evidence is the recorded thread below. */
 var q=document.getElementById('q'),hits=document.getElementById('hits'),
     convo=document.getElementById('convo'),
-    qty=document.getElementById('qty'),cap=document.getElementById('cap'),
-    steps=document.getElementById('steps');
+    steps=document.getElementById('steps'),
+    stepnote=document.getElementById('stepnote');
 
 /* --- ask for something -------------------------------------------------
    TWO MODES, AND THE PAGE FINDS OUT WHICH BY ASKING.
@@ -1138,8 +1146,14 @@ function ask(){
     thinking.remove();
     if(!d.running){say('your agent',
       esc(d.why||'Nothing on the book matches that.'),'no');return}
-    say('your agent','Following a trade like yours, step by step. Razorpay '+
-      'sees the same one on its desk right now.','note');
+    /* SAY WHOSE TRADE THIS IS. The figures come from a real thread in the
+       log, so they are somebody's real quantity and somebody's real price.
+       Left unlabelled they read as an answer to what was just typed, and
+       then every number on the screen looks wrong. */
+    stepnote.innerHTML='<b>A real trade for '+esc(d.need||'this')+'</b>'+
+      '<span>Played from the log, step by step, with that trade\'s own '+
+      'figures. Razorpay is watching the same one on its desk right now. '+
+      'Nothing here is written to your books.</span>';
     followTimer=setInterval(follow,400);follow();
   }).catch(function(){thinking.remove();offline()});
 }
@@ -1350,8 +1364,16 @@ def build_merchant(db_path: str, actor_id: str, roster) -> str:
         'other</h3><span class="meta">every offer, quoted</span></div>'
         '<div class="cb" id="talk"></div></section>'
     ) if mine else (
-        '<div class="empty">This merchant has no trades on its book in this '
-        'run.</div>')
+        # A NEW BUSINESS SHOULD NOT MEET A BLANK PAGE, and after watching a
+        # trade play out under Ask for something, "no trades" reads as a
+        # contradiction unless the page says why. It was another business's
+        # trade, shown to explain how one goes.
+        '<div class="empty">Nothing has been bought or sold here yet. '
+        'Everything your agents do will land on this page, step by step, '
+        'each step carrying the event number behind it.<br><br>'
+        'The trade you can watch under <b>Ask for something</b> is a real one '
+        'from elsewhere on the exchange, played to show how a deal goes. '
+        'It is not yours, and nothing it shows is written here.</div>')
 
     ask_pane = (
         '<p class="lede">Type what you need in plain words. With the live '
@@ -1359,16 +1381,13 @@ def build_merchant(db_path: str, actor_id: str, roster) -> str:
         'shows you one price, and only moves money after you say yes &mdash; '
         'and the gate still decides. A person saying yes is consent, not '
         'permission, and it does not raise a spending cap.</p>'
-        '<div class="ask"><input id="q" type="text" class="f" '
+        '<div class="ask"><input id="q" type="text" class="f wide" '
         'aria-label="what do you need" '
         'placeholder="cold brew concentrate, cafe grade">'
-        '<input id="qty" type="number" class="f n" value="40" min="1" '
-        'aria-label="how many">'
-        '<input id="cap" type="number" class="f n" value="220" min="1" '
-        'aria-label="most per unit in rupees">'
         '<button class="go" id="go">Find it</button></div>'
-        '<div class="askhint">how many &middot; most you will pay per unit, '
-        'in rupees</div>'
+        '<div class="askhint">Your agent works out the quantity and the price '
+        'from the book. You only have to say what you need.</div>'
+        '<div id="stepnote" class="stepnote"></div>'
         '<div id="steps" class="steps" aria-live="polite"></div>'
         '<div id="convo" class="convo"></div>'
         '<section class="card"><div class="ch"><h3>What is actually on the '
@@ -1845,15 +1864,16 @@ function restart(){
    stories at once. Served as a plain file there is no server, /api/demo/state
    fails, and everything below simply never runs. */
 
-function banner(show,who,need){
+function banner(show,who,need,whose){
   if(!show){if(bannerEl){bannerEl.remove();bannerEl=null}return}
   if(bannerEl)return;
   bannerEl=document.createElement('div');
   bannerEl.className='folw';
   bannerEl.innerHTML='<b>'+esc(who||'a merchant')+
     ' is asking for something</b><span>&ldquo;'+esc(need||'')+
-    '&rdquo; &mdash; the same trade is on their dashboard right now, in '+
-    'their words. Here it is in ours.</span>';
+    '&rdquo; &mdash; playing '+esc(whose||'a matching')+'&rsquo;s trade from '+
+    'the log. Their dashboard is showing the same one, in their words.'+
+    '</span>';
   var l=$('ledger');l.parentNode.insertBefore(bannerEl,l);
 }
 function followRow(seq){
@@ -1885,7 +1905,7 @@ function watchDemo(){
       following=d.corr;followSeen={};
       stop();label('play',false);
       $('ledger').innerHTML='';
-      banner(true,d.asker||d.buyer,d.asked||d.need);
+      banner(true,d.asker||d.buyer,d.asked||d.need,d.buyer);
     }
     (d.seqs||[]).forEach(followRow);
   }).catch(function(){});
