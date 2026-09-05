@@ -187,7 +187,12 @@ def fold_from(state: ExchangeState, events: Iterable[Event]) -> ExchangeState:
         elif event.type == ev.ORDER_POSTED:
             order = Order(
                 order_id=p["order_id"],
-                actor_id=p["actor_id"],
+                # THE ENVELOPE IS THE AUTHORITY ON WHO ACTED. Every writer so
+                # far also copied the actor into the payload, so the projection
+                # read it from there — and the first writer that did not,
+                # correctly, brought the whole fold down. A payload field that
+                # disagreed with the envelope would have been a bug anyway.
+                actor_id=p.get("actor_id") or event.actor_id,
                 side=Side(p["side"]),
                 asset_ref=p.get("asset_ref"),
                 asset_query=p.get("asset_query"),
