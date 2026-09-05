@@ -742,11 +742,18 @@ def _role_line(role, acted):
     payload = last.payload
     if role == "trader":
         if last.type == "NEGOTIATION_ROUND":
-            return f'offered {payload.get("price")}'
+            return f'offered {_rupees(payload.get("price"))} a unit'
         if last.type == "SETTLEMENT_INITIATED":
             return f'committed {_rupees(payload.get("amount"))}'
         if last.type == "ORDER_POSTED":
-            return f'posted for {payload.get("qty")} units'
+            # BUYING AND SELLING ARE NOT THE SAME SENTENCE. A merchant that
+            # had only ever listed its own goods read "posted for 300 units",
+            # which sounds like it went shopping. It put 300 units up for
+            # sale.
+            qty = payload.get("qty")
+            if payload.get("side") == "ASK":
+                return f'listed {qty} units for sale'
+            return f'asked for {qty} units'
     if role == "diplomat" and last.type == "COUNTERPARTY_CHOSEN":
         return _clip(payload.get("reason"), 150)
     if role == "scout" and last.type == "BID_PLACED":
