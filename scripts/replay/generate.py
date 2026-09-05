@@ -284,6 +284,14 @@ select.pick{max-width:330px}
 .m.frz{color:var(--red)}
 .m.frz i{background:var(--red)}
 
+/* A merchant is asking right now, and this desk is watching the same trade. */
+.folw{margin:0 11px 8px;padding:9px 12px;border:1px solid var(--amber);
+  border-radius:6px;background:color-mix(in oklab,var(--amber) 12%,var(--panel));
+  display:flex;flex-direction:column;gap:2px}
+.folw b{color:var(--amber);font-size:12px;letter-spacing:.02em}
+.folw span{color:var(--dim);font-size:11px}
+.lrow.lit{border-left-color:var(--amber)}
+
 .lrow{display:grid;grid-template-columns:46px 138px 1fr;gap:10px;
   padding:2px 11px;border-left:2px solid transparent;align-items:baseline;
   font-size:12px}
@@ -753,6 +761,32 @@ p.lede{font-size:15px;color:var(--body);margin:0 0 20px;max-width:74ch}
 .chip{background:var(--card);border:1px solid var(--edge);border-radius:7px;
   padding:5px 11px;font-size:12px;color:var(--pale);cursor:not-allowed}
 
+/* --- what your agent is doing, in stages a shopkeeper would recognise ---- */
+/* The desk shows the same instant as NEGOTIATION_ROUND with an event number.
+   Here it says "Negotiating the price". Same clock, two audiences. */
+.steps{display:flex;flex-direction:column;gap:0;margin:16px 0 4px}
+.steps:empty{display:none}
+.stg{display:grid;grid-template-columns:22px 1fr;gap:12px;padding:11px 2px;
+  opacity:0;transform:translateY(6px);
+  transition:opacity .34s ease,transform .34s ease}
+.stg.in{opacity:1;transform:none}
+.stg+.stg{border-top:1px solid var(--line)}
+.stg .tick{width:16px;height:16px;margin-top:3px;border-radius:50%;
+  border:2px solid var(--money);background:var(--card);position:relative}
+.stg .tick::after{content:"";position:absolute;inset:3px;border-radius:50%;
+  background:var(--money)}
+.stg.deny .tick{border-color:var(--warn)}
+.stg.deny .tick::after{background:var(--warn)}
+.stg .sb{display:flex;flex-direction:column;min-width:0}
+.stg .sb b{font-size:14.5px;font-weight:650;color:var(--ink)}
+.stg .hd{font-size:15px;color:var(--body);margin-top:2px;
+  font-family:var(--serif)}
+.stg .sb i{font-style:normal;font-size:12.5px;color:var(--pale);margin-top:3px;
+  line-height:1.55;overflow-wrap:anywhere}
+.steps.done{border-bottom:1px solid var(--line);padding-bottom:6px}
+@media(prefers-reduced-motion:reduce){
+  .stg{transition:none;opacity:1;transform:none}}
+
 /* --- the conversation, which is the whole live demo ---------------------- */
 /* This had NO styles at all on a merchant page. The quote rendered as a run
    of unstyled text with default browser buttons, and the label span sat
@@ -986,7 +1020,8 @@ if(sw)sw.addEventListener('change',function(){location.href=sw.value});
    the same order book, and the evidence is the recorded thread below. */
 var q=document.getElementById('q'),hits=document.getElementById('hits'),
     convo=document.getElementById('convo'),
-    qty=document.getElementById('qty'),cap=document.getElementById('cap');
+    qty=document.getElementById('qty'),cap=document.getElementById('cap'),
+    steps=document.getElementById('steps');
 
 /* --- ask for something -------------------------------------------------
    TWO MODES, AND THE PAGE FINDS OUT WHICH BY ASKING.
@@ -1033,10 +1068,46 @@ function offline(){
   say('the exchange','Searching the catalogue on this page. To buy for real, '+
       'start the live exchange:<br><code>python -m scripts.serve</code>','note');
 }
+/* THE SAME STORY, TOLD TWICE, FROM ONE CLOCK.
+   A merchant's dashboard and Razorpay's desk are two audiences watching the
+   same trade. Neither page keeps time — the server does, and both poll it, so
+   they cannot drift apart. Here the steps are stages a shopkeeper would
+   recognise; on the desk the identical instant is the raw event with its
+   number. */
+var followTimer=null,seen=0;
+function stage(step){
+  var el=document.createElement('div');
+  el.className='stg '+(step.tone||'');
+  var lines=(step.lines||[]).map(function(l){
+    return '<i>'+esc(l)+'</i>'}).join('');
+  el.innerHTML='<span class="tick"></span><span class="sb">'+
+    '<b>'+esc(step.label)+'</b>'+
+    (step.head?'<span class="hd">'+esc(step.head)+'</span>':'')+lines+
+    '</span>';
+  steps.appendChild(el);
+  requestAnimationFrame(function(){el.classList.add('in')});
+  steps.scrollTop=steps.scrollHeight;
+}
+function follow(){
+  api('/api/demo/state').then(function(d){
+    if(!d.running)return;
+    for(var n=seen;n<d.steps.length;n++)stage(d.steps[n]);
+    seen=d.steps.length;
+    if(d.done){clearInterval(followTimer);followTimer=null;
+      steps.classList.add('done')}
+  }).catch(function(){clearInterval(followTimer);followTimer=null});
+}
 function ask(){
   var need=(q.value||'').trim();
   if(!need){q.focus();return}
   say('you',esc(need));
+  steps.innerHTML='';steps.classList.remove('done');seen=0;
+  if(followTimer)clearInterval(followTimer);
+  /* One trade, played for both dashboards at once. It is a real correlation
+     id out of the log, replayed — which is why it can be run twice the same
+     way, and why every number in it can be looked up afterwards. */
+  api('/api/demo/start',{need:need}).then(function(){
+    followTimer=setInterval(follow,400);follow()}).catch(function(){});
   var thinking=say('your agent','looking through the book…','wait');
   api('/api/quote',{need:need,qty:+qty.value||40,limit_inr:+cap.value||0})
    .then(function(d){
@@ -1288,6 +1359,7 @@ def build_merchant(db_path: str, actor_id: str, roster) -> str:
         '<button class="go" id="go">Find it</button></div>'
         '<div class="askhint">how many &middot; most you will pay per unit, '
         'in rupees</div>'
+        '<div id="steps" class="steps" aria-live="polite"></div>'
         '<div id="convo" class="convo"></div>'
         '<section class="card"><div class="ch"><h3>What is actually on the '
         'book</h3><span class="meta" id="bookmeta">read from the log</span>'
@@ -1754,6 +1826,63 @@ function restart(){
   $('n-money').textContent='₹0';
   i=0;$('seq').textContent=0;$('bar').style.width='0%';play();
 }
+/* --- following a merchant who is asking right now -----------------------
+   THE OTHER HALF OF THE SAME DEMO. When someone types a need into their own
+   dashboard, the server starts one clock and both pages read it. The merchant
+   sees "Negotiating the price". This desk sees NEGOTIATION_ROUND, event 256,
+   with the correlation id — because that is who this screen is for.
+
+   The desk's own replay is paused while this happens, so the ledger is not two
+   stories at once. Served as a plain file there is no server, /api/demo/state
+   fails, and everything below simply never runs. */
+var following=null,followSeen={},bannerEl=null;
+function banner(show,who,need){
+  if(!show){if(bannerEl){bannerEl.remove();bannerEl=null}return}
+  if(bannerEl)return;
+  bannerEl=document.createElement('div');
+  bannerEl.className='folw';
+  bannerEl.innerHTML='<b>'+esc(who||'a merchant')+
+    ' is asking for something</b><span>&ldquo;'+esc(need||'')+
+    '&rdquo; &mdash; the same trade is on their dashboard right now, in '+
+    'their words. Here it is in ours.</span>';
+  var l=$('ledger');l.parentNode.insertBefore(bannerEl,l);
+}
+function followRow(seq){
+  if(followSeen[seq])return;
+  followSeen[seq]=1;
+  var r=null;
+  for(var n=0;n<rows.length;n++){if(rows[n].seq===seq){r=rows[n];break}}
+  if(!r)return;
+  var l=$('ledger');
+  var el=document.createElement('div');
+  el.className='lrow '+(r.tone||'')+' new lit';
+  el.innerHTML='<span class="s">'+r.seq+'</span><span class="a">'+
+    esc(r.actor)+'</span><span class="d"><b>'+esc(r.says)+'</b> '+
+    esc(r.detail)+'</span>';
+  l.appendChild(el);
+  setTimeout(function(){el.classList.remove('new')},480);
+  while(l.children.length>160)l.removeChild(l.firstChild);
+  l.scrollTop=l.scrollHeight;
+  if(r.actor&&r.actor.indexOf('m_')===0)merchant(r.actor,'act');
+  var rl=rails[r.corr];
+  if(rl){drawRail(rl,r.seq,IDS);if(rl.buyer)merchant(rl.buyer,'buy')}
+}
+function watchDemo(){
+  fetch('/api/demo/state').then(function(r){return r.json()}).then(function(d){
+    if(!d.running){
+      if(following){following=null;followSeen={};banner(false);play()}
+      return}
+    if(following!==d.corr){
+      following=d.corr;followSeen={};
+      stop();label('play',false);
+      $('ledger').innerHTML='';
+      banner(true,d.asker||d.buyer,d.asked||d.need);
+    }
+    (d.seqs||[]).forEach(followRow);
+  }).catch(function(){});
+}
+setInterval(watchDemo,600);
+
 $('pp').addEventListener('click',toggle);
 $('rs').addEventListener('click',restart);
 document.addEventListener('keydown',function(e){

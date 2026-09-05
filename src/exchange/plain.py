@@ -49,12 +49,16 @@ def money_words(text) -> str:
                  r"posts?|threads?|merchants?|trades?|points?))",
                  grouped, str(text or ""))
     out = re.sub(r"\b(\d{3,})\s*paise\b", inr, out)
-    out = re.sub(r"\b(\d{3,})(?=\s*(?:per unit|a unit|/unit|each))", inr, out)
+    # A FIGURE ALREADY IN RUPEES MUST NOT BE DIVIDED AGAIN. "agreed ₹195 a
+    # unit" came back as "agreed ₹₹1.95 a unit": the per-unit rule had no
+    # lookbehind, so it converted a number the rail had already formatted.
+    out = re.sub(r"(?<![₹\d,.])(\d{3,})(?=\s*(?:per unit|a unit|/unit|each))",
+                 inr, out)
     # A COUNT IS NOT A PRICE. A four-figure number followed by its own noun
     # is a quantity — "2,600 units" became "₹26 units" the first time this
     # ran over a station head.
-    return re.sub(r"\b(\d{4,})\b(?!\s*(?:units?|events?|posts?|threads?|"
-                  r"merchants?|trades?|points?))", inr, out)
+    return re.sub(r"(?<![₹\d,.])\b(\d{4,})\b(?!\s*(?:units?|events?|posts?|"
+                  r"threads?|merchants?|trades?|points?))", inr, out)
 
 
 _ACTOR = re.compile(r"\bm_[a-z0-9_]+")
@@ -118,3 +122,16 @@ def offer_text(message, who=None) -> str:
     """
     said = _PREFIX.sub("", str(message or ""))
     return " ".join(humanise(said, who).split())
+
+
+_RANK = re.compile(r"^\s*\d+[.)]\s+")
+
+
+def reasoning(text, who=None) -> str:
+    """An agent's stated reason, without the shape of the list it came from.
+
+    The Diplomat ranks its options, so the log holds "3. The price is
+    dramatically below your threshold…". The rank is real and belongs in the
+    log; on a station it opens mid-list and reads like a fragment.
+    """
+    return humanise(_RANK.sub("", str(text or "")), who)

@@ -421,7 +421,8 @@ def rails(events, limit: int = 90):
             seller = seller_of.get(ask, "")
             shortlist = len((chosen.payload.get("shortlist") or ())
                             if chosen else ())
-            why = _clip(chosen.payload.get("reason"), 96) if chosen else ""
+            why = (_clip(plain.reasoning(chosen.payload.get("reason")), 96)
+                   if chosen else "")
             stations.append(_station(
                 "picked", src.seq, _plain(seller) or "a counterparty",
                 [f"from {shortlist} candidates" if shortlist else "", why],

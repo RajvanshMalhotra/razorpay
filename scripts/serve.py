@@ -229,8 +229,145 @@ def _plain(actor_id) -> str:
     return (name[2:] if name.startswith("m_") else name).replace("_", " ")
 
 
+
+# --- the demo both dashboards watch -----------------------------------------
+#
+# WHY A SERVER CLOCK. A merchant's dashboard and Razorpay's desk are two pages
+# telling the same story to two different audiences, and a demo where they
+# disagree about what has happened yet is worse than either alone. So neither
+# page keeps time. One clock runs here, both poll it, and each renders the
+# same instant its own way: the merchant sees "negotiating", the desk sees
+# NEGOTIATION_ROUND with the event number.
+#
+# WHAT IT PLAYS IS A REAL TRADE. Not a script — a correlation id out of the
+# log, with its own event numbers, its own prices and its own gate ruling.
+# Replaying it is honest and repeatable, which live buying is not: a live buy
+# spends a merchant, needs the payment rail up, and cannot be run twice the
+# same way in front of an audience.
+
+STATIONS = {
+    "wants":   ("Posting what you need", 0),
+    "picked":  ("Finding who can supply it", 2600),
+    "haggled": ("Negotiating the price", 2800),
+    "gate":    ("Checking it against your limits", 3000),
+    "paid":    ("Paying", 2600),
+    "broke":   ("The books disagreed", 2400),
+    "froze":   ("Trading paused", 2000),
+    "fixed":   ("Repaired", 2400),
+    "resumed": ("Trading again", 2000),
+    "learned": ("What your agent will remember", 2400),
+}
+
+
+class Demo:
+    """One recorded trade, replayed on a clock both pages read."""
+
+    def __init__(self, db: str) -> None:
+        from exchange.eventlog import EventLog
+        from scripts.replay.read import rails
+
+        log = EventLog(db)
+        try:
+            self.trades = rails(log.read_all(), limit=400)
+        finally:
+            log.close()
+        self.playing: dict | None = None
+
+    def pick(self, need: str) -> dict | None:
+        """The recorded trade closest to what was typed.
+
+        Word overlap, not a model: the point of this screen is that the
+        merchant's own words reach a real trade, and a model in the middle
+        would make that claim unverifiable at exactly the moment it matters.
+        Ties go to the trade with the most to show.
+        """
+        words = {w for w in str(need or "").lower().split() if len(w) > 3}
+        best, score = None, 0
+        for trade in self.trades.values():
+            text = str(trade.get("need") or "").lower()
+            hits = sum(1 for w in words if w in text)
+            weight = hits * 10 + len(trade.get("stations") or ())
+            if hits and weight > score:
+                best, score = trade, weight
+        return best or self._richest()
+
+    def _richest(self) -> dict | None:
+        """Nothing matched. Show the fullest trade rather than nothing —
+        it is the one with the refusal, the retry and the repair in it."""
+        return max(self.trades.values(),
+                   key=lambda t: len(t.get("stations") or ()),
+                   default=None)
+
+    def start(self, need: str, asker: str = "") -> dict:
+        import time
+
+        trade = self.pick(need)
+        if trade is None:
+            return {"running": False,
+                    "why": "There is no recorded trade to replay."}
+
+        steps, at = [], 0
+        for station in trade.get("stations") or ():
+            label, gap = STATIONS.get(station["key"], (station["key"], 2400))
+            at += gap
+            steps.append({
+                "at_ms": at,
+                "key": station["key"],
+                "label": label,
+                "head": station.get("head", ""),
+                "lines": [l for l in (station.get("lines") or []) if l],
+                "tone": station.get("tone", ""),
+                "seq": station.get("seq"),
+            })
+        self.playing = {
+            "corr": trade["corr"],
+            "need": trade.get("need", ""),
+            # WHO IS ASKING AND WHO TRADED ARE DIFFERENT BUSINESSES. The desk
+            # announced the recorded thread's buyer as the person at the
+            # keyboard — "bl koramangala is asking" while sunrise was typing.
+            "asker": _plain(asker),
+            "buyer": trade.get("buyer_name") or trade.get("buyer", ""),
+            "asked": need,
+            "steps": steps,
+            "t0": time.time(),
+            "total_ms": (steps[-1]["at_ms"] + 1800) if steps else 0,
+        }
+        return self.state()
+
+    def state(self) -> dict:
+        import time
+
+        playing = self.playing
+        if not playing:
+            return {"running": False}
+        elapsed = int((time.time() - playing["t0"]) * 1000)
+        revealed = [s for s in playing["steps"] if s["at_ms"] <= elapsed]
+        return {
+            "running": True,
+            "corr": playing["corr"],
+            "need": playing["need"],
+            "asked": playing["asked"],
+            "asker": playing["asker"],
+            "buyer": playing["buyer"],
+            "elapsed_ms": elapsed,
+            "total_ms": playing["total_ms"],
+            "steps": revealed,
+            "count": len(playing["steps"]),
+            # What the desk needs: every event number revealed so far, so it
+            # can show the raw rows for exactly the same instant.
+            "seqs": [s["seq"] for s in revealed if s["seq"] is not None],
+            "done": elapsed >= playing["total_ms"],
+        }
+
+    def stop(self) -> dict:
+        self.playing = None
+        return {"running": False}
+
+
+
 class Handler(BaseHTTPRequestHandler):
     live: Live = None            # set on the class before serving
+    demo: Demo = None
 
     def _send(self, code, body, ctype="application/json"):
         raw = body if isinstance(body, bytes) else json.dumps(body).encode()
@@ -250,6 +387,8 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_GET(self):
         path = self.path.split("?")[0]
+        if path == "/api/demo/state":
+            return self._guard(lambda: self._send(200, self.demo.state()))
         if path == "/api/catalogue":
             return self._guard(lambda: self._send(200, {
                 "merchant": _plain(self.live.merchant),
@@ -270,6 +409,12 @@ class Handler(BaseHTTPRequestHandler):
                 str(body.get("need", "")).strip(),
                 int(body.get("qty") or 100),
                 int(round(float(body.get("limit_inr") or 0) * 100)) or 10**9)))
+        if path == "/api/demo/start":
+            return self._guard(lambda: self._send(
+                200, self.demo.start(str(body.get("need", "")).strip(),
+                                     self.live.merchant)))
+        if path == "/api/demo/stop":
+            return self._guard(lambda: self._send(200, self.demo.stop()))
         if path == "/api/buy":
             return self._guard(lambda: self._send(
                 200, self.live.buy(str(body.get("quote_id", "")))))
@@ -302,7 +447,9 @@ def main(argv=None) -> int:
 
     print(f"  opening the exchange on {args.db} as {args.merchant}…")
     Handler.live = Live(args.db, args.merchant)
+    Handler.demo = Demo(args.db)
     print(f"  {len(Handler.live.catalogue())} items on the book")
+    print(f"  {len(Handler.demo.trades)} recorded trades available to replay")
     print(f"\n  http://localhost:{args.port}/m-{args.merchant[2:].replace('_','-')}.html")
     print("  ctrl-c to stop\n")
     try:

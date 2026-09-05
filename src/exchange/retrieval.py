@@ -38,10 +38,29 @@ def default_embedder() -> Embedder:
     Vectors are L2-normalised on the way out because `_cosine` below is a
     plain dot product and assumes unit vectors.
     """
+    import os
+
     import numpy as np
     from model2vec import StaticModel
 
-    model = StaticModel.from_pretrained("minishlab/potion-base-8M")
+    name = "minishlab/potion-base-8M"
+
+    # THE CACHE FIRST, THE NETWORK ONLY IF IT HAS TO. The weights are a few
+    # megabytes and they are on the machine after the first run, but
+    # `from_pretrained` still asks the hub whether they are current — and when
+    # that call hangs, this returns in four HUNDRED seconds instead of one.
+    # Measured: 0.8s offline against 400s+ waiting on the hub, which on a demo
+    # machine is the difference between a server and a dead terminal.
+    if os.environ.get("HF_HUB_OFFLINE") is None:
+        os.environ["HF_HUB_OFFLINE"] = "1"
+        try:
+            model = StaticModel.from_pretrained(name)
+        except Exception:                              # noqa: BLE001
+            # Nothing cached yet — a first run on a new machine. Let it fetch.
+            del os.environ["HF_HUB_OFFLINE"]
+            model = StaticModel.from_pretrained(name)
+    else:
+        model = StaticModel.from_pretrained(name)
 
     def embed(texts: list[str]) -> list[list[float]]:
         vectors = np.asarray(model.encode(texts), dtype=float)

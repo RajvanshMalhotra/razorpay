@@ -96,3 +96,14 @@ def test_no_bare_paise_survives_anywhere_on_the_sheet():
 
     assert "3120000" not in _flat(sheet)
     assert "2000000" not in _flat(sheet)
+
+
+def test_a_figure_already_in_rupees_is_not_divided_twice():
+    """The rail formats a price, then the humanise pass ran over it again:
+    "agreed ₹195 a unit" came back as "agreed ₹₹1.95 a unit"."""
+    from exchange.plain import money_words
+
+    assert money_words("agreed ₹195 a unit") == "agreed ₹195 a unit"
+    assert money_words("paid ₹4,875 today") == "paid ₹4,875 today"
+    # and the conversion still happens where the figure really is paise
+    assert money_words("agreed 19500 per unit") == "agreed ₹195 per unit"
