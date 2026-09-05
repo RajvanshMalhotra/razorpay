@@ -396,6 +396,42 @@ class Demo:
             if self.running:
                 self.running["done"] = True
                 self.running["why"] = why
+        if not why:
+            self._rebuild()
+
+    def _rebuild(self) -> None:
+        """Rebuild the pages the trade just changed.
+
+        THE PAGES ARE STATIC FILES BUILT FROM THE LOG. So after a live trade
+        the log knew about it and the page did not, and the screen said
+        "reload this page and the trade is on your rail" — which reloaded the
+        same file that was built before the trade and showed nothing. A page
+        that tells you to refresh had better be a page that refreshing
+        changes.
+
+        Only the two pages this trade touched: the merchant's own, and the
+        desk. Rebuilding the whole roster would take long enough to be
+        noticed, and nothing else moved.
+        """
+        try:
+            from scripts.replay.generate import (_page_name, build_desk,
+                                                 build_merchant, state_actors)
+            from scripts.replay.read import load
+
+            _s, _t, events = load(self.db)
+            roster = sorted(state_actors(events))
+            actor = self.live.merchant
+            (DOCS / _page_name(actor)).write_text(
+                build_merchant(self.db, actor, roster), encoding="utf-8")
+            (DOCS / "desk.html").write_text(build_desk(self.db),
+                                            encoding="utf-8")
+            print(f"  rebuilt {_page_name(actor)} and desk.html "
+                  f"— the trade is on the rail now")
+        except Exception as error:                       # noqa: BLE001
+            # A page that failed to rebuild is a stale page, not a lost
+            # trade: the log still has every event.
+            print(f"  could not rebuild the pages: "
+                  f"{type(error).__name__}: {error}")
 
     # --- what both dashboards read -----------------------------------------
 
@@ -416,12 +452,16 @@ class Demo:
 
         log = EventLog(self.db)
         try:
-            events = [e for e in log.read_all()
-                      if e.correlation_id == run["corr"]]
+            everything = log.read_all()
         finally:
             log.close()
+        events = [e for e in everything if e.correlation_id == run["corr"]]
 
-        trade = rails(events).get(run["corr"]) if events else None
+        # RAILS NEEDS THE WHOLE LOG, NOT JUST THIS THREAD. The seller's ASK
+        # was posted under its own correlation id, so filtering first left
+        # the station with nothing to name and it read "a counterparty" —
+        # and the negotiation, which hangs off the same lookup, vanished.
+        trade = rails(everything).get(run["corr"]) if events else None
         stations = (trade or {}).get("stations") or []
         steps = [{
             "key": st["key"],
