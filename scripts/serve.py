@@ -245,17 +245,21 @@ def _plain(actor_id) -> str:
 # spends a merchant, needs the payment rail up, and cannot be run twice the
 # same way in front of an audience.
 
+# The station keys are the rail's own — `repaired` and `remembered`, not
+# `fixed` and `learned`. Two were wrong, so those stages fell through to the
+# raw key: a merchant read a stage headed "remembered" over a line that said
+# "reliability", which is a label and a value that never met.
 STATIONS = {
-    "wants":   ("Posting what you need", 0),
-    "picked":  ("Finding who can supply it", 2600),
-    "haggled": ("Negotiating the price", 2800),
-    "gate":    ("Checking it against your limits", 3000),
-    "paid":    ("Paying", 2600),
-    "broke":   ("The books disagreed", 2400),
-    "froze":   ("Trading paused", 2000),
-    "fixed":   ("Repaired", 2400),
-    "resumed": ("Trading again", 2000),
-    "learned": ("What your agent will remember", 2400),
+    "wants":     ("Posting what you need", 0),
+    "picked":    ("Finding who can supply it", 2600),
+    "haggled":   ("Negotiating the price", 2800),
+    "gate":      ("Checking it against your limits", 3000),
+    "paid":      ("Paying", 2600),
+    "broke":     ("Your books and Razorpay disagreed", 2600),
+    "froze":     ("Trading paused while it was checked", 2200),
+    "repaired":  ("Put right, from Razorpay's own record", 2400),
+    "resumed":   ("Trading again", 2000),
+    "remembered": ("What your agent will remember", 2600),
 }
 
 
@@ -310,11 +314,18 @@ class Demo:
         for station in trade.get("stations") or ():
             label, gap = STATIONS.get(station["key"], (station["key"], 2400))
             at += gap
+            head = station.get("head", "")
+            # "The books disagreed / the books disagreed" — a stage whose
+            # answer is its own question. Where the rail's head only restates
+            # the label, the label carries it alone.
+            words = {w for w in head.lower().split() if len(w) > 3}
+            if words and words <= set(label.lower().split()):
+                head = ""
             steps.append({
                 "at_ms": at,
                 "key": station["key"],
                 "label": label,
-                "head": station.get("head", ""),
+                "head": head,
                 "lines": [l for l in (station.get("lines") or []) if l],
                 "tone": station.get("tone", ""),
                 "seq": station.get("seq"),

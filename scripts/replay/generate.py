@@ -1044,7 +1044,36 @@ function probe(){
     LIVE=true;
     document.getElementById('bookmeta').textContent=
       d.items.length+' items, live from the order book';
-    return d}).catch(function(){LIVE=false;return null});
+    /* SHOW THE BOOK, DO NOT DESCRIBE IT. This panel sat on the placeholder
+       "type a need and press Find it" forever, because only the offline
+       fallback ever wrote to it — so on a running exchange, the card headed
+       "what is actually on the book" was the one thing on the page that
+       never showed anything. */
+    BOOK=d.items.map(function(c){
+      return{title:c.title,seller:c.seller,price:c.unit_price_paise,
+             qty:c.qty_available}});
+    showBook(BOOK);
+    return d}).catch(function(){LIVE=false;showBook(M.cat);return null});
+}
+var BOOK=null;
+function showBook(rows,terms){
+  var box=document.getElementById('hits');
+  if(!box)return;
+  var list=(rows||[]).slice();
+  if(terms&&terms.length){
+    var scored=list.map(function(c){
+      var t=(c.title||'').toLowerCase(),n=0;
+      terms.forEach(function(w){if(t.indexOf(w)>=0)n++});
+      return[c,n]}).filter(function(p){return p[1]>0})
+      .sort(function(a,b){return b[1]-a[1]});
+    if(scored.length)list=scored.map(function(p){return p[0]});
+  }
+  list=list.slice(0,8);
+  box.innerHTML=list.length?list.map(function(c){
+    return '<div class="hit"><span class="tt">'+esc(c.title)+
+      '</span><span class="sl">'+esc(c.seller||'')+'</span><span class="pr">₹'+
+      ((c.price||0)/100).toFixed(2)+'</span></div>'}).join('')
+    :'<div class="empty">Nothing on the book matches that.</div>';
 }
 function say(who,html,tone){
   var b=document.createElement('div');
@@ -1053,20 +1082,10 @@ function say(who,html,tone){
   convo.appendChild(b);convo.scrollTop=convo.scrollHeight;return b;
 }
 function offline(){
-  var terms=(q.value||q.placeholder).toLowerCase().split(/\s+/)
-    .filter(function(w){return w.length>3});
-  var found=M.cat.map(function(c){
-    var t=c.title.toLowerCase(),n=0;
-    terms.forEach(function(w){if(t.indexOf(w)>=0)n++});
-    return[c,n]}).filter(function(p){return p[1]>0})
-    .sort(function(a,b){return b[1]-a[1]}).slice(0,6);
-  hits.innerHTML=found.length?found.map(function(p){var c=p[0];
-    return '<div class="hit"><span class="tt">'+esc(c.title)+
-      '</span><span class="sl">'+esc(c.seller)+'</span><span class="pr">₹'+
-      (c.price/100).toFixed(2)+'</span></div>'}).join('')
-    :'<div class="empty">Nothing on the book matches that.</div>';
-  say('the exchange','Searching the catalogue on this page. To buy for real, '+
-      'start the live exchange:<br><code>python -m scripts.serve</code>','note');
+  showBook(M.cat,(q.value||q.placeholder).toLowerCase().split(/\s+/)
+    .filter(function(w){return w.length>3}));
+  say('the exchange','Searching the catalogue on this page. The running '+
+      'exchange is not up, so this is the copy baked into the page.','note');
 }
 /* THE SAME STORY, TOLD TWICE, FROM ONE CLOCK.
    A merchant's dashboard and Razorpay's desk are two audiences watching the
@@ -1112,6 +1131,8 @@ function ask(){
 
      What plays is a real correlation id out of the log, on a clock the desk
      reads too. Repeatable, and every number in it can be looked up. */
+  showBook(BOOK||M.cat,need.toLowerCase().split(/\s+/)
+    .filter(function(w){return w.length>3}));
   var thinking=say('your agent','looking through the book…','wait');
   api('/api/demo/start',{need:need}).then(function(d){
     thinking.remove();
@@ -1352,11 +1373,9 @@ def build_merchant(db_path: str, actor_id: str, roster) -> str:
         '<div id="convo" class="convo"></div>'
         '<section class="card"><div class="ch"><h3>What is actually on the '
         'book</h3><span class="meta" id="bookmeta">read from the log</span>'
-        '</div><div class="cb" id="hits"><div class="empty">Type a need and '
-        'press Find it. This reads the real catalogue and refuses when '
-        'nothing matches.</div></div></section>'
-        '<div style="height:16px"></div>'
-        + _human_thread(events))
+        '</div><div class="cb" id="hits"><div class="empty">Reading the '
+        'order book&hellip;</div></div></section>'
+        '<div style="height:16px"></div>')
 
     return (
         '<!doctype html>\n<html lang="en"><head><meta charset="utf-8">'
@@ -1702,22 +1721,13 @@ def _catalogue_card(view) -> str:
         "</div></section>")
 
 
-def _human_thread(events) -> str:
-    rows = "".join(
-        # The event NUMBER is what makes this checkable; the actor's raw id
-        # proves nothing extra and reads as a variable on a merchant's page.
-        f'<tr><td class="a">{r["seq"]}</td><td class="a">{esc(who(r["actor"]))}</td>'
-        f'<td class="a">{esc(r["type"])}</td>'
-        f'<td class="q">{esc(humanise(r["says"]))}</td></tr>'
-        for r in storefront(events)["rows"])
-    return (
-        '<section class="card"><div class="ch">'
-        '<h3>A purchase a person actually made</h3>'
-        '<span class="meta">the same events as an agent&rsquo;s trade</span>'
-        '</div><div class="cb">'
-        + (f"<table>{rows}</table>" if rows
-           else '<div class="empty">No human purchase in this log.</div>')
-        + "</div></section>")
+# `_human_thread` used to sit under the ask box: the raw rows of a purchase a
+# PERSON made, to prove a human's trade writes the same events as an agent's.
+# It was making that point on the wrong screen. On a merchant's dashboard it
+# rendered another business's log — actor ids, ORDER_POSTED, COUNTERPARTY_
+# CHOSEN — which is a debug view wearing a card, and the stages above now make
+# the same point in words the merchant can read. The raw events live on the
+# desk, which is who they are for.
 
 
 def _clip_words(text, limit):
