@@ -16,11 +16,19 @@ import re
 
 
 def rupees(paise) -> str:
-    """A figure as a person writes it: ₹4,875."""
+    """A figure as a person writes it: ₹4,875, and ₹15.40 when it matters.
+
+    ROUNDING AWAY THE PAISE BROKE THE STORY IT WAS TELLING. A rail read
+    "agreed ₹15 a unit" beside a lesson that said "settled cleanly at the
+    agreed ₹15.40 per unit" — the same number, printed two ways, one of them
+    wrong. Whole rupees stay clean; a figure with paise in it keeps them.
+    """
     try:
-        return f"₹{int(paise) / 100:,.0f}"
+        value = int(paise) / 100
     except (TypeError, ValueError):
         return str(paise)
+    return (f"₹{value:,.0f}" if float(value).is_integer()
+            else f"₹{value:,.2f}")
 
 
 def money_words(text) -> str:

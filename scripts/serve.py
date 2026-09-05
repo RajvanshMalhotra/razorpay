@@ -224,18 +224,6 @@ class Live:
         }
 
 
-def _first_qty(trade) -> int | None:
-    """What the recorded trade opened by asking for, read off its own rail."""
-    import re
-
-    for station in trade.get("stations") or ():
-        if station.get("key") == "wants":
-            found = re.search(r"([\d,]+)", str(station.get("head") or ""))
-            if found:
-                return int(found.group(1).replace(",", ""))
-    return None
-
-
 def _plain(actor_id) -> str:
     name = str(actor_id or "")
     return (name[2:] if name.startswith("m_") else name).replace("_", " ")
@@ -276,28 +264,40 @@ STATIONS = {
 
 
 class Demo:
-    """One recorded trade, replayed on a clock both pages read."""
+    """The merchant's OWN agent, run live, watched by both dashboards.
 
-    def __init__(self, db: str) -> None:
-        from exchange.eventlog import EventLog
-        from scripts.replay.read import rails
+    THIS USED TO REPLAY SOMEBODY ELSE'S TRADE. It was safe and repeatable and
+    it never stopped being confusing: a person typed a need into Dawn's
+    dashboard and watched bl thirdwave buy something, for a different quantity
+    at a different price. Every label added to explain that made the screen
+    busier without making it true.
 
-        log = EventLog(db)
-        try:
-            self.trades = rails(log.read_all(), limit=400)
-        finally:
-            log.close()
-        self.playing: dict | None = None
+    So it does the real thing. The merchant at the keyboard posts its own
+    need, its own Diplomat picks a counterparty and says why, its own Trader
+    negotiates, the gate rules on ITS money, and Razorpay takes the payment.
+    Both dashboards then read the same correlation id out of the log while it
+    is being written — the merchant sees stages, the desk sees the events.
+
+    NOTHING PACES THIS. There is no clock, because the work is the clock: a
+    stage appears when the event behind it is written. What you watch is how
+    long it actually took.
+    """
+
+    def __init__(self, db: str, live) -> None:
+        self.db = db
+        self.live = live
+        self.running: dict | None = None
+        self.lock = threading.Lock()
+
+    # --- what a person typed ------------------------------------------------
 
     @staticmethod
     def figures(need: str) -> tuple:
-        """The quantity and the per-unit price a person put in their sentence.
+        """The quantity and the per-unit price in a person's own sentence.
 
         A merchant does not type a noun and stop. It types "220 units at ₹499
-        each", because that is how a person asks for something — and a screen
-        that then answers with 160 units at ₹310 looks like it ignored them.
-        Reading the numbers out is the difference between a search and a
-        keyword match.
+        each", because that is how people ask for things — and a screen that
+        answers with different numbers looks like it ignored them.
         """
         import re
 
@@ -313,125 +313,150 @@ class Demo:
         if found:
             cap = int(found.group(1))
         if cap is not None and qty is not None and cap == qty:
-            cap = None                      # the same number cannot be both
+            cap = None
         return qty, cap
 
-    def pick(self, need: str) -> dict | None:
-        """The recorded trade closest to what was typed.
+    # --- run it -------------------------------------------------------------
 
-        Word overlap, not a model: the point of this screen is that the
-        merchant's own words reach a real trade, and a model in the middle
-        would make that claim unverifiable at exactly the moment it matters.
-        Ties go to the trade with the most to show.
-        """
-        words = {w for w in str(need or "").lower().split()
-                 if len(w) > 3 and not w.strip("₹").isdigit()}
-        qty, _cap = self.figures(need)
-        best, score = None, -1.0
-        for trade in self.trades.values():
-            text = str(trade.get("need") or "").lower()
-            hits = sum(1 for w in words if w in text)
-            if not hits:
-                continue
-            weight = hits * 10.0 + len(trade.get("stations") or ())
-            # A STATED QUANTITY IS PART OF THE ASK. Among trades that match
-            # the words, the one closest to the size the merchant said is the
-            # better answer — asking for 220 units and being shown a trade for
-            # 25 is a worse match than one for 160, however the words score.
-            if qty:
-                theirs = _first_qty(trade)
-                if theirs:
-                    weight += 6.0 / (1.0 + abs(theirs - qty) / max(qty, 1))
-            if weight > score:
-                best, score = trade, weight
-        return best or self._richest()
+    def start(self, need: str, _asker: str = "") -> dict:
+        from exchange.ids import new_id
 
-    def _richest(self) -> dict | None:
-        """Nothing matched. Show the fullest trade rather than nothing —
-        it is the one with the refusal, the retry and the repair in it."""
-        return max(self.trades.values(),
-                   key=lambda t: len(t.get("stations") or ()),
-                   default=None)
-
-    def start(self, need: str, asker: str = "") -> dict:
-        import time
-
-        trade = self.pick(need)
-        qty, cap = self.figures(need)
-        if trade is None:
-            return {"running": False,
-                    "why": "There is no recorded trade to replay."}
-
-        steps, at = [], 0
-        for station in trade.get("stations") or ():
-            label, gap = STATIONS.get(station["key"], (station["key"], 2400))
-            at += gap
-            head = station.get("head", "")
-            # "The books disagreed / the books disagreed" — a stage whose
-            # answer is its own question. Where the rail's head only restates
-            # the label, the label carries it alone.
-            words = {w for w in head.lower().split() if len(w) > 3}
-            if words and words <= set(label.lower().split()):
-                head = ""
-            steps.append({
-                "at_ms": at,
-                "key": station["key"],
-                "label": label,
-                "head": head,
-                "lines": [l for l in (station.get("lines") or []) if l],
-                "tone": station.get("tone", ""),
-                "seq": station.get("seq"),
-            })
-        self.playing = {
-            "corr": trade["corr"],
-            "need": trade.get("need", ""),
-            # WHO IS ASKING AND WHO TRADED ARE DIFFERENT BUSINESSES. The desk
-            # announced the recorded thread's buyer as the person at the
-            # keyboard — "bl koramangala is asking" while sunrise was typing.
-            "asker": _plain(asker),
-            "asked_qty": qty,
-            "asked_cap": cap,
-            "buyer": trade.get("buyer_name") or trade.get("buyer", ""),
-            "trade_qty": _first_qty(trade),
-            "asked": need,
-            "steps": steps,
-            "t0": time.time(),
-            "total_ms": (steps[-1]["at_ms"] + 1800) if steps else 0,
-        }
+        with self.lock:
+            if self.running and not self.running.get("done"):
+                return self.state()          # one at a time
+            qty, cap = self.figures(need)
+            corr = new_id("shop")
+            self.running = {
+                "corr": corr, "asked": need, "asker": _plain(self.live.merchant),
+                "asked_qty": qty, "asked_cap": cap,
+                "qty": qty or 40, "cap_paise": (cap or 500) * 100,
+                "done": False, "why": "",
+            }
+        threading.Thread(target=self._work, args=(dict(self.running),),
+                         daemon=True).start()
         return self.state()
 
-    def state(self) -> dict:
-        import time
+    def _work(self, plan: dict) -> None:
+        """The real trade, on the real exchange, as the real merchant."""
+        corr = plan["corr"]
+        try:
+            broker = self.live.broker
+            matches = broker.find_supply(
+                need_text=plan["asked"], qty=plan["qty"],
+                limit_price=plan["cap_paise"], correlation_id=corr)
+            if not matches:
+                self._finish("Nothing on the book matches that. Your agents "
+                             "only stock what other merchants have listed.")
+                return
 
-        playing = self.playing
-        if not playing:
+            match = broker.choose(matches, correlation_id=corr)
+            state = self.live.exchange.state()
+            posted = state.posted_orders.get(match.ask_order_id)
+            seller = posted.actor_id if posted else "unknown"
+
+            price = match.clearing_price
+            if price > plan["cap_paise"]:
+                from exchange.agents.negotiation import negotiate
+                outcome = negotiate(
+                    buyer_id=broker.actor_id, seller_id=seller,
+                    buyer_provider=broker.fast_tier,
+                    seller_provider=broker.fast_tier,
+                    opening_price=price, buyer_limit=plan["cap_paise"],
+                    seller_floor=int(price * 0.88))
+                if not outcome.agreed or outcome.final_price is None:
+                    self._finish(f"No deal: {outcome.ended_reason}")
+                    return
+                price = outcome.final_price
+
+            decision, settlement = broker.close(
+                match=match, seller_id=seller, correlation_id=corr,
+                agreed_price=price)
+
+            # THE SAME TRIAL-SIZE RETRY A BROKER GETS. A person buying from a
+            # stranger is as unproven as an agent buying from one, and this is
+            # the step that shows the cap doing its job rather than just
+            # blocking the demo.
+            if settlement is None and "cap" in (decision.reason or "").lower():
+                from exchange.matching import resize
+                from scripts.market.storefront import _affordable
+                smaller = _affordable(decision, price)
+                if smaller and smaller < match.qty:
+                    decision, settlement = broker.close(
+                        match=resize(match, smaller), seller_id=seller,
+                        correlation_id=corr, agreed_price=price)
+
+            self._finish("" if settlement is not None
+                         else (decision.reason or "The gate refused it."))
+        except Exception as error:                       # noqa: BLE001
+            traceback.print_exc()
+            self._finish(f"{type(error).__name__}: {error}")
+
+    def _finish(self, why: str) -> None:
+        with self.lock:
+            if self.running:
+                self.running["done"] = True
+                self.running["why"] = why
+
+    # --- what both dashboards read -----------------------------------------
+
+    def state(self) -> dict:
+        """Read the trade back out of the log as it is being written.
+
+        The stages are built by the same `rails` the replay pages use, so a
+        stage on this screen and a station on a merchant's own rail are the
+        same thing rendered twice — which is why they cannot disagree.
+        """
+        from exchange.eventlog import EventLog
+        from scripts.replay.read import rails
+
+        with self.lock:
+            run = dict(self.running) if self.running else None
+        if not run:
             return {"running": False}
-        elapsed = int((time.time() - playing["t0"]) * 1000)
-        revealed = [s for s in playing["steps"] if s["at_ms"] <= elapsed]
+
+        log = EventLog(self.db)
+        try:
+            events = [e for e in log.read_all()
+                      if e.correlation_id == run["corr"]]
+        finally:
+            log.close()
+
+        trade = rails(events).get(run["corr"]) if events else None
+        stations = (trade or {}).get("stations") or []
+        steps = [{
+            "key": st["key"],
+            "label": STATIONS.get(st["key"], (st["key"],))[0],
+            "head": st.get("head", ""),
+            "lines": [l for l in (st.get("lines") or []) if l],
+            "tone": st.get("tone", ""),
+            "seq": st.get("seq"),
+        } for st in stations]
+        for step in steps:                     # a head that repeats its label
+            words = {w for w in step["head"].lower().split() if len(w) > 3}
+            if words and words <= set(step["label"].lower().split()):
+                step["head"] = ""
+
         return {
             "running": True,
-            "corr": playing["corr"],
-            "need": playing["need"],
-            "asked": playing["asked"],
-            "asker": playing["asker"],
-            "asked_qty": playing["asked_qty"],
-            "asked_cap": playing["asked_cap"],
-            "trade_qty": playing["trade_qty"],
-            "buyer": playing["buyer"],
-            "elapsed_ms": elapsed,
-            "total_ms": playing["total_ms"],
-            "steps": revealed,
-            "count": len(playing["steps"]),
-            # What the desk needs: every event number revealed so far, so it
-            # can show the raw rows for exactly the same instant.
-            "seqs": [s["seq"] for s in revealed if s["seq"] is not None],
-            "done": elapsed >= playing["total_ms"],
+            "live": True,
+            "corr": run["corr"],
+            "asked": run["asked"],
+            "asker": run["asker"],
+            "buyer": run["asker"],
+            "need": run["asked"],
+            "asked_qty": run["asked_qty"],
+            "asked_cap": run["asked_cap"],
+            "steps": steps,
+            "count": len(steps),
+            "seqs": [e.seq for e in events],
+            "done": run["done"],
+            "why": run["why"],
         }
 
     def stop(self) -> dict:
-        self.playing = None
+        with self.lock:
+            self.running = None
         return {"running": False}
-
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -516,9 +541,9 @@ def main(argv=None) -> int:
 
     print(f"  opening the exchange on {args.db} as {args.merchant}…")
     Handler.live = Live(args.db, args.merchant)
-    Handler.demo = Demo(args.db)
+    Handler.demo = Demo(args.db, Handler.live)
     print(f"  {len(Handler.live.catalogue())} items on the book")
-    print(f"  {len(Handler.demo.trades)} recorded trades available to replay")
+    print(f"  asking runs {args.merchant[2:]}'s own agent, live")
     print(f"\n  http://localhost:{args.port}/m-{args.merchant[2:].replace('_','-')}.html")
     print("  ctrl-c to stop\n")
     try:

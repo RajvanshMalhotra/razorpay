@@ -110,7 +110,8 @@ def esc(text) -> str:
 
 
 def rupees(paise) -> str:
-    return f"₹{(paise or 0) / 100:,.0f}"
+    """One place decides how money looks. See exchange.plain.rupees."""
+    return plain.rupees(paise or 0)
 
 
 def state_actors(events):
@@ -1120,8 +1121,14 @@ function follow(){
     if(!d.running)return;
     for(var n=seen;n<d.steps.length;n++)stage(d.steps[n]);
     seen=d.steps.length;
-    if(d.done){clearInterval(followTimer);followTimer=null;
-      steps.classList.add('done')}
+    if(d.done){
+      clearInterval(followTimer);followTimer=null;
+      steps.classList.add('done');
+      if(d.why)say('your agent',esc(d.why),'no');
+      else say('your agent','Done. Reload this page and the trade is on your '+
+        'rail under <b>Where the money went</b>, with the event numbers.',
+        'note');
+    }
   }).catch(function(){clearInterval(followTimer);followTimer=null});
 }
 function ask(){
@@ -1157,16 +1164,16 @@ function ask(){
        figures below expected instead of wrong. */
     var asked='';
     if(d.asked_qty||d.asked_cap){
-      asked='You asked for '+
-        (d.asked_qty?'<b>'+d.asked_qty+' units</b>':'this')+
-        (d.asked_cap?' at up to <b>₹'+d.asked_cap+'</b> each':'')+'. ';
+      asked=' &mdash; '+(d.asked_qty?'<b>'+d.asked_qty+' units</b>':'')+
+        (d.asked_cap?' at up to <b>₹'+d.asked_cap+'</b> each':'');
     }
-    stepnote.innerHTML='<b>'+(asked?'The closest real trade on the exchange'
-        :'A real trade for '+esc(d.need||'this'))+'</b>'+
-      '<span>'+asked+'Playing '+esc(d.need||'a matching trade')+
-      (d.trade_qty?' &mdash; <b>'+d.trade_qty+' units</b>':'')+
-      ', from the log, with that trade\'s own figures. Razorpay is watching '+
-      'the same one on its desk. Nothing here is written to your books.'+
+    /* IT IS THIS MERCHANT'S OWN TRADE NOW. No borrowed figures to explain
+       away, so the caption says what is happening rather than apologising
+       for what is not. */
+    stepnote.innerHTML='<b>Your agent is buying this'+asked+'</b>'+
+      '<span>Working now, on the real order book. Each step appears when the '+
+      'event behind it is written, so what you are watching is how long it '+
+      'actually takes. Razorpay is watching the same trade on its desk.'+
       '</span>';
     followTimer=setInterval(follow,400);follow();
   }).catch(function(){thinking.remove();offline()});
@@ -1892,15 +1899,18 @@ function restart(){
 
 function banner(show,who,need,whose){
   if(!show){if(bannerEl){bannerEl.remove();bannerEl=null}return}
-  if(bannerEl)return;
-  bannerEl=document.createElement('div');
-  bannerEl.className='folw';
+  /* NOT `if(bannerEl)return`. A second ask kept the first ask's banner, so
+     the desk announced bl thirdwave's trade over bl hsr's rows. It rewrites. */
+  if(!bannerEl){
+    bannerEl=document.createElement('div');
+    bannerEl.className='folw';
+    var l0=$('ledger');l0.parentNode.insertBefore(bannerEl,l0);
+  }
   bannerEl.innerHTML='<b>'+esc(who||'a merchant')+
-    ' is asking for something</b><span>&ldquo;'+esc(need||'')+
-    '&rdquo; &mdash; playing '+esc(whose||'a matching')+'&rsquo;s trade from '+
-    'the log. Their dashboard is showing the same one, in their words.'+
+    ' is buying something right now</b><span>&ldquo;'+esc(need||'')+
+    '&rdquo; &mdash; its agent is working. These are its own events as they '+
+    'are written. Its dashboard is showing the same trade, in its words.'+
     '</span>';
-  var l=$('ledger');l.parentNode.insertBefore(bannerEl,l);
 }
 function followRow(seq){
   if(followSeen[seq])return;
