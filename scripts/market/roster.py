@@ -156,6 +156,12 @@ _SUPPLIERS = (
 # merchant to merchant so retrieval has to do real work rather than match a
 # fixed string.
 
+# One flavour each, so nine cafes are a market rather than nine copies.
+SYRUPS = ("vanilla bean", "hazelnut", "salted caramel", "cardamom",
+          "cinnamon", "dark chocolate", "gingerbread", "toasted coconut",
+          "rose")
+
+
 def _cluster() -> tuple[Merchant, ...]:
     # Style shorthand per merchant, so nine merchants in one category still
     # brief their agents differently — otherwise the cluster reads as one
@@ -215,10 +221,16 @@ def _cluster() -> tuple[Merchant, ...]:
             category="beverage",
             persona=persona,
             style=styles[index % len(styles)],
+            # A LOOP COUNTER IS NOT A PRODUCT NAME. This read "flavour syrup
+            # bottles house blend 0" on the shop window of a real-looking
+            # cafe, which is the index leaking into the thing a customer
+            # sees. Nine cafes selling nine flavours is also a better market
+            # than nine selling the same bottle.
             sells=(
                 Listing(f"ast_syrup_{actor_id[5:]}",
-                        f"flavour syrup bottles house blend {index}",
-                        {"flavour": "vanilla"}, 12000 + index * 300, 500),
+                        f"{SYRUPS[index % len(SYRUPS)]} syrup bottles",
+                        {"flavour": SYRUPS[index % len(SYRUPS)]},
+                        12000 + index * 300, 500),
             ),
             needs=tuple(needs),
         ))

@@ -100,7 +100,11 @@ class Live:
         """
         state = self.exchange.state()
         out = []
-        for order in state.posted_orders.values():
+        # WHAT IS STILL ON THE BOOK, not what was ever posted. `posted_orders`
+        # never forgets — deliberately, so the audit trail can show what was
+        # asked — but a shop window built from it advertises listings that
+        # have been filled or withdrawn.
+        for order in state.open_orders.values():
             if str(order.side) not in ("Side.ASK", "ASK"):
                 continue
             asset = state.assets.get(order.asset_ref) if order.asset_ref else None
