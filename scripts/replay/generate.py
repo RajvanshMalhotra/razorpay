@@ -1924,7 +1924,7 @@ function step(){
      trade being followed, which is two stories in one column. A refusal at
      the point of writing cannot be got around by whoever starts the clock. */
   if(following)return;
-  if(i>=rows.length){stop();label('replay',false);return}
+  if(i>=rows.length){stop();label('idle');return}
   var r=rows[i++];
   var l=$('ledger');
   var el=document.createElement('div');
@@ -1954,20 +1954,16 @@ function step(){
     }
   }
 }
-function label(t,p){var b=$('pp');b.textContent=t;
-  b.setAttribute('aria-pressed',p?'true':'false')}
-function play(){idle(false);stop();timer=setInterval(step,TICK);label('pause',true)}
+/* The transport is gone, so this only moves the word beside the counter. */
+function label(t){var c=$('clock');if(c)c.textContent=
+  (t==='pause'?'a merchant is trading':'waiting')}
+function play(){idle(false);stop();timer=setInterval(step,TICK);label('pause')}
 function stop(){if(timer)clearInterval(timer);timer=null}
-function toggle(){if(timer){stop();label('play',false)}
-  else if(i>=rows.length)restart();else play()}
-function restart(){
-  stop();$('ledger').innerHTML='';shown=null;
-  paid=money=ok=no=fixed=0;
-  ['n-paid','n-ok','n-no','n-fixed'].forEach(function(k){
-    $(k).textContent='0'});
-  $('n-money').textContent='₹0';
-  i=0;$('seq').textContent=0;$('bar').style.width='0%';play();
-}
+/* `toggle` and `restart` drove the play and restart buttons. Both are gone:
+   this desk shows live trades, and a control that replays the recorded market
+   is a control that makes a live demo look staged. `play` survives because
+   the reduced-motion path still needs a way to lay the history out at once. */
+
 /* --- following a merchant who is asking right now -----------------------
    THE OTHER HALF OF THE SAME DEMO. When someone types a need into their own
    dashboard, the server starts one clock and both pages read it. The merchant
@@ -2021,11 +2017,11 @@ function watchDemo(){
   fetch('/api/demo/state').then(function(r){return r.json()}).then(function(d){
     if(!d.running){
       if(following){following=null;followSeen={};banner(false);
-        $('ledger').innerHTML='';idle(true);label('play',false)}
+        $('ledger').innerHTML='';idle(true);label('idle')}
       return}
     if(following!==d.corr){
       following=d.corr;followSeen={};followCount=0;
-      stop();label('play',false);
+      stop();label('idle');
       $('ledger').innerHTML='';idle(false);
       /* Start this trade's counters from nothing, so the head is a total of
          what is on screen rather than of a replay nobody is watching. */
@@ -2042,11 +2038,9 @@ function watchDemo(){
 }
 setInterval(watchDemo,600);
 
-$('pp').addEventListener('click',toggle);
-$('rs').addEventListener('click',restart);
-document.addEventListener('keydown',function(e){
-  if(/^(INPUT|TEXTAREA)$/.test(e.target.tagName||''))return;
-  if(e.key===' '){e.preventDefault();toggle()}});
+
+/* The spacebar started the recorded market too, which is a worse way to do
+   it by accident than a button you can at least see. */
 
 /* --- the gate ---------------------------------------------------------
    A stage prop, and the screen says so. These are static files; a
@@ -2071,7 +2065,6 @@ function unlock(e){
      `play` runs the whole recorded market on demand; a merchant asking takes
      it over automatically. */
   idle(true);
-  label('play',false);
 }
 function idle(on){
   var l=$('ledger');
@@ -2079,10 +2072,13 @@ function idle(on){
   if($('idle'))return;
   var el=document.createElement('div');
   el.id='idle';el.className='idle';
+  /* Do not point at a control that is not there. This still offered "press
+     play", which was removed for being indistinguishable from a simulation
+     on camera. */
   el.innerHTML='<b>Nothing is happening right now.</b><span>Every agent on '+
-    'the exchange is idle. When a merchant asks for something, its trade '+
-    'appears here as it is written &mdash; or press <b>play</b> to replay '+
-    'the whole recorded market.</span>';
+    'the exchange is idle. The moment a merchant asks for something, its '+
+    'trade appears here &mdash; each row as the event behind it is written. '+
+    'What has already traded is on each business&rsquo;s own page.</span>';
   l.appendChild(el);
 }
 $('enter').addEventListener('click',unlock);
@@ -2104,11 +2100,16 @@ def build_desk(db_path: str) -> str:
     mgrid = "".join(f'<div class="m" data-m="{esc(m)}"><i></i><b>{esc(who(m))}</b></div>'
                     for m in merchants)
     live = (
+        # NO PLAY BUTTON. It replayed the whole recorded market, which on
+        # camera is indistinguishable from a simulation running — and one
+        # stray click in the middle of a demo undoes the claim the entire
+        # system is built to support. This screen shows live trades and
+        # nothing else. The recorded history is still every merchant's own
+        # rail, where it belongs to somebody.
         '<div class="trans">'
-        '<button class="pick" id="pp" aria-pressed="true">pause</button>'
-        '<button class="pick" id="rs">restart</button>'
-        f'<span class="clock">event <b id="seq">0</b> '
-        f'<span id="clocklabel">of {len(rows)}</span></span>'
+        '<span class="clock" id="clock">waiting</span>'
+        '<span class="clock"><b id="seq">0</b> '
+        '<span id="clocklabel">events</span></span>'
         "</div>"
         '<div class="progress"><i id="bar"></i></div>'
         '<div class="who" id="who"></div>'
