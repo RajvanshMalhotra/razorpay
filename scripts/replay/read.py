@@ -367,7 +367,13 @@ def _plain(actor_id) -> str:
     return (name[2:] if name.startswith("m_") else name).replace("_", " ")
 
 
-def rails(events, limit: int = 90):
+# A CAP FOR A PAGE, NOT A DEFAULT FOR THE READER. `limit` keeps a single
+# page from rendering ten thousand trails, and it takes the EARLIEST threads —
+# so with the default in place, the newest trade on the exchange was the one
+# guaranteed to be missing. A merchant would buy something, watch its own
+# figures move, and find "no trades on your book" underneath. Callers that
+# want a bounded page pass a bound; the reader itself now returns everything.
+def rails(events, limit: int | None = None):
     """One follow-along trail per trade, keyed by correlation id.
 
     Built from the trade's own events and nothing else, so a station that
@@ -522,8 +528,12 @@ def rails(events, limit: int = 90):
                      for e in rounds][:12],
         }
 
+    # Newest first when a bound is applied, because a page showing "the last
+    # 90 trades" is useful and "the first 90 trades of all time" is not.
     ordered = sorted(out.values(), key=lambda r: r["first_seq"])
-    return {r["corr"]: r for r in ordered[:limit]}
+    if limit is not None:
+        ordered = ordered[-limit:]
+    return {r["corr"]: r for r in ordered}
 
 
 def storefront(events):

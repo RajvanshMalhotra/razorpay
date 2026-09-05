@@ -70,3 +70,35 @@ def test_stations_without_a_seller_carry_no_seller_id():
     for station in next(iter(rail.values()))["stations"]:
         if station["key"] != "picked":
             assert "seller_id" not in station
+
+
+
+def test_a_bound_on_rails_keeps_the_newest_trades_not_the_oldest():
+    """The bug that made a live trade invisible.
+
+    `rails` capped a page at the 90 EARLIEST threads, so the newest trade on
+    the exchange was the one guaranteed to be missing — a merchant bought
+    something, watched its own figures move, and found "no trades on your
+    book" underneath them. A page wants the last N trades; nobody wants the
+    first N of all time.
+    """
+    rows = []
+    for n in range(5):
+        rows += [
+            ("m_seller", ev.ORDER_POSTED,
+             {"order_id": f"ask{n}", "side": "ASK", "limit_price": 21000},
+             f"seed{n}"),
+            ("m_buyer", ev.ORDER_POSTED,
+             {"order_id": f"bid{n}", "side": "BID", "qty": 10,
+              "limit_price": 22000, "asset_query": {"text": "cold brew"}},
+             f"turn_{n}_m_buyer"),
+            ("m_buyer", ev.COUNTERPARTY_CHOSEN,
+             {"ask_order_id": f"ask{n}", "reason": "cheapest"},
+             f"turn_{n}_m_buyer"),
+        ]
+    events = _log(rows).read_all()
+
+    assert len(rails(events)) == 5, "no bound means every trade"
+
+    newest = rails(events, limit=2)
+    assert set(newest) == {"turn_3_m_buyer", "turn_4_m_buyer"}

@@ -431,12 +431,17 @@ class Demo:
             self._finish(f"{type(error).__name__}: {error}")
 
     def _finish(self, why: str) -> None:
+        # REBUILD FIRST, THEN SAY DONE. The page refreshes itself the moment
+        # it sees done, and the rebuild takes a few seconds — so it was
+        # fetching the file that had not been rebuilt yet, and landing on
+        # "nothing has been bought or sold here yet" directly under its own
+        # new figures. Done means ready.
+        if not why:
+            self._rebuild()
         with self.lock:
             if self.running:
                 self.running["done"] = True
                 self.running["why"] = why
-        if not why:
-            self._rebuild()
 
     def _rebuild(self) -> None:
         """Rebuild the pages the trade just changed.

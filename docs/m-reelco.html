@@ -172,7 +172,11 @@ p.lede{font-size:15px;color:var(--body);margin:0 0 20px;max-width:74ch}
 .stepnote{margin:18px 0 2px;padding:12px 15px;border:1px solid var(--edge);
   border-radius:10px;background:var(--brandsoft);max-width:70ch}
 .stepnote:empty{display:none}
-.stepnote b{display:block;font-size:14px;color:var(--ink);margin-bottom:3px}
+/* NOT display:block. The caption has bold figures inside its sentence —
+   "200 units at up to ₹300 each" — and blocking every one of them broke it
+   into four lines, one word each. */
+.stepnote>b{display:block;font-size:14px;color:var(--ink);margin-bottom:3px}
+.stepnote span b{color:var(--ink)}
 .stepnote span{display:block;font-size:12.5px;color:var(--mute);
   line-height:1.55}
 .f.wide{flex:1 1 340px;min-width:220px}
