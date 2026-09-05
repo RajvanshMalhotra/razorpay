@@ -44,6 +44,7 @@ import mimetypes
 import pathlib
 import sys
 import threading
+import time
 import traceback
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
@@ -343,17 +344,27 @@ class Demo:
     def _work(self, plan: dict) -> None:
         """The real trade, on the real exchange, as the real merchant."""
         corr = plan["corr"]
+        clock = time.time()
+
+        def mark(step):
+            nonlocal clock
+            now = time.time()
+            print(f"    {step:<22} {now - clock:5.1f}s", flush=True)
+            clock = now
+
         try:
             broker = self.live.broker
             matches = broker.find_supply(
                 need_text=plan["asked"], qty=plan["qty"],
                 limit_price=plan["cap_paise"], correlation_id=corr)
+            mark("find_supply")
             if not matches:
                 self._finish("Nothing on the book matches that. Your agents "
                              "only stock what other merchants have listed.")
                 return
 
             match = broker.choose(matches, correlation_id=corr)
+            mark("choose")
             state = self.live.exchange.state()
             posted = state.posted_orders.get(match.ask_order_id)
             seller = posted.actor_id if posted else "unknown"
@@ -371,10 +382,12 @@ class Demo:
                     self._finish(f"No deal: {outcome.ended_reason}")
                     return
                 price = outcome.final_price
+            mark("negotiate")
 
             decision, settlement = broker.close(
                 match=match, seller_id=seller, correlation_id=corr,
                 agreed_price=price)
+            mark("close (gate+razorpay)")
 
             # THE SAME TRIAL-SIZE RETRY A BROKER GETS. A person buying from a
             # stranger is as unproven as an agent buying from one, and this is

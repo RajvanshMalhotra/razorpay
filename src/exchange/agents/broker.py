@@ -45,6 +45,7 @@ class Broker:
         exchange,
         provider,
         fast_provider=None,
+        promote_async: bool = True,
         subconscious: Subconscious | None = None,
         graph: RelationshipGraph | None = None,
         mandate=None,
@@ -61,6 +62,10 @@ class Broker:
         # `provider` would invite exactly the confusion the note above warns
         # about — the negotiator would silently get the expensive model.
         fast = self.fast_tier = fast_provider or provider
+        # Off the critical path by default. A batch run that needs the root
+        # context settled before it inspects it passes promote_async=False.
+        self._promote_async = promote_async
+        self._promotions: list = []
         # Given the log, so this merchant remembers across runs. A broker
         # built without one starts amnesiac, which is right for a test and
         # wrong for a market.
@@ -110,15 +115,51 @@ class Broker:
         state = self._exchange.state()
         asks = [o for o in state.open_orders.values() if o.side == Side.ASK]
         matches = find_candidates(bid, asks, state.assets, self._exchange.index)
-        reply = self._trader.act(
-            f"We need {qty} of: {need_text}, at no more than {limit_price} each. "
-            f"{len(matches)} candidate(s) found."
-        )
         # Spec 4.2: a sub-agent's summary becomes a fact in the orchestrator's
         # delta. Discarding the reply left the root context permanently empty,
         # so the one-way narrowing the design rests on never actually happened.
-        self._promote(reply)
+        #
+        # IT DOES NOT HAVE TO HAPPEN BEFORE THE CANDIDATES COME BACK. Measured
+        # at 12.8 seconds against 8.4 for the Diplomat's choice, and the
+        # Diplomat's reasoning is the one a person reads. Nothing downstream
+        # waits on this summary — it lands in the root context for the NEXT
+        # decision — so the caller gets its shortlist now and the promotion
+        # catches up. `promote_async=False` restores the old behaviour where a
+        # caller genuinely needs the context settled before it returns.
+        prompt = (
+            f"We need {qty} of: {need_text}, at no more than {limit_price} "
+            f"each. {len(matches)} candidate(s) found.")
+        if self._promote_async:
+            self._background(prompt)
+        else:
+            self._promote(self._trader.act(prompt))
         return matches
+
+    def _background(self, prompt: str) -> None:
+        """Summarise into the root context without holding anybody up.
+
+        A failure here is logged and dropped rather than raised: the thread
+        has no caller left to raise to, and a lost summary costs the next
+        decision some context — it does not make this one wrong.
+        """
+        import threading
+
+        def run():
+            try:
+                self._promote(self._trader.act(prompt))
+            except Exception as error:                   # noqa: BLE001
+                print(f"  [broker] promotion failed, context not updated: "
+                      f"{type(error).__name__}: {error}")
+
+        thread = threading.Thread(target=run, daemon=True)
+        self._promotions.append(thread)
+        thread.start()
+
+    def settle_context(self, timeout: float = 30.0) -> None:
+        """Wait for any background promotions. For tests and batch runs."""
+        for thread in list(self._promotions):
+            thread.join(timeout=timeout)
+        self._promotions = [t for t in self._promotions if t.is_alive()]
 
     def choose(self, matches: list[Match], correlation_id: str) -> Match:
         """Pick a counterparty from the shortlist, and record why.

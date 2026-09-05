@@ -69,6 +69,10 @@ def test_the_traders_summary_is_promoted_into_the_brokers_own_context(exchange):
     assert before.facts == ()
 
     broker.find_supply("biodegradable compostable mailers", 500, 2200, "c1")
+    # The summary is promoted off the critical path — the shortlist comes back
+    # before the model has finished narrating it — so a test that asserts the
+    # promotion waits for it. What it must not do is stop asserting it.
+    broker.settle_context()
 
     after = broker.tree.materialise(broker.root_id)
     assert "merchant m_seller quotes best" in after.facts
@@ -307,6 +311,12 @@ def test_every_sub_agent_summary_reaches_the_orchestrator(exchange):
                                       "diplomat says try them small"]))
 
     broker.find_supply("biodegradable compostable mailers", 200, 2200, "c1")
+    # SETTLE BEFORE THE NEXT CALL, because this provider hands out scripted
+    # replies in order and the promotion now runs on its own thread — leave it
+    # racing and the Trader's line can arrive after the Diplomat's. Nothing in
+    # production shares a provider's turn order like this; a test that does
+    # has to say when it wants the first call finished.
+    broker.settle_context()
     broker.assess("m_seller", "c1")
 
     root = broker.tree.materialise(broker.root_id)

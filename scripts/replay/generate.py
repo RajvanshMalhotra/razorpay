@@ -1116,6 +1116,27 @@ function stage(step){
   requestAnimationFrame(function(){el.classList.add('in')});
   steps.scrollTop=steps.scrollHeight;
 }
+function refresh(){
+  fetch(location.pathname+'?t='+Date.now()).then(function(r){return r.text()})
+   .then(function(html){
+    var fresh=new DOMParser().parseFromString(html,'text/html');
+    /* The four figures at the top, and the trade rail. Nothing else: swapping
+       the whole body would take the conversation with it. */
+    ['.figures','#pn-money'].forEach(function(sel){
+      var to=document.querySelector(sel),from=fresh.querySelector(sel);
+      if(to&&from)to.innerHTML=from.innerHTML;
+    });
+    var data=fresh.getElementById('mkt');
+    if(data&&window.M){try{
+      var next=JSON.parse(data.textContent);
+      M.rails=next.rails;M.cat=next.cat;
+    }catch(e){}}
+    say('your agent','It is on your rail now, under <b>Where the money '+
+      'went</b>, with the event numbers.','note');
+  }).catch(function(){
+    say('your agent','Saved to the log. Reload to see it on your rail.',
+      'note')});
+}
 function follow(){
   api('/api/demo/state').then(function(d){
     if(!d.running)return;
@@ -1124,10 +1145,16 @@ function follow(){
     if(d.done){
       clearInterval(followTimer);followTimer=null;
       steps.classList.add('done');
-      if(d.why)say('your agent',esc(d.why),'no');
-      else say('your agent','Done. Reload this page and the trade is on your '+
-        'rail under <b>Where the money went</b>, with the event numbers.',
+      if(d.why){say('your agent',esc(d.why),'no');return}
+      /* NOT "reload this page". Telling a person to refresh is asking them to
+         do the software's job, and it looked broken the first time because
+         the file they reloaded had not been rebuilt yet. The server rebuilds
+         it the moment the trade settles, so the page fetches itself and swaps
+         in the parts that changed — the figures at the top and the trade
+         rail — while the steps you just watched stay where they are. */
+      say('your agent','Done. Your books and your rail are updating now.',
         'note');
+      refresh();
     }
   }).catch(function(){clearInterval(followTimer);followTimer=null});
 }
