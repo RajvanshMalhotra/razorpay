@@ -1150,10 +1150,24 @@ function ask(){
        log, so they are somebody's real quantity and somebody's real price.
        Left unlabelled they read as an answer to what was just typed, and
        then every number on the screen looks wrong. */
-    stepnote.innerHTML='<b>A real trade for '+esc(d.need||'this')+'</b>'+
-      '<span>Played from the log, step by step, with that trade\'s own '+
-      'figures. Razorpay is watching the same one on its desk right now. '+
-      'Nothing here is written to your books.</span>';
+    /* SAY WHAT WAS ASKED FOR AND WHAT IS PLAYING, IN THAT ORDER. A person
+       types "220 units at ₹499 each" because that is how people ask for
+       things. Answering with 160 units at ₹310 and never mentioning the
+       difference reads as a screen that ignored them. Stating both makes the
+       figures below expected instead of wrong. */
+    var asked='';
+    if(d.asked_qty||d.asked_cap){
+      asked='You asked for '+
+        (d.asked_qty?'<b>'+d.asked_qty+' units</b>':'this')+
+        (d.asked_cap?' at up to <b>₹'+d.asked_cap+'</b> each':'')+'. ';
+    }
+    stepnote.innerHTML='<b>'+(asked?'The closest real trade on the exchange'
+        :'A real trade for '+esc(d.need||'this'))+'</b>'+
+      '<span>'+asked+'Playing '+esc(d.need||'a matching trade')+
+      (d.trade_qty?' &mdash; <b>'+d.trade_qty+' units</b>':'')+
+      ', from the log, with that trade\'s own figures. Razorpay is watching '+
+      'the same one on its desk. Nothing here is written to your books.'+
+      '</span>';
     followTimer=setInterval(follow,400);follow();
   }).catch(function(){thinking.remove();offline()});
 }
@@ -1385,8 +1399,10 @@ def build_merchant(db_path: str, actor_id: str, roster) -> str:
         'aria-label="what do you need" '
         'placeholder="cold brew concentrate, cafe grade">'
         '<button class="go" id="go">Find it</button></div>'
-        '<div class="askhint">Your agent works out the quantity and the price '
-        'from the book. You only have to say what you need.</div>'
+        '<div class="askhint">Say it however you would say it out loud '
+        '&mdash; &ldquo;cold brew concentrate, 200 units, under &#8377;300 '
+        'each&rdquo;. Quantities and prices in your sentence are read and '
+        'used.</div>'
         '<div id="stepnote" class="stepnote"></div>'
         '<div id="steps" class="steps" aria-live="polite"></div>'
         '<div id="convo" class="convo"></div>'
@@ -1789,6 +1805,29 @@ function merchant(id,cls){
 /* Set while a merchant is asking. Declared up here because step() reads it
    and step() is defined first. */
 var following=null,followSeen={},bannerEl=null;
+
+/* THE HEAD ADDS UP AS YOU WATCH. Every counter is a running total of events
+   already shown, so it agrees with the ledger beside it at every instant —
+   not a final figure parked at the top pretending to be live.
+
+   BOTH PLAYERS COUNT THROUGH HERE. When following a merchant's trade this
+   lived only in the desk's own step(), so the head read 0 confirmed, ₹0
+   committed, 0 refused while the ledger underneath showed a settled trade
+   with a refusal and a repair in it. A number that contradicts the rows
+   beside it is worse than no number. */
+function tally(r){
+  if(r.type==='SETTLEMENT_COMPLETED'){
+    paid++; $('n-paid').textContent=paid;
+    if(r.actor==='accountant'){fixed++;$('n-fixed').textContent=fixed}
+  }else if(r.type==='SETTLEMENT_INITIATED'){
+    var m=/₹?([\d,]+(?:\.\d\d)?)/.exec(r.detail||'');
+    if(m){money+=parseFloat(m[1].replace(/,/g,''));
+      $('n-money').textContent='₹'+Math.round(money).toLocaleString()}
+  }else if(r.type==='POLICY_DECIDED'){
+    if(/ALLOW/.test(r.detail)){ok++;$('n-ok').textContent=ok}
+    else{no++;$('n-no').textContent=no}
+  }
+}
 function step(){
   /* THE GUARD IS HERE, NOT ONLY AT THE CALLER. While a merchant is asking,
      this desk shows that merchant's trade and nothing else. Pausing the
@@ -1812,20 +1851,7 @@ function step(){
   $('seq').textContent=i;
   $('bar').style.width=(100*i/rows.length).toFixed(2)+'%';
 
-  /* THE HEAD ADDS UP AS YOU WATCH. Every counter is a running total of
-     events already played, so it agrees with the ledger beside it at every
-     instant — not a final figure parked at the top pretending to be live. */
-  if(r.type==='SETTLEMENT_COMPLETED'){
-    paid++; $('n-paid').textContent=paid;
-    if(r.actor==='accountant'){fixed++;$('n-fixed').textContent=fixed}
-  }else if(r.type==='SETTLEMENT_INITIATED'){
-    var m=/^([\d,]+\.\d\d)/.exec(r.detail);
-    if(m){money+=parseFloat(m[1].replace(/,/g,''));
-      $('n-money').textContent='₹'+Math.round(money).toLocaleString()}
-  }else if(r.type==='POLICY_DECIDED'){
-    if(/^ALLOW/.test(r.detail)){ok++;$('n-ok').textContent=ok}
-    else{no++;$('n-no').textContent=no}
-  }
+  tally(r);
 
   if(r.type==='ACTOR_FROZEN')merchant(r.actor,'frz');
   else if(r.actor&&r.actor.indexOf('m_')===0)merchant(r.actor,'act');
@@ -1892,19 +1918,31 @@ function followRow(seq){
   setTimeout(function(){el.classList.remove('new')},480);
   while(l.children.length>160)l.removeChild(l.firstChild);
   l.scrollTop=l.scrollHeight;
+  tally(r);
+  followCount++;
+  $('seq').textContent=followCount;
   if(r.actor&&r.actor.indexOf('m_')===0)merchant(r.actor,'act');
   var rl=rails[r.corr];
   if(rl){drawRail(rl,r.seq,IDS);if(rl.buyer)merchant(rl.buyer,'buy')}
 }
+var followCount=0;
 function watchDemo(){
   fetch('/api/demo/state').then(function(r){return r.json()}).then(function(d){
     if(!d.running){
       if(following){following=null;followSeen={};banner(false);play()}
       return}
     if(following!==d.corr){
-      following=d.corr;followSeen={};
+      following=d.corr;followSeen={};followCount=0;
       stop();label('play',false);
       $('ledger').innerHTML='';
+      /* Start this trade's counters from nothing, so the head is a total of
+         what is on screen rather than of a replay nobody is watching. */
+      paid=money=ok=no=fixed=0;
+      ['n-paid','n-ok','n-no','n-fixed'].forEach(function(k){
+        $(k).textContent='0'});
+      $('n-money').textContent='₹0';
+      $('clocklabel').textContent='of this trade';
+      $('bar').style.width='100%';
       banner(true,d.asker||d.buyer,d.asked||d.need,d.buyer);
     }
     (d.seqs||[]).forEach(followRow);
@@ -1957,7 +1995,8 @@ def build_desk(db_path: str) -> str:
         '<div class="trans">'
         '<button class="pick" id="pp" aria-pressed="true">pause</button>'
         '<button class="pick" id="rs">restart</button>'
-        f'<span class="clock">event <b id="seq">0</b> of {len(rows)}</span>'
+        f'<span class="clock">event <b id="seq">0</b> '
+        f'<span id="clocklabel">of {len(rows)}</span></span>'
         "</div>"
         '<div class="progress"><i id="bar"></i></div>'
         '<div class="who" id="who"></div>'

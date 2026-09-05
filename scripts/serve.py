@@ -224,6 +224,18 @@ class Live:
         }
 
 
+def _first_qty(trade) -> int | None:
+    """What the recorded trade opened by asking for, read off its own rail."""
+    import re
+
+    for station in trade.get("stations") or ():
+        if station.get("key") == "wants":
+            found = re.search(r"([\d,]+)", str(station.get("head") or ""))
+            if found:
+                return int(found.group(1).replace(",", ""))
+    return None
+
+
 def _plain(actor_id) -> str:
     name = str(actor_id or "")
     return (name[2:] if name.startswith("m_") else name).replace("_", " ")
@@ -277,6 +289,33 @@ class Demo:
             log.close()
         self.playing: dict | None = None
 
+    @staticmethod
+    def figures(need: str) -> tuple:
+        """The quantity and the per-unit price a person put in their sentence.
+
+        A merchant does not type a noun and stop. It types "220 units at ₹499
+        each", because that is how a person asks for something — and a screen
+        that then answers with 160 units at ₹310 looks like it ignored them.
+        Reading the numbers out is the difference between a search and a
+        keyword match.
+        """
+        import re
+
+        text = str(need or "").lower().replace(",", "")
+        qty = None
+        found = re.search(r"(\d{2,6})\s*(?:units?|pcs|pieces|nos)\b", text)
+        if found:
+            qty = int(found.group(1))
+        cap = None
+        found = re.search(r"(?:at|under|below|max|upto|up to|for)\s*"
+                          r"(?:₹|rs\.?|inr)?\s*(\d{1,6})(?:\s*(?:each|per|"
+                          r"a unit|/unit|apiece))?", text)
+        if found:
+            cap = int(found.group(1))
+        if cap is not None and qty is not None and cap == qty:
+            cap = None                      # the same number cannot be both
+        return qty, cap
+
     def pick(self, need: str) -> dict | None:
         """The recorded trade closest to what was typed.
 
@@ -285,13 +324,25 @@ class Demo:
         would make that claim unverifiable at exactly the moment it matters.
         Ties go to the trade with the most to show.
         """
-        words = {w for w in str(need or "").lower().split() if len(w) > 3}
-        best, score = None, 0
+        words = {w for w in str(need or "").lower().split()
+                 if len(w) > 3 and not w.strip("₹").isdigit()}
+        qty, _cap = self.figures(need)
+        best, score = None, -1.0
         for trade in self.trades.values():
             text = str(trade.get("need") or "").lower()
             hits = sum(1 for w in words if w in text)
-            weight = hits * 10 + len(trade.get("stations") or ())
-            if hits and weight > score:
+            if not hits:
+                continue
+            weight = hits * 10.0 + len(trade.get("stations") or ())
+            # A STATED QUANTITY IS PART OF THE ASK. Among trades that match
+            # the words, the one closest to the size the merchant said is the
+            # better answer — asking for 220 units and being shown a trade for
+            # 25 is a worse match than one for 160, however the words score.
+            if qty:
+                theirs = _first_qty(trade)
+                if theirs:
+                    weight += 6.0 / (1.0 + abs(theirs - qty) / max(qty, 1))
+            if weight > score:
                 best, score = trade, weight
         return best or self._richest()
 
@@ -306,6 +357,7 @@ class Demo:
         import time
 
         trade = self.pick(need)
+        qty, cap = self.figures(need)
         if trade is None:
             return {"running": False,
                     "why": "There is no recorded trade to replay."}
@@ -337,7 +389,10 @@ class Demo:
             # announced the recorded thread's buyer as the person at the
             # keyboard — "bl koramangala is asking" while sunrise was typing.
             "asker": _plain(asker),
+            "asked_qty": qty,
+            "asked_cap": cap,
             "buyer": trade.get("buyer_name") or trade.get("buyer", ""),
+            "trade_qty": _first_qty(trade),
             "asked": need,
             "steps": steps,
             "t0": time.time(),
@@ -359,6 +414,9 @@ class Demo:
             "need": playing["need"],
             "asked": playing["asked"],
             "asker": playing["asker"],
+            "asked_qty": playing["asked_qty"],
+            "asked_cap": playing["asked_cap"],
+            "trade_qty": playing["trade_qty"],
             "buyer": playing["buyer"],
             "elapsed_ms": elapsed,
             "total_ms": playing["total_ms"],
