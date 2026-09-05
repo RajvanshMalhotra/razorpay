@@ -60,6 +60,7 @@ from scripts.replay.read import (
     load,
     benchmarks,
     merchant_view,
+    plan_intelligence,
     performance,
     radar,
     rails,
@@ -762,6 +763,10 @@ p.lede{font-size:15px;color:var(--body);margin:0 0 20px;max-width:74ch}
 .chip{background:var(--card);border:1px solid var(--edge);border-radius:7px;
   padding:5px 11px;font-size:12px;color:var(--pale);cursor:not-allowed}
 
+.ch.inner{padding:16px 0 10px;border-bottom:0;border-top:1px solid var(--line);
+  margin-top:18px}
+.ch.inner h3{margin:0;font-size:14px;font-weight:650;color:var(--ink)}
+
 .stepnote{margin:18px 0 2px;padding:12px 15px;border:1px solid var(--edge);
   border-radius:10px;background:var(--brandsoft);max-width:70ch}
 .stepnote:empty{display:none}
@@ -1409,7 +1414,8 @@ def build_merchant(db_path: str, actor_id: str, roster) -> str:
         + _brief_card(brief_for(events, actor_id), traded=bool(mine))
         + _books_card(books)
         + _catalogue_card(view) + "</div>"
-        + _market_card(view, benchmarks(events)))
+        + _market_card(view, benchmarks(events),
+                       plan_intelligence(events, view["plan"])))
 
     money_pane = (
         '<p class="lede">Every trade your agents made, from what you needed to '
@@ -1705,7 +1711,7 @@ def _sheet_sync(actor_id: str) -> str:
 PLAN_NAME = {"standard": "Standard plan", "market": "Standard + Market plan"}
 
 
-def _market_card(view, bench) -> str:
+def _market_card(view, bench, published=None) -> str:
     """What the Market plan buys, and what Standard does not get.
 
     THE LOCK IS THE ABSENCE OF THE NUMBERS. A standard merchant's page is
@@ -1759,6 +1765,33 @@ def _market_card(view, bench) -> str:
             f'<span>clears at {rupees(row["clears_paise"])} against a '
             f'{rupees(row["ask_paise"])} ask</span>'
             f'<i>{moves}</i></div>')
+    extra = ""
+    for scope, heading, note in (
+        ("campaign_board", "What is climbing across the network",
+         "Ranked from settled trades, not from clicks. A category is "
+         "published only where at least three businesses stand behind it."),
+        ("brand_radar", "What the outside world is talking about",
+         "Campaigns being discussed publicly right now, ranked by how many "
+         "separate conversations mention them."),
+    ):
+        rows = (published or {}).get(scope) or []
+        if not rows:
+            continue
+        items = ""
+        for row in rows[:5]:
+            name = row.get("campaign") or row.get("category") or ""
+            if scope == "campaign_board":
+                detail = (f'{row.get("merchants", 0)} businesses buying '
+                          f'&middot; {rupees(row.get("value_paise"))} settled')
+            else:
+                detail = (f'{row.get("threads", 0)} separate conversations '
+                          f'&middot; {row.get("spread", 0)} places')
+            items += (f'<div class="bench"><b>{esc(name)}</b>'
+                      f'<span>{detail}</span></div>')
+        extra += (f'<div class="ch inner"><h3>{heading}</h3></div>'
+                  f'<div class="benches">{items}</div>'
+                  f'<p class="fine">{note}</p>')
+
     return (
         '<section class="card mkt"><div class="ch">'
         '<h3>What your category clears at</h3>'
@@ -1770,6 +1803,7 @@ def _market_card(view, bench) -> str:
         'where pushing spends the only thing an agent cannot buy more of '
         '&mdash; the counterparty\'s patience. A figure is published only '
         'where at least three businesses stand behind it.</p>'
+        + extra +
         '</div></section>')
 
 def _catalogue_card(view) -> str:
