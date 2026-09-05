@@ -329,6 +329,7 @@ def test_the_promoted_chain_is_visible_to_the_sub_agents(exchange):
     broker = Broker("m_buyer", exchange,
                     ScriptedProvider(["supply is tight", "second call"]))
     broker.find_supply("biodegradable compostable mailers", 200, 2200, "c1")
+    broker.settle_context()
 
     trader_sees = broker.tree.materialise(broker._trader.node_id)
 

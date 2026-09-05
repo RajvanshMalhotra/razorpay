@@ -438,11 +438,20 @@ def rails(events, limit: int = 90):
         if rulings:
             verdicts = [r.payload.get("verdict") for r in rulings]
             allowed = "ALLOW" in verdicts
+            # THE CAP HOLDING IS NOT A FAILURE, and it read as one every
+            # time. A merchant's first deal with a supplier it has never used
+            # is capped on purpose, so on a new business this fires on every
+            # trade — and "refused, then allowed" made a control that is
+            # working look like something going wrong, over and over.
+            # What happened is that the agent bought a trial quantity.
+            capped = "DENY" in verdicts and allowed
             stations.append(_station(
                 "gate", rulings[0].seq,
-                ("refused, then allowed" if "DENY" in verdicts and allowed
+                ("bought a trial quantity" if capped
                  else "allowed" if allowed else "refused"),
-                [_gate_reason(rulings[0].payload)],
+                ([_gate_reason(rulings[0].payload),
+                  "so your agent came back smaller, and that went through"]
+                 if capped else [_gate_reason(rulings[0].payload)]),
                 tone="allow" if allowed and "DENY" not in verdicts
                 else ("mixed" if allowed else "deny")))
         if opened:
@@ -583,6 +592,33 @@ def benchmarks(events):
     """What each category clears at, as published."""
     rows = [e.payload for e in events if e.type == "BENCHMARK_PUBLISHED"]
     return sorted(rows, key=lambda r: r["rank"]) if rows else None
+
+
+def plan_intelligence(events, plan: str = "market"):
+    """What was actually published to a paid plan, by scope.
+
+    NOT the internal rows. `audience` on those says `razorpay_internal`
+    because that is who computed them and who they were for; a merchant's page
+    renders what an INSIGHT_PUBLISHED event says went out to their plan, so
+    the screen and the log cannot disagree about who was told what.
+    """
+    out: dict = {}
+    for event in events:
+        payload = event.payload or {}
+        if event.type != "INSIGHT_PUBLISHED":
+            continue
+        if payload.get("plan_tier") != plan:
+            continue
+        # A row published before the writer carried its scope is recognised
+        # by its own shape rather than dropped into "other": a board row is
+        # the one that measures movement across merchants.
+        scope = payload.get("scope")
+        if not scope:
+            scope = ("campaign_board" if "movement" in payload else "other")
+        out.setdefault(scope, []).append(payload)
+    for rows in out.values():
+        rows.sort(key=lambda r: r.get("rank") or 0)
+    return out
 
 
 def radar(events):

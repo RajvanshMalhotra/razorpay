@@ -466,10 +466,17 @@ function show(corr){
   [].forEach.call(document.querySelectorAll('.trade'),function(b){
     b.setAttribute('aria-pressed',b.dataset.corr===corr?'true':'false')});
 }
-[].forEach.call(document.querySelectorAll('.trade'),function(b){
-  b.addEventListener('click',function(){show(b.dataset.corr)})});
-var first=document.querySelector('.trade');
-if(first)show(first.dataset.corr);
+/* WIRED AS A FUNCTION, because the money pane is replaced wholesale when a
+   live trade lands. The old code ran once at load, so after a swap the trade
+   pills had no click handlers and no rail had been drawn — the pane showed a
+   pill, an empty "what they said" card, and nothing else. */
+function wireTrades(){
+  [].forEach.call(document.querySelectorAll('.trade'),function(b){
+    b.addEventListener('click',function(){show(b.dataset.corr)})});
+  var first=document.querySelector('.trade');
+  if(first)show(first.dataset.corr);
+}
+wireTrades();
 
 /* --- switching merchant ------------------------------------------------
    Each merchant is a separate generated page, so this is a plain
@@ -586,6 +593,10 @@ function refresh(){
       var next=JSON.parse(data.textContent);
       M.rails=next.rails;M.cat=next.cat;
     }catch(e){}}
+    /* The rail is drawn by script from M.rails, not by the HTML that was
+       just swapped in. Without this the new trade's pill appears and the
+       trail under it stays blank. */
+    wireTrades();
     say('your agent','It is on your rail now, under <b>Where the money '+
       'went</b>, with the event numbers.','note');
   }).catch(function(){

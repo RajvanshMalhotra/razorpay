@@ -49,6 +49,11 @@ NEGOTIATION_ENDED = "NEGOTIATION_ENDED"
 TURN_ENDED = "TURN_ENDED"
 COUNTERPARTY_CHOSEN = "COUNTERPARTY_CHOSEN"
 INSIGHT_MINTED = "INSIGHT_MINTED"
+# Something the house computed being given to the businesses that pay for it.
+# Separate from minting it, because who a figure was published to is a
+# different fact from what the figure is — and it is the one a merchant's
+# page is allowed to render.
+INSIGHT_PUBLISHED = "INSIGHT_PUBLISHED"
 PRIVACY_REFUSED = "PRIVACY_REFUSED"
 # One row of Razorpay's internal campaign board. Marked `razorpay_internal`
 # in its own payload because the audience is the point: the ranking is the
