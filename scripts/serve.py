@@ -539,9 +539,162 @@ class Demo:
         return {"running": False}
 
 
+
+# --- signing up -------------------------------------------------------------
+
+def _slug(name: str) -> str:
+    """A business name to an actor id. Lowercase, underscores, nothing else."""
+    import re
+
+    base = re.sub(r"[^a-z0-9]+", "_", str(name or "").lower()).strip("_")
+    return f"m_{base[:40]}" if base else ""
+
+
+def _price_lines(text: str) -> list:
+    """A pasted price list, read the way a person would write one.
+
+    Deliberately arithmetic and not a model. A merchant typing its own stock
+    should get back exactly what it typed — if a model reads this list, a
+    quantity can come back different from the one on the screen, and the first
+    thing this business ever sees us do is get its own catalogue wrong.
+
+    THE LAST TWO NUMBERS ARE THE QUANTITY AND THE PRICE, and everything before
+    them is the name. Splitting on separators instead left "paper cups 9000 x
+    12" as a product called "paper cups 9000", and it breaks the other way too:
+    a name that STARTS with a number — "18650 lithium cells, 200, 21" — has to
+    keep it. Reading from the right handles both, because a price list ends
+    with its figures whatever the goods are called.
+
+        cold brew concentrate, 500 units, 210
+        paper cups 9000 x 12
+        oat milk cartons | 300 | 95
+        18650 lithium cells, 200, 21
+    """
+    import re
+
+    out = []
+    for raw in str(text or "").splitlines():
+        line = raw.strip()
+        if not line:
+            continue
+        numbers = list(re.finditer(r"[\d][\d,]*(?:\.\d+)?", line))
+        if not numbers:
+            # A real thing they sell, with no price on it. A listing without a
+            # price is not a listing, so it is skipped rather than invented.
+            continue
+
+        def value(match):
+            return int(float(match.group(0).replace(",", "")))
+
+        if len(numbers) >= 2:
+            qty, price = value(numbers[-2]), value(numbers[-1])
+            title = line[:numbers[-2].start()]
+        else:
+            qty, price = 100, value(numbers[-1])
+            title = line[:numbers[-1].start()]
+        title = title.strip(" ,|-–—:x").strip()
+        if not title:
+            continue
+        out.append({"title": title[:90], "qty": max(1, qty),
+                    "price_paise": max(100, int(price * 100))})
+    return out
+
+
+class Joiner:
+    """A business signing itself up, and its shelf, in one go."""
+
+    def __init__(self, db: str, live) -> None:
+        self.db = db
+        self.live = live
+
+    def join(self, body: dict) -> dict:
+        from exchange import events as ev
+        from exchange.eventlog import EventLog
+        from exchange.ids import new_id
+
+        name = str(body.get("name", "")).strip()
+        email = str(body.get("email", "")).strip()
+        if not name:
+            return {"ok": False, "why": "What is the business called?"}
+        if "@" not in email:
+            return {"ok": False, "why": "That email address does not look "
+                                        "like one."}
+        actor = _slug(name)
+        if not actor:
+            return {"ok": False, "why": "That name has no letters in it."}
+
+        items = list(body.get("items") or [])
+        if not items:
+            items = _price_lines(body.get("catalogue", ""))
+        if not items:
+            return {"ok": False,
+                    "why": "Add at least one thing you sell, with a price — "
+                           "that is what other businesses' agents search."}
+
+        log = EventLog(self.db)
+        try:
+            if any(e.type == ev.ACTOR_REGISTERED
+                   and e.payload.get("actor_id") == actor
+                   for e in log.read_all()):
+                return {"ok": False,
+                        "why": f"{name} is already on the exchange."}
+
+            corr = new_id("signup")
+            log.append(actor, ev.ACTOR_REGISTERED, {
+                "actor_id": actor,
+                "kind": "MERCHANT",
+                "merchant_id": None,
+                "plan_tier": str(body.get("plan") or "standard"),
+                "status": "ACTIVE",
+                # THE EMAIL IS RECORDED AND NEVER RENDERED. It is how a real
+                # signup reaches a person, and it is nobody else's business —
+                # no page reads this field, and check_pages would fail the
+                # build if one did.
+                "contact_email": email,
+            }, correlation_id=corr)
+
+            listed = 0
+            for item in items:
+                title = str(item.get("title", "")).strip()[:90]
+                if not title:
+                    continue
+                asset_id = new_id("ast")
+                log.append(actor, ev.ASSET_LISTED, {
+                    "asset_id": asset_id, "kind": "GOODS", "title": title,
+                    "spec": {}, "currency": "INR", "origin_actor_id": actor,
+                }, correlation_id=corr)
+                log.append(actor, ev.ORDER_POSTED, {
+                    "order_id": new_id("ord"), "actor_id": actor,
+                    "side": "ASK", "asset_ref": asset_id, "asset_query": None,
+                    "qty": int(item.get("qty") or 100),
+                    "limit_price": int(item.get("price_paise") or 10000),
+                    "currency": "INR",
+                    "expires_at": "2026-12-31T00:00:00+00:00",
+                    "policy_snapshot": {},
+                }, correlation_id=corr)
+                listed += 1
+        finally:
+            log.close()
+
+        page = f"m-{actor[2:].replace('_', '-')}.html"
+        self._rebuild_all()
+        return {"ok": True, "actor": actor, "name": name,
+                "listed": listed, "page": page}
+
+    def _rebuild_all(self) -> None:
+        """A new merchant changes every page: it is in everyone's switcher."""
+        try:
+            from scripts.replay import generate
+            generate.main([self.db, str(DOCS)])
+        except Exception as error:                       # noqa: BLE001
+            print(f"  could not rebuild the pages: "
+                  f"{type(error).__name__}: {error}")
+
+
 class Handler(BaseHTTPRequestHandler):
     live: Live = None            # set on the class before serving
     demo: Demo = None
+    joiner: Joiner = None
 
     def _send(self, code, body, ctype="application/json"):
         raw = body if isinstance(body, bytes) else json.dumps(body).encode()
@@ -583,6 +736,14 @@ class Handler(BaseHTTPRequestHandler):
                 str(body.get("need", "")).strip(),
                 int(body.get("qty") or 100),
                 int(round(float(body.get("limit_inr") or 0) * 100)) or 10**9)))
+        if path == "/api/join/preview":
+            # THE SAME PARSER THE SIGNUP USES. A second copy in the browser
+            # would drift, and the one a merchant reads before pressing the
+            # button would be the one that is wrong.
+            return self._guard(lambda: self._send(200, {
+                "items": _price_lines(body.get("catalogue", ""))}))
+        if path == "/api/join":
+            return self._guard(lambda: self._send(200, self.joiner.join(body)))
         if path == "/api/demo/start":
             return self._guard(lambda: self._send(
                 200, self.demo.start(
@@ -624,6 +785,7 @@ def main(argv=None) -> int:
     print(f"  opening the exchange on {args.db} as {args.merchant}…")
     Handler.live = Live(args.db, args.merchant)
     Handler.demo = Demo(args.db, Handler.live)
+    Handler.joiner = Joiner(args.db, Handler.live)
     print(f"  {len(Handler.live.catalogue())} items on the book")
     print(f"  asking runs {args.merchant[2:]}'s own agent, live")
     print(f"\n  http://localhost:{args.port}/m-{args.merchant[2:].replace('_','-')}.html")

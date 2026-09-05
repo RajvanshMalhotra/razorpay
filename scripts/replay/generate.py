@@ -3040,6 +3040,11 @@ h1,h2,h3{font-family:var(--disp);font-weight:600;letter-spacing:-.028em;
 .pts .ic{margin-top:3px}
 .pts .ic{color:var(--blue)}
 .band.light .pts .ic{color:var(--gold)}
+.cta{display:flex;flex-wrap:wrap;gap:12px;align-items:center}
+.enter.ghost{background:transparent;color:var(--white);
+  border:1px solid var(--edge);box-shadow:none}
+.enter.ghost:hover{border-color:var(--amber);color:var(--amber)}
+
 .enter{margin-top:30px;display:inline-flex;align-items:center;gap:11px;
   text-decoration:none;font-size:16px;font-weight:600;padding:15px 22px;
   border-radius:11px;
@@ -3220,6 +3225,152 @@ table.bids td.mk{font-family:var(--mono);font-size:10px;color:var(--green);
   text-transform:uppercase;letter-spacing:.07em;white-space:nowrap}
 table.bids tr.top td{background:rgba(255,255,255,.035)}
 table.bids td.q{font-size:12.5px;line-height:1.5}
+"""
+
+
+
+JOIN_CSS = """
+.join{max-width:760px;margin:0 auto;padding:38px 22px 80px}
+.join h1{font-family:var(--serif);font-size:34px;margin:0 0 8px;
+  font-weight:600;letter-spacing:-.01em}
+.join .lede{color:var(--body);font-size:16px;line-height:1.6;margin:0 0 28px;
+  max-width:62ch}
+.join label{display:block;font-size:13px;font-weight:650;color:var(--ink);
+  margin:18px 0 6px}
+.join .hint{font-size:12.5px;color:var(--pale);margin:4px 0 0;line-height:1.55}
+.join input,.join textarea{width:100%;box-sizing:border-box;
+  font-family:inherit;font-size:15px;color:var(--ink);background:var(--card);
+  border:1px solid var(--edge);border-radius:10px;padding:11px 13px}
+.join textarea{min-height:132px;font-family:var(--mono);font-size:13px;
+  line-height:1.7;resize:vertical}
+.join input:focus,.join textarea:focus{outline:2px solid var(--brand);
+  outline-offset:1px;border-color:var(--brand)}
+.join .go{margin-top:24px;appearance:none;border:0;border-radius:10px;
+  background:var(--brand);color:#fff;font-size:15px;font-weight:650;
+  padding:13px 22px;cursor:pointer;font-family:inherit}
+.join .go:hover{filter:brightness(1.07)}
+.join .go[disabled]{opacity:.55;cursor:progress}
+.join .out{margin-top:22px;padding:14px 16px;border-radius:10px;
+  font-size:14px;line-height:1.6}
+.join .out.bad{background:var(--stopsoft);border:1px solid var(--stop);
+  color:var(--ink)}
+.join .out.good{background:var(--moneysoft);border:1px solid var(--money);
+  color:var(--ink)}
+.join .out a{color:var(--brand);font-weight:650}
+.join .preview{margin-top:12px;border:1px solid var(--line);
+  border-radius:10px;overflow:hidden}
+.join .preview .row{display:grid;grid-template-columns:1fr auto auto;gap:14px;
+  padding:9px 13px;font-size:13.5px;border-top:1px solid var(--line)}
+.join .preview .row:first-child{border-top:0}
+.join .preview .row span:nth-child(2),
+.join .preview .row span:nth-child(3){font-family:var(--mono);font-size:12.5px;
+  color:var(--pale)}
+.join .back{display:inline-block;margin-bottom:22px;font-size:13.5px;
+  color:var(--mute);text-decoration:none}
+.join .back:hover{color:var(--ink)}
+"""
+
+
+def build_join() -> str:
+    """Signing up: who you are, and what you sell.
+
+    THE CATALOGUE IS THE POINT OF THE FORM. A business with no listings is
+    invisible on this exchange — other merchants' agents search what is on the
+    book, and an empty shelf cannot be found. So the shelf is asked for at
+    signup rather than left as something to do later.
+
+    Typed, not photographed. A photo of a price list would have to be read by
+    a model, and a model that misreads a quantity would have this business's
+    own catalogue wrong on the first screen it ever sees. The parsing here is
+    arithmetic, it runs on the server, and what appears in the preview below
+    the box is exactly what will be listed.
+    """
+    return (
+        '<!doctype html>\n<html lang="en"><head><meta charset="utf-8">'
+        '<meta name="viewport" content="width=device-width,initial-scale=1">'
+        '<title>Join the exchange</title>'
+        f"<style>{CSS}{JOIN_CSS}</style></head><body>"
+        '<div class="join">'
+        '<a class="back" href="index.html">&larr; back</a>'
+        '<h1>Put your business on the exchange</h1>'
+        '<p class="lede">You get four agents that find suppliers, argue the '
+        'price down and keep your books. They only trade inside limits you '
+        'set, and every decision is written down.</p>'
+
+        '<label for="j-name">Business name</label>'
+        '<input id="j-name" type="text" placeholder="Bean &amp; Barrel Coffee">'
+
+        '<label for="j-email">Email</label>'
+        '<input id="j-email" type="email" placeholder="you@yourbusiness.in">'
+        '<p class="hint">Where we reach you. It is never shown on any page, '
+        'to you or to anybody else.</p>'
+
+        '<label for="j-cat">What you sell</label>'
+        '<textarea id="j-cat" placeholder="cold brew concentrate, 500 units, '
+        '210&#10;paper cups 9000 x 12&#10;oat milk cartons | 300 | 95">'
+        '</textarea>'
+        '<p class="hint">One line each: what it is, how many, and the price '
+        'per unit in rupees. Commas, pipes or spaces &mdash; whatever you '
+        'already write it in. This is what other businesses&rsquo; agents '
+        'search for, so a shop with nothing listed cannot be found.</p>'
+        '<div class="preview" id="j-prev" hidden></div>'
+
+        '<button class="go" id="j-go">Create my dashboard</button>'
+        '<div class="out" id="j-out" hidden></div>'
+        '</div>'
+
+        "<script>\n" + JOIN_JS + "\n</script></body></html>")
+
+
+JOIN_JS = """
+var $=function(i){return document.getElementById(i)};
+function esc(t){var d=document.createElement('div');d.textContent=t==null?'':t;
+  return d.innerHTML}
+
+/* THE PREVIEW IS PARSED BY THE SERVER, not by a second copy of the rules
+   living in the browser. Two parsers drift, and the one a merchant reads
+   would be the one that is wrong. */
+var typing=null;
+$('j-cat').addEventListener('input',function(){
+  clearTimeout(typing);typing=setTimeout(preview,350)});
+
+function preview(){
+  fetch('/api/join/preview',{method:'POST',
+    headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({catalogue:$('j-cat').value})})
+   .then(function(r){return r.json()}).then(function(d){
+    var box=$('j-prev'),rows=d.items||[];
+    if(!rows.length){box.hidden=true;return}
+    box.hidden=false;
+    box.innerHTML=rows.map(function(i){
+      return '<div class="row"><span>'+esc(i.title)+'</span><span>'+
+        i.qty+' units</span><span>₹'+(i.price_paise/100).toFixed(2)+
+        '</span></div>'}).join('');
+  }).catch(function(){});
+}
+
+$('j-go').addEventListener('click',function(){
+  var out=$('j-out'),btn=$('j-go');
+  out.hidden=false;out.className='out';out.textContent='Setting you up…';
+  btn.disabled=true;
+  fetch('/api/join',{method:'POST',
+    headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({name:$('j-name').value,email:$('j-email').value,
+      catalogue:$('j-cat').value})})
+   .then(function(r){return r.json()}).then(function(d){
+    btn.disabled=false;
+    if(!d.ok){out.className='out bad';out.textContent=d.why||'That did not '+
+      'work.';return}
+    out.className='out good';
+    out.innerHTML='<b>'+esc(d.name)+' is on the exchange</b> with '+d.listed+
+      ' thing'+(d.listed===1?'':'s')+' listed. Its agents can be found by '+
+      'every other business here.<br><br><a href="'+esc(d.page)+
+      '">Open your dashboard &rarr;</a>';
+  }).catch(function(e){
+    btn.disabled=false;out.className='out bad';
+    out.textContent='The exchange is not running. Start it with '+
+      'scripts.serve and try again.'});
+});
 """
 
 
@@ -3561,8 +3712,11 @@ def build_landing(db_path: str, roster) -> str:
           f'your Google Sheet</span></li>'
           f'<li>{_icon("shield")}<span>Your catalogue, and one box to ask for '
           f'anything</span></li></ul>'
-        + f'<a class="enter" href="{esc(first)}">Open your dashboard'
+        + '<div class="cta">'
+          f'<a class="enter" href="{esc(first)}">Open dashboard'
           f'{_icon("arrow", 18)}</a>'
+          f'<a class="enter ghost" href="join.html">Join the exchange</a>'
+          '</div>'
         + f'</div>{_board_proof(desk)}</div></section>'
 
         + '<section class="band light"><div class="in door"><div class="sell">'
@@ -3869,6 +4023,7 @@ def main(argv=None) -> int:
 
     (out / "desk.html").write_text(build_desk(db), encoding="utf-8")
     (out / "how-to.html").write_text(build_howto(db), encoding="utf-8")
+    (out / "join.html").write_text(build_join(), encoding="utf-8")
     (out / "index.html").write_text(build_landing(db, roster), encoding="utf-8")
 
     print(f"wrote index.html + desk.html + {written} merchant pages "
