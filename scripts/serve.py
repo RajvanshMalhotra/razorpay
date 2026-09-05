@@ -488,7 +488,7 @@ class Demo:
         same thing rendered twice — which is why they cannot disagree.
         """
         from exchange.eventlog import EventLog
-        from scripts.replay.read import rails
+        from scripts.replay.read import rails, tape
 
         with self.lock:
             run = dict(self.running) if self.running else None
@@ -533,7 +533,19 @@ class Demo:
             "asked_cap": run["asked_cap"],
             "steps": steps,
             "count": len(steps),
+            # WHAT THE DESK NEEDS IS THE ROWS, NOT THE NUMBERS. Its ledger
+            # is baked into the page when the page is built, so a trade
+            # happening now cannot be in it — the desk was looking these event
+            # numbers up in a tape that could not contain them, finding
+            # nothing, and rendering an empty ledger under a banner announcing
+            # a trade. The rows come from here, where the events are, shaped
+            # by the same reader the desk's own tape uses so they read the
+            # same. The rail travels for the same reason: the desk had one
+            # baked in from the last build and drew that instead, putting
+            # another merchant's trade above this merchant's banner.
             "seqs": [e.seq for e in events],
+            "rows": tape(events),
+            "rail": trade,
             "done": run["done"],
             "why": run["why"],
         }

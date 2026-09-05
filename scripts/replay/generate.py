@@ -1993,12 +1993,9 @@ function banner(show,who,need,whose){
     'are written. Its dashboard is showing the same trade, in its words.'+
     '</span>';
 }
-function followRow(seq){
-  if(followSeen[seq])return;
-  followSeen[seq]=1;
-  var r=null;
-  for(var n=0;n<rows.length;n++){if(rows[n].seq===seq){r=rows[n];break}}
-  if(!r)return;
+function followRow(r){
+  if(!r||followSeen[r.seq])return;
+  followSeen[r.seq]=1;
   var l=$('ledger');
   var el=document.createElement('div');
   el.className='lrow '+(r.tone||'')+' new lit';
@@ -2013,8 +2010,6 @@ function followRow(seq){
   followCount++;
   $('seq').textContent=followCount;
   if(r.actor&&r.actor.indexOf('m_')===0)merchant(r.actor,'act');
-  var rl=rails[r.corr];
-  if(rl){drawRail(rl,r.seq,IDS);if(rl.buyer)merchant(rl.buyer,'buy')}
 }
 var followCount=0;
 function watchDemo(){
@@ -2037,7 +2032,17 @@ function watchDemo(){
       $('bar').style.width='100%';
       banner(true,d.asker||d.buyer,d.asked||d.need,d.buyer);
     }
-    (d.seqs||[]).forEach(followRow);
+    /* THE ROWS COME FROM THE SERVER. This desk's own tape is baked in when
+       the page is built, so a trade happening now cannot be in it — looking
+       the event numbers up there found nothing and left the ledger empty
+       under a banner announcing a trade. */
+    (d.rows||[]).forEach(followRow);
+    /* And the rail, for the same reason: it had one baked in from the last
+       build and drew that, putting another merchant's trade above this
+       merchant's banner. */
+    if(d.rail){drawRail(d.rail,1e9,IDS);
+      if(d.rail.buyer)merchant(d.rail.buyer,'buy')}
+    label('pause');
   }).catch(function(){});
 }
 setInterval(watchDemo,600);
