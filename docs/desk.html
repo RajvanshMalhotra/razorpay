@@ -152,6 +152,11 @@ select.pick{max-width:330px}
 .folw span{color:var(--dim);font-size:11px}
 .lrow.lit{border-left-color:var(--amber)}
 
+.idle{padding:26px 14px;display:flex;flex-direction:column;gap:5px}
+.idle b{color:var(--dim);font-size:13px}
+.idle span{color:var(--faint);font-size:12px;line-height:1.65;max-width:60ch}
+.idle span b{color:var(--amber)}
+
 .lrow{display:grid;grid-template-columns:46px 138px 1fr;gap:10px;
   padding:2px 11px;border-left:2px solid transparent;align-items:baseline;
   font-size:12px}
@@ -451,7 +456,7 @@ function step(){
 }
 function label(t,p){var b=$('pp');b.textContent=t;
   b.setAttribute('aria-pressed',p?'true':'false')}
-function play(){stop();timer=setInterval(step,TICK);label('pause',true)}
+function play(){idle(false);stop();timer=setInterval(step,TICK);label('pause',true)}
 function stop(){if(timer)clearInterval(timer);timer=null}
 function toggle(){if(timer){stop();label('play',false)}
   else if(i>=rows.length)restart();else play()}
@@ -515,12 +520,13 @@ var followCount=0;
 function watchDemo(){
   fetch('/api/demo/state').then(function(r){return r.json()}).then(function(d){
     if(!d.running){
-      if(following){following=null;followSeen={};banner(false);play()}
+      if(following){following=null;followSeen={};banner(false);
+        $('ledger').innerHTML='';idle(true);label('play',false)}
       return}
     if(following!==d.corr){
       following=d.corr;followSeen={};followCount=0;
       stop();label('play',false);
-      $('ledger').innerHTML='';
+      $('ledger').innerHTML='';idle(false);
       /* Start this trade's counters from nothing, so the head is a total of
          what is on screen rather than of a replay nobody is watching. */
       paid=money=ok=no=fixed=0;
@@ -556,8 +562,28 @@ function unlock(e){
   if(opened)return;
   opened=true;
   $('lock').setAttribute('data-open','');
-  if(reduce){while(i<rows.length)step();stop();label('replay',false)}
-  else play();
+  /* IT DOES NOT START ITSELF. Unlocking used to set 924 events running, so
+     the first thing anybody saw on Razorpay's screen was a wall of scrolling
+     rows nobody had asked for — and when a merchant then DID ask, the trade
+     being followed had to fight that noise for attention. This desk is a
+     window onto what is happening, so with nothing happening it sits still.
+
+     `play` runs the whole recorded market on demand; a merchant asking takes
+     it over automatically. */
+  idle(true);
+  label('play',false);
+}
+function idle(on){
+  var l=$('ledger');
+  if(!on){var e=$('idle');if(e)e.remove();return}
+  if($('idle'))return;
+  var el=document.createElement('div');
+  el.id='idle';el.className='idle';
+  el.innerHTML='<b>Nothing is happening right now.</b><span>Every agent on '+
+    'the exchange is idle. When a merchant asks for something, its trade '+
+    'appears here as it is written &mdash; or press <b>play</b> to replay '+
+    'the whole recorded market.</span>';
+  l.appendChild(el);
 }
 $('enter').addEventListener('click',unlock);
 $('code').addEventListener('keydown',function(e){
